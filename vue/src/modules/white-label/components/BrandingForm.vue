@@ -19,7 +19,7 @@ import ThemeToneEditor from './ThemeToneEditor.vue'
 import runrIconUrl from '@/assets/runr-icon.svg'
 import runrWordmarkLightUrl from '@/assets/runr-wordmark-light.svg'
 import runrWordmarkDarkUrl from '@/assets/runr-wordmark-dark.svg'
-import { ImageUp, Trash2, RotateCcw, Plus, X, Loader2 } from 'lucide-vue-next'
+import { ImageUp, Trash2, RotateCcw, Plus, X, Loader2 } from '@lucide/vue'
 
 const props = defineProps({
   scope: { type: String, default: 'platform', validator: v => ['platform', 'tenant'].includes(v) },

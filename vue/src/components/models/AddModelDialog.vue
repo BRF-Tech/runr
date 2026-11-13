@@ -3,7 +3,7 @@
 // (air-gapped regions), from a path in the region's model volume or from an OCI artifact.
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X } from 'lucide-vue-next'
+import { X } from '@lucide/vue'
 import { aiApi } from '@/api/ai'
 import { useAiStore } from '@/stores/ai'
 import { useSettingsStore } from '@/stores/settings'

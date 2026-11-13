@@ -6,7 +6,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
-import { Pencil, Plus, Radio, RefreshCw, Send, Trash2, X } from 'lucide-vue-next'
+import { Pencil, Plus, Radio, RefreshCw, Send, Trash2, X } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'

@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { STRATEGIES, normalizeStrategy } from '@/utils/deployStrategy'
-import { Split } from 'lucide-vue-next'
+import { Split } from '@lucide/vue'
 
 const { t, locale } = useI18n()
 

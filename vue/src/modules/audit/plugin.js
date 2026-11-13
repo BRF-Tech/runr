@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { ScrollText } from 'lucide-vue-next'
+import { ScrollText } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 
 // Administration → Audit log (docs/security.md): shown to users with the audit.view permission

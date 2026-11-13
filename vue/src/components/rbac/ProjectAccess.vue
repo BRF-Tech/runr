@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, User2, Users } from 'lucide-vue-next'
+import { Plus, Trash2, User2, Users } from '@lucide/vue'
 import { rbacApi } from '@/api/rbac'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'

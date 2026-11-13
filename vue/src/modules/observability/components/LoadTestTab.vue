@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Gauge, Play, Square, AlertTriangle } from 'lucide-vue-next'
+import { Gauge, Play, Square, AlertTriangle } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useJobEvents } from '@/composables/useJobEvents'

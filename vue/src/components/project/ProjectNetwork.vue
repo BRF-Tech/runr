@@ -5,7 +5,7 @@ import { projectsApi } from '@/api/projects'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { usePermissionsStore } from '@/stores/permissions'
-import { Network, Copy, Check, Trash2, Plus, AlertTriangle, Info, Users } from 'lucide-vue-next'
+import { Network, Copy, Check, Trash2, Plus, AlertTriangle, Info, Users } from '@lucide/vue'
 
 // A project's network (docs/internal-network.md): who reaches it from outside the cluster (access
 // mode) and which projects of the region may call it (the allow list). Changes: network.manage.

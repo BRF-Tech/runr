@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RefreshCw, Search } from 'lucide-vue-next'
+import { RefreshCw, Search } from '@lucide/vue'
 import { useLatest } from '@/composables/useLatest'
 import { workflowsApi } from '../api/workflows'
 import WorkflowStatusBadge from './WorkflowStatusBadge.vue'

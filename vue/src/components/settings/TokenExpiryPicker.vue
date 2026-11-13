@@ -3,7 +3,7 @@
 // Administration → API Tokens and the MCP token form.
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Clock } from 'lucide-vue-next'
+import { Clock } from '@lucide/vue'
 
 const props = defineProps({
   noExpiry:  { type: Boolean, default: true },

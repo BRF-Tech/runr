@@ -35,6 +35,19 @@ if (import.meta.env.VITE_SENTRY_DSN) {
     tracesSampleRate:   0.1,
     replaysSessionSampleRate: 0.1,
     replaysOnErrorSampleRate: 1.0,
+    // What SDK 10 sent (no sendDefaultPii): SDK 11 collects the user, cookies, headers and bodies
+    // by default, and streams spans instead of sending transactions
+    traceLifecycle: 'static',
+    dataCollection: {
+      userInfo:       false,
+      cookies:        false,
+      httpHeaders:    {
+        request:  { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+        response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+      },
+      httpBodies:     [],
+      urlQueryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+    },
   })
   window.Sentry = Sentry
 }

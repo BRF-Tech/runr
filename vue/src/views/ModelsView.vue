@@ -5,7 +5,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Search, Boxes, Library, Settings, Sparkles } from 'lucide-vue-next'
+import { Search, Boxes, Library, Settings, Sparkles } from '@lucide/vue'
 import AppHeader from '@/components/AppHeader.vue'
 import HubBrowser from '@/components/models/HubBrowser.vue'
 import HubModelDrawer from '@/components/models/HubModelDrawer.vue'

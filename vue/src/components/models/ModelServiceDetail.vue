@@ -3,7 +3,7 @@
 // playground, pod logs and the projects it is bound to.
 import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Play, Square, Trash2, RefreshCw, Copy } from 'lucide-vue-next'
+import { X, Play, Square, Trash2, RefreshCw, Copy } from '@lucide/vue'
 import { aiApi } from '@/api/ai'
 import { useAiStore } from '@/stores/ai'
 import { useConfirm } from '@/composables/useConfirm'

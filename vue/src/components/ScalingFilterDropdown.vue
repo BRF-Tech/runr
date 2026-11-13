@@ -1,6 +1,6 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
-import { ArrowDownToLine, ArrowUpDown } from 'lucide-vue-next'
+import { ArrowDownToLine, ArrowUpDown } from '@lucide/vue'
 
 const { t } = useI18n()
 

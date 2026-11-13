@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { BellRing, Globe, Network } from 'lucide-vue-next'
+import { BellRing, Globe, Network } from '@lucide/vue'
 import router from '@/router'
 import { usePermissionsStore } from '@/stores/permissions'
 import en from './locales/en.js'

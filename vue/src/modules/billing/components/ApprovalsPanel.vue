@@ -4,7 +4,7 @@
 // project's allocation from the approval day, billed by day for the rest of the month.
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CheckCircle2 } from 'lucide-vue-next'
+import { CheckCircle2 } from '@lucide/vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { billingApi } from '../api/billing'

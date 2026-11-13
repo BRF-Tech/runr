@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { Zap } from 'lucide-vue-next'
+import { Zap } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 
 /**

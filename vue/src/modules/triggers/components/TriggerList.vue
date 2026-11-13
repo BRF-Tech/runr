@@ -6,7 +6,7 @@
 // Used by the project "Triggers" tab and the Edit Project modal (TriggerConfig, compact).
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Inbox, Info, Pencil, Plus, Star, Trash2, X } from 'lucide-vue-next'
+import { Inbox, Info, Pencil, Plus, Star, Trash2, X } from '@lucide/vue'
 import { useSettingsStore } from '@/stores/settings'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useConfirm } from '@/composables/useConfirm'

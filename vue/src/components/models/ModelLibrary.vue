@@ -4,7 +4,7 @@
 // for functions that load the weights themselves.
 import { ref, reactive, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Rocket, Trash2, Upload, Download, FileText, Lock } from 'lucide-vue-next'
+import { Plus, Rocket, Trash2, Upload, Download, FileText, Lock } from '@lucide/vue'
 import { aiApi } from '@/api/ai'
 import { useAiStore } from '@/stores/ai'
 import { useSettingsStore } from '@/stores/settings'

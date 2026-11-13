@@ -4,7 +4,7 @@
 // any other string = replace.
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { KeyRound, Trash2 } from 'lucide-vue-next'
+import { KeyRound, Trash2 } from '@lucide/vue'
 
 const props = defineProps({
   label:      { type: String, required: true },

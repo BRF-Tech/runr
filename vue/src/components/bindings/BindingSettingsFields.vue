@@ -5,7 +5,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { isValidEnvKey } from '@/utils/bindings'
-import { Plus, X } from 'lucide-vue-next'
+import { Plus, X } from '@lucide/vue'
 
 const props = defineProps({
   type:     { type: String, required: true },

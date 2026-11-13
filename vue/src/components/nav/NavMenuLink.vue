@@ -4,7 +4,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Circle } from 'lucide-vue-next'
+import { Circle } from '@lucide/vue'
 import { isLinkActive, linkLocation } from '@/navigation/menu'
 
 const props = defineProps({

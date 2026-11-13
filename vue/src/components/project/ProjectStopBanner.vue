@@ -7,7 +7,7 @@
 // resumes it on the project's Billing tab once the limit allows it.
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { OctagonPause, Play } from 'lucide-vue-next'
+import { OctagonPause, Play } from '@lucide/vue'
 import { projectsApi } from '@/api/projects'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useToast } from '@/composables/useToast'

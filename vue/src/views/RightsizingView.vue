@@ -4,7 +4,7 @@
 // version, the next deploy runs it) and dismiss need projects.update on the project.
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Gauge } from 'lucide-vue-next'
+import { Gauge } from '@lucide/vue'
 import AppHeader from '@/components/AppHeader.vue'
 import { rightsizingApi } from '@/api/rightsizing'
 import { usePermissionsStore } from '@/stores/permissions'

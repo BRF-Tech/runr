@@ -2,7 +2,7 @@
 // A read-only value (a webhook inbox URL) with a copy button.
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Copy } from 'lucide-vue-next'
+import { Check, Copy } from '@lucide/vue'
 
 const props = defineProps({
   value:  { type: String, required: true },

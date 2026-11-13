@@ -2,7 +2,7 @@
 // A block of text (command, JSON config, URL) with a copy button.
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Copy, Check } from 'lucide-vue-next'
+import { Copy, Check } from '@lucide/vue'
 
 const props = defineProps({
   text:   { type: String, required: true },

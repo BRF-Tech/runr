@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '../stores/tenant'
 import { useTenantSwitch } from '../composables/useTenantSwitch'
 import { useSettingsStore } from '@/stores/settings'
-import { ChevronDown, Building2, Search } from 'lucide-vue-next'
+import { ChevronDown, Building2, Search } from '@lucide/vue'
 
 const { t } = useI18n()
 const auth = useAuthStore()

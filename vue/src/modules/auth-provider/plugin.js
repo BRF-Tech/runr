@@ -1,5 +1,5 @@
 import { markRaw } from 'vue'
-import { Shield } from 'lucide-vue-next'
+import { Shield } from '@lucide/vue'
 import OAuthCallback from './components/OAuthCallback.vue'
 import AuthProviderSettings from './components/AuthProviderSettings.vue'
 import LinkedAccountsCard from './components/LinkedAccountsCard.vue'

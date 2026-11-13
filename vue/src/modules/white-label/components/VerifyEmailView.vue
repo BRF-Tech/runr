@@ -10,7 +10,7 @@ import { signupApi } from '../api/whiteLabel'
 import { useBrandingStore } from '../stores/branding'
 import { useCaptcha } from '../composables/useCaptcha'
 import CaptchaField from './CaptchaField.vue'
-import { CheckCircle2, Loader2, MailWarning } from 'lucide-vue-next'
+import { CheckCircle2, Loader2, MailWarning } from '@lucide/vue'
 import runrIconUrl from '@/assets/runr-icon.svg'
 
 const { t } = useI18n()

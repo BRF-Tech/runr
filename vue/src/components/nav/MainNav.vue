@@ -16,7 +16,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown } from 'lucide-vue-next'
+import { ChevronDown } from '@lucide/vue'
 import { useNavigation } from '@/navigation/useNavigation'
 import MegaMenuPanel from './MegaMenuPanel.vue'
 

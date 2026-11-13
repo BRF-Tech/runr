@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Plus, Trash2 } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { apiProductApi } from '../api/apiProduct'

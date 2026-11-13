@@ -1,7 +1,7 @@
 <script setup>
 // Model services of the organization: status, engine, device, mode, region and internal URL.
 import { useI18n } from 'vue-i18n'
-import { Boxes } from 'lucide-vue-next'
+import { Boxes } from '@lucide/vue'
 import { useAiStore } from '@/stores/ai'
 import { AI_STATUS_CLASSES } from '@/utils/ai'
 

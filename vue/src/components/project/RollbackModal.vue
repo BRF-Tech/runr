@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { History } from 'lucide-vue-next'
+import { History } from '@lucide/vue'
 
 /**
  * Roll back to a deployment (#626, docs/versioning.md#rollback): its version comes back in its

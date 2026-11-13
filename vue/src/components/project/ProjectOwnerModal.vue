@@ -4,7 +4,7 @@
 // the new owner must be a member who can see the project (the API checks).
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X } from 'lucide-vue-next'
+import { X } from '@lucide/vue'
 import { projectsApi } from '@/api/projects'
 import { rbacApi } from '@/api/rbac'
 

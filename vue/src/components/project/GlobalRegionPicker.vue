@@ -6,7 +6,7 @@ import { useResidency } from '@/modules/supply-chain/composables/useResidency'
 import {
   GLOBAL_MAX_REGIONS, GLOBAL_MIN_REGIONS, globalRegionUnavailableKey, toggleRegion,
 } from '@/utils/globalProjects'
-import { Globe, Star } from 'lucide-vue-next'
+import { Globe, Star } from '@lucide/vue'
 
 // Regions, primary region and DNS mode of a global project (create wizard, step 1). Only regions
 // whose global DNS server is ready take part; the others are listed greyed out with the reason.

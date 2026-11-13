@@ -7,7 +7,7 @@
 // import keeps its plan: applying again resumes it (finished entries are not created twice).
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RefreshCw, Play, Lock, Unlock } from 'lucide-vue-next'
+import { RefreshCw, Play, Lock, Unlock } from '@lucide/vue'
 import { orgTransferApi, unwrap } from '../api'
 import { useConfirm } from '@/composables/useConfirm'
 import { formatBytes } from '@/utils/ai'

@@ -3,7 +3,7 @@
 // and — with the override permission — a deploy with a recorded reason.
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ShieldAlert, Clock } from 'lucide-vue-next'
+import { ShieldAlert, Clock } from '@lucide/vue'
 import SeverityBadges from './SeverityBadges.vue'
 
 const props = defineProps({

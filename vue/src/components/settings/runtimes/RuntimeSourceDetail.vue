@@ -4,7 +4,7 @@
 // carries for them, with its patch feed.
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle, Loader2 } from 'lucide-vue-next'
+import { AlertTriangle, Loader2 } from '@lucide/vue'
 import RuntimeIcon from '@/components/RuntimeIcon.vue'
 import TermText from '@/components/TermText.vue'
 import RuntimeLifecycleBadge from '@/components/settings/runtimes/RuntimeLifecycleBadge.vue'

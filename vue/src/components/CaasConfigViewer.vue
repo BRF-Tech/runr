@@ -1,6 +1,6 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
-import { MapPin } from 'lucide-vue-next'
+import { MapPin } from '@lucide/vue'
 import TermText from '@/components/TermText.vue'
 
 const { t } = useI18n()

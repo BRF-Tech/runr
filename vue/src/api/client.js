@@ -6,6 +6,10 @@ import { currentLocale } from '@/utils/locale'
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   withCredentials: true,
+  // No X-XSRF-TOKEN: the API authenticates with the bearer token below and sets no XSRF-TOKEN
+  // cookie. axios 1.21 would otherwise await the browser's Cookie Store for that cookie before
+  // every same-origin request (about 50 ms each in Chromium) instead of sending it at once.
+  withXSRFToken: false,
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',

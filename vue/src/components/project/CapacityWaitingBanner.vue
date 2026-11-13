@@ -8,7 +8,7 @@
 // docs/billing.md#project-stop-and-resume
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Hourglass } from 'lucide-vue-next'
+import { Hourglass } from '@lucide/vue'
 
 const props = defineProps({
   project: { type: Object, required: true },

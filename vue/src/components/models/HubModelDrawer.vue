@@ -3,7 +3,7 @@
 // engines RunR can serve it with; one click opens the deploy dialog.
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Lock, X, Rocket, Library, ExternalLink } from 'lucide-vue-next'
+import { Lock, X, Rocket, Library, ExternalLink } from '@lucide/vue'
 import { aiApi } from '@/api/ai'
 import { useToast } from '@/composables/useToast'
 import { formatBytes, formatCount, formatParameters } from '@/utils/ai'

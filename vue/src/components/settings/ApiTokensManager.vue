@@ -6,7 +6,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { usePermissionsStore } from '@/stores/permissions'
 import AbilityPicker from '@/components/settings/AbilityPicker.vue'
 import TokenExpiryPicker from '@/components/settings/TokenExpiryPicker.vue'
-import { Plus, Key, Trash2, Copy, Check } from 'lucide-vue-next'
+import { Plus, Key, Trash2, Copy, Check } from '@lucide/vue'
 
 const { t, locale } = useI18n()
 const { confirm } = useConfirm()

@@ -5,7 +5,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Bell, Menu, ShieldCheck } from 'lucide-vue-next'
+import { Bell, Menu, ShieldCheck } from '@lucide/vue'
 import { moduleRegistry } from '@/modules/index'
 import { useAuthStore } from '@/stores/auth'
 import { useRuntimesStore } from '@/stores/runtimes'

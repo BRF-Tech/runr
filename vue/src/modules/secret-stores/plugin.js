@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { LockKeyhole } from 'lucide-vue-next'
+import { LockKeyhole } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 
 // Secret stores (docs/secret-stores.md): Administration → Secret stores, the organization's Vault /

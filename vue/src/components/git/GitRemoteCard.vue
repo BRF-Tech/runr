@@ -1,7 +1,7 @@
 <script setup>
 import { computed, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { GitBranch, Copy, RotateCw, Lock } from 'lucide-vue-next'
+import { GitBranch, Copy, RotateCw, Lock } from '@lucide/vue'
 import { PROJECT_GIT } from '@/composables/useProjectGit'
 import { usePermissionsStore } from '@/stores/permissions'
 

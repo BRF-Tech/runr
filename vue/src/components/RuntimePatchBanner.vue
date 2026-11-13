@@ -11,7 +11,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { ShieldAlert, X, ExternalLink } from 'lucide-vue-next'
+import { ShieldAlert, X, ExternalLink } from '@lucide/vue'
 import { runtimePatchesApi } from '@/api/runtimePatches'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'

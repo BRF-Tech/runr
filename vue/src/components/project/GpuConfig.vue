@@ -3,7 +3,7 @@
 // on GPU runtime versions (PyTorch / TensorFlow GPU), where at least one GPU is always used.
 import { computed, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Cpu, Info, AlertTriangle } from 'lucide-vue-next'
+import { Cpu, Info, AlertTriangle } from '@lucide/vue'
 import { useRuntimesStore } from '@/stores/runtimes'
 import { useRegionGpu } from '@/composables/useRegionGpu'
 import { GPU_DEFAULT_TIMEOUT } from '@/utils/ai'

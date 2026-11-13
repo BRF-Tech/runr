@@ -6,7 +6,7 @@
 // deadline, when RunR moves the project itself while the platform policy allows it).
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, ExternalLink, Pin, PinOff, ShieldAlert } from 'lucide-vue-next'
+import { X, ExternalLink, Pin, PinOff, ShieldAlert } from '@lucide/vue'
 import { runtimePatchesApi } from '@/api/runtimePatches'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useConfirm } from '@/composables/useConfirm'

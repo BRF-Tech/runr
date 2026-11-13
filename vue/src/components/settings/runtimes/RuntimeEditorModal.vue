@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Upload, FilePlus2, Trash2, CheckCircle2, AlertTriangle, Loader2, FileText } from 'lucide-vue-next'
+import { Upload, FilePlus2, Trash2, CheckCircle2, AlertTriangle, Loader2, FileText } from '@lucide/vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import { runtimesApi } from '@/api/runtimes'
 import { useSettingsStore } from '@/stores/settings'

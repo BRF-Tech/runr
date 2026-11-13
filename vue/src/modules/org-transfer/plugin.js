@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { ArchiveRestore } from 'lucide-vue-next'
+import { ArchiveRestore } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 import en from './locales/en.js'
 import tr from './locales/tr.js'

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Hammer, RefreshCw } from 'lucide-vue-next'
+import { Hammer, RefreshCw } from '@lucide/vue'
 import RuntimeIcon from '@/components/RuntimeIcon.vue'
 import { runtimesApi } from '@/api/runtimes'
 import { useSettingsStore } from '@/stores/settings'

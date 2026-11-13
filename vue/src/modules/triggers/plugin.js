@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { Radio } from 'lucide-vue-next'
+import { Radio } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 
 /**

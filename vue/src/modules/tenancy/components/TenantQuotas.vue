@@ -6,7 +6,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { useLatest } from '@/composables/useLatest'
-import { Globe, Plus, Pencil, Trash2, Info } from 'lucide-vue-next'
+import { Globe, Plus, Pencil, Trash2, Info } from '@lucide/vue'
 import CapacityBudgets from '@/components/region/CapacityBudgets.vue'
 import TenantBindingQuota from './TenantBindingQuota.vue'
 

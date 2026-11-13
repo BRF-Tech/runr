@@ -11,7 +11,7 @@ import AbilityPicker from '@/components/settings/AbilityPicker.vue'
 import { useRbacLabels } from '@/composables/useRbac'
 import { mcpApi } from '../api/mcp'
 import { navigateAway } from '../utils/navigate'
-import { AlertTriangle, Bot, Building2, Clock, Loader2, Lock, ShieldAlert } from 'lucide-vue-next'
+import { AlertTriangle, Bot, Building2, Clock, Loader2, Lock, ShieldAlert } from '@lucide/vue'
 
 const route = useRoute()
 const { t } = useI18n()

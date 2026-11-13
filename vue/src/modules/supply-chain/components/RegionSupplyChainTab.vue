@@ -4,7 +4,7 @@
 // policy and the region's data location. The private key is never sent to the browser.
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { KeyRound, RefreshCw, Download, ShieldCheck } from 'lucide-vue-next'
+import { KeyRound, RefreshCw, Download, ShieldCheck } from '@lucide/vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { useLatest } from '@/composables/useLatest'

@@ -5,7 +5,7 @@ import { globalDnsApi } from '@/api/globalProjects'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useToast } from '@/composables/useToast'
 import { apiErrorMessage, geoipStatusColors, serverStatusColors, stateTextClass, unwrap } from '@/utils/globalProjects'
-import { Earth, Copy, Check, RefreshCw } from 'lucide-vue-next'
+import { Earth, Copy, Check, RefreshCw } from '@lucide/vue'
 
 // Administration → Regions & settings (Platform): the global DNS zone of global projects (docs/global-projects.md). The
 // operator delegates it once at the parent zone — NS records naming the regions' servers and

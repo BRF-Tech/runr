@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, reactive, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Send, Paperclip, Download, Maximize2 } from 'lucide-vue-next'
+import { X, Send, Paperclip, Download, Maximize2 } from '@lucide/vue'
 import client from '@/api/client'
 import { fetchTicket, sendReply, fetchAdminTicket, updateTicketStatus, sendAdminReply, attachmentUrl as userAttUrl, adminAttachmentUrl, markRead, adminMarkRead } from '../api/support'
 import { useAuthStore } from '@/stores/auth'

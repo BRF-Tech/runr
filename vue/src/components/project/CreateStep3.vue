@@ -41,6 +41,7 @@ defineEmits(['next', 'back'])
       <RuntimeTemplatePreview
         v-if="form.service_type !== 'caas'"
         :runtime="form.runtime"
+        :version="form.runtime_version"
         :service-type="form.service_type"
       />
 

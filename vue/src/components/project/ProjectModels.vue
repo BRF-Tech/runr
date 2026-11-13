@@ -4,7 +4,7 @@
 // with "mount weights", the read-only model files at RUNR_MODEL_<ALIAS>_PATH.
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Sparkles, Plus, Trash2, Copy, Info } from 'lucide-vue-next'
+import { Sparkles, Plus, Trash2, Copy, Info } from '@lucide/vue'
 import { aiApi } from '@/api/ai'
 import { useAiStore } from '@/stores/ai'
 import { usePermissionsStore } from '@/stores/permissions'

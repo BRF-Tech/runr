@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch, computed, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Paperclip, Info } from 'lucide-vue-next'
+import { X, Paperclip, Info } from '@lucide/vue'
 import { createTicketWithFiles, fetchTicketSuggestions } from '../api/support'
 import { useTicketDraft } from '../composables/useTicketDraft'
 import { createTutorial } from '@/composables/useTutorial'

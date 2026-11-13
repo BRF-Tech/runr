@@ -4,7 +4,7 @@
 // stays hidden while the API reports billing off (GET /api/branding → features.billing), so one
 // official image serves installs with and without billing.
 import { defineAsyncComponent, markRaw } from 'vue'
-import { CreditCard, Receipt } from 'lucide-vue-next'
+import { CreditCard, Receipt } from '@lucide/vue'
 import { billingApi } from './api/billing'
 import { billingEnabled, can, canSeeOwnBills, canViewBilling } from './utils/billing'
 import { currentUser } from '@/modules/white-label/utils/context'

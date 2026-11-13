@@ -6,7 +6,7 @@
 // takes effect on its date; the percentage before holds until then.
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Inbox } from 'lucide-vue-next'
+import { Check, Inbox } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { billingApi } from '../api/billing'
 import { apiMessage, can, formatDate, formatUnitPrice, today } from '../utils/billing'

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { KeyRound, Trash2 } from 'lucide-vue-next'
+import { KeyRound, Trash2 } from '@lucide/vue'
 import { environmentsApi } from '@/api/environments'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'

@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, FileText, Copy } from 'lucide-vue-next'
+import { ArrowLeft, FileText, Copy } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 import { observabilityApi } from '../api/observability'
 import { formatDuration } from '../utils/format'

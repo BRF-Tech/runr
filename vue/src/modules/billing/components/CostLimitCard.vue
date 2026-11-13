@@ -8,7 +8,7 @@
 // notify, or a new month). Edited by the owner, projects.billing on the project and billing.manage.
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Gauge, OctagonPause, Play, Save, Trash2 } from 'lucide-vue-next'
+import { Gauge, OctagonPause, Play, Save, Trash2 } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { billingApi } from '../api/billing'
 import { apiMessage, formatDateTime, formatMoney, formatNumber } from '../utils/billing'

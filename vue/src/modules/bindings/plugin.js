@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { Database } from 'lucide-vue-next'
+import { Database } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 
 // Bindings (docs/bindings.md): the project "Bindings" tab and Data & Integrations → Data (the

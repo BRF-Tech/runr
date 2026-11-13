@@ -5,7 +5,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRbacLabels } from '@/composables/useRbac'
-import { Shield, ShieldCheck } from 'lucide-vue-next'
+import { Shield, ShieldCheck } from '@lucide/vue'
 
 const props = defineProps({
   // [{ key, group }] (GET /tokens available_abilities) or plain keys

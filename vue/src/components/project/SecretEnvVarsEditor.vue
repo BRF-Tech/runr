@@ -11,7 +11,7 @@ import { projectSecretsApi } from '@/api/security'
 import { secretStoresApi } from '@/api/secretStores'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
-import { KeyRound, Plus, Trash2, Eye, EyeOff, Pencil, Link2, RefreshCw } from 'lucide-vue-next'
+import { KeyRound, Plus, Trash2, Eye, EyeOff, Pencil, Link2, RefreshCw } from '@lucide/vue'
 
 const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/
 const RESERVED = ['PORT', 'K_SERVICE', 'K_CONFIGURATION', 'K_REVISION', 'RUNR_MODE', 'RUNR_HANDLER', 'RUNR_FILENAME']

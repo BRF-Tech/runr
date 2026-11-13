@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Ban, KeyRound, RotateCw } from 'lucide-vue-next'
+import { Ban, KeyRound, RotateCw } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { apiProductApi } from '../api/apiProduct'

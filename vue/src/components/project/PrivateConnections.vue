@@ -10,7 +10,7 @@ import { projectsApi } from '@/api/projects'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
-import { Database, Plus, Trash2, RefreshCw } from 'lucide-vue-next'
+import { Database, Plus, Trash2, RefreshCw } from '@lucide/vue'
 import TermText from '@/components/TermText.vue'
 
 const props = defineProps({

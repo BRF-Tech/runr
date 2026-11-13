@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useNotificationStore } from '@/stores/notifications'
 import { notificationTitle, notificationAction } from '@/utils/notifications'
-import { AlertTriangle, AlertCircle, Info, CheckCheck, X, Trash2 } from 'lucide-vue-next'
+import { AlertTriangle, AlertCircle, Info, CheckCheck, X, Trash2 } from '@lucide/vue'
 
 const { t }  = useI18n()
 const store  = useNotificationStore()

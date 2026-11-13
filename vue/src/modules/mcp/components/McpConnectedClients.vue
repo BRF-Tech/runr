@@ -7,7 +7,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { useRbacLabels } from '@/composables/useRbac'
 import { mcpApi } from '../api/mcp'
-import { Plug, Trash2 } from 'lucide-vue-next'
+import { Plug, Trash2 } from '@lucide/vue'
 
 const { t, locale } = useI18n()
 const { confirm } = useConfirm()

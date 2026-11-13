@@ -3,7 +3,7 @@
 // version's image, the deployed versions, the region's policy and the policy overrides.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ShieldCheck, ShieldAlert, RefreshCw, Download, X } from 'lucide-vue-next'
+import { ShieldCheck, ShieldAlert, RefreshCw, Download, X } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { useLatest } from '@/composables/useLatest'
 import { supplyChainApi, saveBlob } from '../api'

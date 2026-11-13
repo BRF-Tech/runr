@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowRight, Check, X, Undo2 } from 'lucide-vue-next'
+import { ArrowRight, Check, X, Undo2 } from '@lucide/vue'
 import { environmentsApi } from '@/api/environments'
 import { useToast } from '@/composables/useToast'
 

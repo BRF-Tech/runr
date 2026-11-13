@@ -15,7 +15,7 @@ import { patchBadge } from '@/utils/runtimePatches'
 import { isGlobalProject } from '@/utils/globalProjects'
 import { lifecycleClasses, projectEndedBy, projectLifecycleNotice } from '@/utils/runtimeLifecycle'
 import { usePermissionsStore } from '@/stores/permissions'
-import { ExternalLink, Globe, Earth, Clock, Zap, Cpu, MemoryStick, Timer, ArrowUpDown, User2 } from 'lucide-vue-next'
+import { ExternalLink, Globe, Earth, Clock, Zap, Cpu, MemoryStick, Timer, ArrowUpDown, User2 } from '@lucide/vue'
 
 const { t } = useI18n()
 const router = useRouter()

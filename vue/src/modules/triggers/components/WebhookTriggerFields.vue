@@ -4,7 +4,7 @@
 // tolerance, largest body, retention).
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight } from '@lucide/vue'
 import TermText from '@/components/TermText.vue'
 import CopyField from './CopyField.vue'
 import { HMAC_ALGORITHMS, HMAC_ENCODINGS, WEBHOOK_PRESETS } from '../utils/triggers'

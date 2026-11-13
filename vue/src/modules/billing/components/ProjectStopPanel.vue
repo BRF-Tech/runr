@@ -4,7 +4,7 @@
 // shown to its members. Unpaid bills never stop anything by themselves.
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Play, Search } from 'lucide-vue-next'
+import { Play, Search } from '@lucide/vue'
 import { projectsApi } from '@/api/projects'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useToast } from '@/composables/useToast'

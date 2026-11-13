@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectsApi } from '@/api/projects'
 import { brandColor, surfaceColor } from '@/utils/brandColor'
+import { keepAltArrowWordMoves } from '@/utils/terminalKeys'
 
 const { t } = useI18n()
 
@@ -122,6 +123,9 @@ async function init() {
       brightWhite:         surfaceColor('dark', 50),
     },
   })
+
+  // Alt+arrow moves by word, as up to xterm 5
+  keepAltArrowWordMoves(terminal)
 
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)

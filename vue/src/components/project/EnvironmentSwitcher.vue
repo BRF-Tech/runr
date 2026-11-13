@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Layers, ExternalLink, MapPin } from 'lucide-vue-next'
+import { Layers, ExternalLink, MapPin } from '@lucide/vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 
 /**

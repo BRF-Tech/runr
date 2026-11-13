@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { Box, SlidersHorizontal } from 'lucide-vue-next'
+import { Box, SlidersHorizontal } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 import en from './locales/en.js'
 import tr from './locales/tr.js'

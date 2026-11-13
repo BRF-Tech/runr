@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { tenantsApi } from '../api/tenants'
 import { useCaptcha } from '@/modules/white-label/composables/useCaptcha'
 import CaptchaField from '@/modules/white-label/components/CaptchaField.vue'
-import { CheckCircle, XCircle, Clock, Loader2 } from 'lucide-vue-next'
+import { CheckCircle, XCircle, Clock, Loader2 } from '@lucide/vue'
 
 const { t }  = useI18n()
 // The redirect after accepting: dropped when the user left the page before it

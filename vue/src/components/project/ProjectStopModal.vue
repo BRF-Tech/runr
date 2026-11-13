@@ -5,7 +5,7 @@
 // stopped, it takes the stop over: the stop becomes the platform's, with the new reason.
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X } from 'lucide-vue-next'
+import { X } from '@lucide/vue'
 import { projectsApi } from '@/api/projects'
 
 const props = defineProps({

@@ -3,7 +3,7 @@
 // trigger's inbox (stored events, replay).
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Zap } from 'lucide-vue-next'
+import { Zap } from '@lucide/vue'
 import TriggerList from './TriggerList.vue'
 import TriggerInbox from './TriggerInbox.vue'
 

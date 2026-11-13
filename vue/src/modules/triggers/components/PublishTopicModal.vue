@@ -3,7 +3,7 @@
 // optional CloudEvent type and subject. Every subscribed function receives it.
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Send } from 'lucide-vue-next'
+import { Send } from '@lucide/vue'
 import { useTopicsStore } from '../stores/topics'
 import { errorMessage, parseEventData } from '../utils/triggers'
 

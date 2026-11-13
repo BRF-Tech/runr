@@ -16,7 +16,7 @@ import {
   PROVIDERS, MULTILINE_SETTINGS, emptySettings, providerSettings, providerAuth, storePayload,
   isValidStoreName, trustSnippets,
 } from '@/utils/secretStores'
-import { LockKeyhole, Plus, Pencil, Trash2, ShieldCheck, Copy, RefreshCw, AlertTriangle } from 'lucide-vue-next'
+import { LockKeyhole, Plus, Pencil, Trash2, ShieldCheck, Copy, RefreshCw, AlertTriangle } from '@lucide/vue'
 
 const { t, te, locale } = useI18n()
 const { confirm } = useConfirm()

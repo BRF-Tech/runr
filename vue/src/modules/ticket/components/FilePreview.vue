@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, onUnmounted } from 'vue'
-import { Paperclip, X } from 'lucide-vue-next'
+import { Paperclip, X } from '@lucide/vue'
 
 const props = defineProps({
   files: { type: Array, default: () => [] },

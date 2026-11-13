@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { GitFork } from 'lucide-vue-next'
+import { GitFork } from '@lucide/vue'
 import { projectsApi } from '@/api/projects'
 import { useSettingsStore } from '@/stores/settings'
 import { envVarsToString, buildConfigPayload, runtimeAvailableIn, runtimeSupportsTrigger } from '@/composables/useProjectForm'

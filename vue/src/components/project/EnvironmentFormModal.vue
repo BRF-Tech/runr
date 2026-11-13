@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2 } from 'lucide-vue-next'
+import { Plus, Trash2 } from '@lucide/vue'
 import { environmentsApi } from '@/api/environments'
 import { useSettingsStore } from '@/stores/settings'
 import TermText from '@/components/TermText.vue'

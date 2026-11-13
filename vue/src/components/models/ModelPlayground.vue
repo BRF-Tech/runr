@@ -3,7 +3,7 @@
 // cluster-local service (POST /model-services/{id}/invoke).
 import { ref, reactive, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Play } from 'lucide-vue-next'
+import { Play } from '@lucide/vue'
 import { aiApi } from '@/api/ai'
 import { playgroundKind, playgroundRequest, playgroundResult, fileToBase64, FILE_KINDS } from '@/utils/ai'
 

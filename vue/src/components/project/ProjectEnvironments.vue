@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Pencil, Trash2, KeyRound, Rocket, GitBranch, MapPin, ShieldCheck, ExternalLink, ArrowRight, SlidersHorizontal, Flame } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, KeyRound, Rocket, GitBranch, MapPin, ShieldCheck, ExternalLink, ArrowRight, SlidersHorizontal, Flame } from '@lucide/vue'
 import { environmentsApi } from '@/api/environments'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'

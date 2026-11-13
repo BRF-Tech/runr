@@ -4,7 +4,7 @@
 // RuntimeClass, gVisor nvproxy, GPU support per project type and the region's model volume.
 import { ref, reactive, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RefreshCw, Cpu, AlertTriangle, HardDrive, Info } from 'lucide-vue-next'
+import { RefreshCw, Cpu, AlertTriangle, HardDrive, Info } from '@lucide/vue'
 import { aiApi } from '@/api/ai'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'

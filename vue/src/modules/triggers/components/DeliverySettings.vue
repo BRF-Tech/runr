@@ -3,7 +3,7 @@
 // fields keep the default, shown as the placeholder (the trigger's effective value when it has one).
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight } from '@lucide/vue'
 import { DELIVERY_FIELDS } from '../utils/triggers'
 
 const props = defineProps({

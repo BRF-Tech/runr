@@ -2,7 +2,7 @@
 // Who may call a hosted MCP server: anyone (public), holders of a RunR API token, or clients that
 // sign in through RunR's OAuth authorization server.
 import { useI18n } from 'vue-i18n'
-import { Globe, KeyRound, ShieldCheck } from 'lucide-vue-next'
+import { Globe, KeyRound, ShieldCheck } from '@lucide/vue'
 
 defineProps({
   modelValue: { type: String, default: 'token' },

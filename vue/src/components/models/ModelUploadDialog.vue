@@ -4,7 +4,7 @@
 // Kubernetes API, so the region needs no internet access.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Upload, FolderUp } from 'lucide-vue-next'
+import { X, Upload, FolderUp } from '@lucide/vue'
 import { aiApi, uploadModelFiles, uploadPath, sha256Hex, SHA256_MAX_BYTES } from '@/api/ai'
 import { isCancelled } from '@/api/errors'
 import { useSettingsStore } from '@/stores/settings'

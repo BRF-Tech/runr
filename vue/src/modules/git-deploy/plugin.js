@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { GitBranch } from 'lucide-vue-next'
+import { GitBranch } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 
 /**

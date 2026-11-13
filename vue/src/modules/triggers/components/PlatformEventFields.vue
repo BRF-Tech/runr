@@ -3,7 +3,7 @@
 // those about some projects of the organization, and how long the stored events are kept.
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Search } from 'lucide-vue-next'
+import { Search } from '@lucide/vue'
 import { projectsApi } from '@/api/projects'
 import { PLATFORM_EVENTS, eventKey } from '../utils/triggers'
 

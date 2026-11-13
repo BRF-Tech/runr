@@ -1,7 +1,7 @@
 <script setup>
 // "MCP server" chip of a project served behind the RunR MCP gateway (project.mcp_server).
 import { useI18n } from 'vue-i18n'
-import { Bot } from 'lucide-vue-next'
+import { Bot } from '@lucide/vue'
 
 defineProps({ server: { type: Object, default: null } })
 const { t } = useI18n()

@@ -8,7 +8,7 @@ import { moduleRegistry } from '@/modules/index'
 import { useLatest } from '@/composables/useLatest'
 import { onboardingApi } from '../api/whiteLabel'
 import { activeTenant, inTenantContext } from '../utils/context'
-import { Building2, MapPin, X } from 'lucide-vue-next'
+import { Building2, MapPin, X } from '@lucide/vue'
 
 const { t } = useI18n()
 const route = useRoute()

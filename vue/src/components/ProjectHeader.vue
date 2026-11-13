@@ -15,7 +15,7 @@ import { isGlobalProject } from '@/utils/globalProjects'
 import { usePermissionsStore } from '@/stores/permissions'
 import { projectStrategy } from '@/utils/deployStrategy'
 import { revealInScrollRow, rowScrollBehavior, scrollRowEdges, scrollRowPage } from '@/utils/scrollRow'
-import { MapPin, Cpu, MemoryStick, Timer, Pencil, Play, Clock, Zap, Globe, Earth, Copy, Check, ArrowUpDown, UserRound, OctagonPause, Bird, Columns2, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { MapPin, Cpu, MemoryStick, Timer, Pencil, Play, Clock, Zap, Globe, Earth, Copy, Check, ArrowUpDown, UserRound, OctagonPause, Bird, Columns2, ChevronLeft, ChevronRight } from '@lucide/vue'
 
 const { t } = useI18n()
 const router = useRouter()

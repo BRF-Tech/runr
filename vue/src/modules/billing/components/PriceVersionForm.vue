@@ -4,7 +4,7 @@
 // until then. A missing price is never zero: every field is required (0 = explicitly free).
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X } from 'lucide-vue-next'
+import { X } from '@lucide/vue'
 import { billingApi } from '../api/billing'
 import { PRICE_GROUPS, apiMessage, invalidPriceFields, priceForm, pricePayload, today } from '../utils/billing'
 

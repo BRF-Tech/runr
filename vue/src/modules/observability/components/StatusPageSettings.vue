@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ExternalLink, Globe } from 'lucide-vue-next'
+import { ExternalLink, Globe } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { observabilityApi } from '../api/observability'
 

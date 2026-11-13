@@ -2,7 +2,7 @@
 // Hugging Face Hub search through the RunR API (server-side proxy): text, task, library and sort.
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Search, Lock, Download, Heart } from 'lucide-vue-next'
+import { Search, Lock, Download, Heart } from '@lucide/vue'
 import { aiApi } from '@/api/ai'
 import { useAiStore } from '@/stores/ai'
 import { formatCount, HUB_LIBRARIES as LIBRARIES } from '@/utils/ai'

@@ -12,7 +12,7 @@ import TenantQuotas from './TenantQuotas.vue'
 import TenantResidency from '@/modules/supply-chain/components/TenantResidency.vue'
 import { useTenantDetail } from '../composables/useTenantDetail'
 import { useTenantSwitch } from '../composables/useTenantSwitch'
-import { Building2, Plus, Pencil, Trash2, ChevronDown, Users, Globe, Loader2, RotateCcw, AlertTriangle, LogIn } from 'lucide-vue-next'
+import { Building2, Plus, Pencil, Trash2, ChevronDown, Users, Globe, Loader2, RotateCcw, AlertTriangle, LogIn } from '@lucide/vue'
 
 const { t }       = useI18n()
 const { confirm }  = useConfirm()

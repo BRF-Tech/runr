@@ -11,7 +11,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { statusBadgeClass } from '@/utils/formatters'
 import { bindingStatusClass } from '@/utils/bindings'
-import { KeyRound, HardDrive, Database, RefreshCw, AlertTriangle, Activity } from 'lucide-vue-next'
+import { KeyRound, HardDrive, Database, RefreshCw, AlertTriangle, Activity } from '@lucide/vue'
 import { useLatest } from '@/composables/useLatest'
 
 const props = defineProps({

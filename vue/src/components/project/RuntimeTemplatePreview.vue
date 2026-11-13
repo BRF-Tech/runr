@@ -1,14 +1,16 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, FileCode2 } from 'lucide-vue-next'
+import { ChevronDown, FileCode2 } from '@lucide/vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import { runtimesApi } from '@/api/runtimes'
 import { useLatest } from '@/composables/useLatest'
 
-// Starter code the new project gets from the runtime manifest (template.files)
+// Starter code the new project gets from the runtime manifest (template.files; a version with a
+// starter of its own, such as an SDK generation side by side, gives its versions[].template)
 const props = defineProps({
   runtime:     { type: String, default: null },
+  version:     { type: String, default: null },
   serviceType: { type: String, default: 'xaas' },
 })
 
@@ -25,7 +27,7 @@ let loadedFor = null
 const latest = useLatest()
 async function load() {
   const current = latest.begin()
-  const key = `${props.runtime}:${props.serviceType}`
+  const key = `${props.runtime}:${props.version ?? ''}:${props.serviceType}`
   if (!props.runtime || loadedFor === key) {
     loading.value = false
     return
@@ -33,7 +35,9 @@ async function load() {
   loading.value = true
   failed.value  = false
   try {
-    const { data } = await runtimesApi.template(props.runtime, { service_type: props.serviceType })
+    const params = { service_type: props.serviceType }
+    if (props.version) params.version = props.version
+    const { data } = await runtimesApi.template(props.runtime, params)
     if (!current()) return
     files.value  = data.files ?? {}
     active.value = Object.keys(files.value)[0] ?? null
@@ -48,7 +52,7 @@ async function load() {
 }
 
 watch(open, (v) => { if (v) load() })
-watch(() => [props.runtime, props.serviceType], () => { if (open.value) load() })
+watch(() => [props.runtime, props.version, props.serviceType], () => { if (open.value) load() })
 
 const names = computed(() => Object.keys(files.value))
 </script>

@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { LifeBuoy } from 'lucide-vue-next'
+import { LifeBuoy } from '@lucide/vue'
 import { useBrandingStore } from '@/modules/white-label/stores/branding'
 import { usePermissionsStore } from '@/stores/permissions'
 import en from './locales/en.js'

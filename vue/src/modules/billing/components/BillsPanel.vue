@@ -5,7 +5,7 @@
 // paid status of closed bills (normally the invoicing system does, through the API).
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Receipt } from 'lucide-vue-next'
+import { Receipt } from '@lucide/vue'
 import { useLatest } from '@/composables/useLatest'
 import { billingApi } from '../api/billing'
 import { apiMessage, can, recentPeriods } from '../utils/billing'

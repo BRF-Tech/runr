@@ -6,7 +6,7 @@
 //   eol/sunset  the version ended: saving and deploying are refused, running deployments stay
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle, OctagonX } from 'lucide-vue-next'
+import { AlertTriangle, OctagonX } from '@lucide/vue'
 import { projectLifecycleNotice } from '@/utils/runtimeLifecycle'
 import { runtimeLabel } from '@/utils/runtimes'
 

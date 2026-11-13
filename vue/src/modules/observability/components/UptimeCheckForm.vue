@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, X } from 'lucide-vue-next'
+import { Plus, X } from '@lucide/vue'
 import { rowsToObject, splitList } from '../utils/format'
 
 /** Create / edit an uptime check. Headers are write-only: an edit leaves them unless re-entered. */

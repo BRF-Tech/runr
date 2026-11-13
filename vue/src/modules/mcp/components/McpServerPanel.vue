@@ -9,7 +9,7 @@ import { mcpApi } from '../api/mcp'
 import AccessModePicker from './AccessModePicker.vue'
 import CopyBlock from './CopyBlock.vue'
 import McpClientSnippets from './McpClientSnippets.vue'
-import { KeyRound, RefreshCw, Power } from 'lucide-vue-next'
+import { KeyRound, RefreshCw, Power } from '@lucide/vue'
 
 const props = defineProps({
   project:   { type: Object, required: true },

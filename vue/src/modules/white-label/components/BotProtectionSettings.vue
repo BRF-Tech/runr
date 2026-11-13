@@ -9,7 +9,7 @@
 // (tutorialSteps.js botProtectionSteps).
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ShieldAlert } from 'lucide-vue-next'
+import { ShieldAlert } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { useTutorialStore } from '@/stores/tutorial'
 import { createTutorial } from '@/composables/useTutorial'

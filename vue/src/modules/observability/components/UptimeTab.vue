@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { HeartPulse, Pencil, Play, Plus, Trash2 } from 'lucide-vue-next'
+import { HeartPulse, Pencil, Play, Plus, Trash2 } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { usePermissionsStore } from '@/stores/permissions'

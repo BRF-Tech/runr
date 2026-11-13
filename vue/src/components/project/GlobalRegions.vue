@@ -13,7 +13,7 @@ import {
 } from '@/utils/globalProjects'
 import {
   Globe, Copy, Check, ExternalLink, RefreshCw, Plus, Trash2, Star, AlertTriangle, Zap, Database, ArrowRightLeft,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 // Regions tab of a global project (docs/global-projects.md): the global host name, the DNS mode,
 // the failover setting and every region's copy — status, version, health, whether DNS answers it,

@@ -5,11 +5,10 @@
 // own ESM build (dist/purify.es.mjs), so the package takes its place one to one; package.json
 // names dompurify as a dependency and its `overrides` give monaco-editor the same version, so the
 // version npm audit reads is the one in the bundle. In the build and in the dev server's
-// dependency pre-bundling (esbuild) alike.
+// dependency pre-bundling alike (both Rolldown since Vite 8).
 //
 // A build in which the redirect did not happen fails: a monaco-editor that moves or drops its copy
 // is looked at (does it still ship an old DOMPurify?) instead of bundling it unnoticed.
-import { dirname } from 'node:path'
 
 /** How domSanitize.js imports monaco-editor's DOMPurify copy. */
 export const VENDORED_IMPORT = './dompurify/dompurify.js'
@@ -21,15 +20,12 @@ export function isVendoredDompurify(source, importer) {
   return source === VENDORED_IMPORT && typeof importer === 'string' && SANITIZER.test(importer.split('?')[0])
 }
 
-/** The same redirect for esbuild, which pre-bundles monaco-editor for the dev server. */
-export const esbuildMonacoDompurify = {
-  name: 'runr-monaco-dompurify',
-  setup(build) {
-    build.onResolve({ filter: /^\.\/dompurify\/dompurify\.js$/ }, async (args) => {
-      if (!isVendoredDompurify(args.path, args.importer)) return undefined
-      const resolved = await build.resolve('dompurify', { kind: args.kind, resolveDir: dirname(args.importer) })
-      return resolved.errors.length ? { errors: resolved.errors } : { path: resolved.path }
-    })
+/** The same redirect for the dev server's pre-bundling of monaco-editor (a Rolldown plugin). */
+export const depsMonacoDompurify = {
+  name: 'runr-monaco-dompurify-deps',
+  async resolveId(source, importer, options) {
+    if (!isVendoredDompurify(source, importer)) return null
+    return this.resolve('dompurify', importer, { ...options, skipSelf: true })
   },
 }
 
@@ -39,7 +35,7 @@ export function monacoDompurifyPlugin() {
   return {
     name: 'runr-monaco-dompurify',
     enforce: 'pre',
-    config: () => ({ optimizeDeps: { esbuildOptions: { plugins: [esbuildMonacoDompurify] } } }),
+    config: () => ({ optimizeDeps: { rolldownOptions: { plugins: [depsMonacoDompurify] } } }),
     configResolved(config) { command = config.command },
     async resolveId(source, importer, options) {
       if (!isVendoredDompurify(source, importer)) return null

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Globe } from 'lucide-vue-next'
+import { Globe } from '@lucide/vue'
 import { settingsApi } from '@/api/settings'
 import { useSettingsStore } from '@/stores/settings'
 

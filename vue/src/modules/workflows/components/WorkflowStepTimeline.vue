@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Play, Moon, Radio, GitBranch, Send, ChevronDown, ChevronRight, RotateCcw, ExternalLink,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import WorkflowStatusBadge from './WorkflowStatusBadge.vue'
 import JsonBlock from './JsonBlock.vue'
 import { formatDuration, formatTime, stepPending } from '../utils/format'

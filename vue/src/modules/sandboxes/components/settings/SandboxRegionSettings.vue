@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle, MapPin } from 'lucide-vue-next'
+import { AlertTriangle, MapPin } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { sandboxAdminApi } from '../../api/sandboxes'
 import { apiError } from '../../utils'

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Settings2, Eye } from 'lucide-vue-next'
+import { Settings2, Eye } from '@lucide/vue'
 import { PROJECT_GIT } from '@/composables/useProjectGit'
 import GitToggle from '@/components/git/GitToggle.vue'
 import TermText from '@/components/TermText.vue'

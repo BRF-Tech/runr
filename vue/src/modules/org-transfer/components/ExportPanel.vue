@@ -5,7 +5,7 @@
 // before the export can start. The passphrase and S3 keys are sent with the start request only.
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { PackageOpen, Download, FileText } from 'lucide-vue-next'
+import { PackageOpen, Download, FileText } from '@lucide/vue'
 import { orgTransferApi, unwrap, exportPayload, estimatePayload, MIN_PASSPHRASE, ACTIVE_STATUSES } from '../api'
 import { useToast } from '@/composables/useToast'
 import { formatBytes } from '@/utils/ai'

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { CheckCircle2, AlertTriangle, XCircle, HelpCircle } from 'lucide-vue-next'
+import { CheckCircle2, AlertTriangle, XCircle, HelpCircle } from '@lucide/vue'
 import { observabilityApi } from '../api/observability'
 import { formatPercent, formatSeconds } from '../utils/format'
 import UptimeBars from './UptimeBars.vue'

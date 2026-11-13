@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { ShieldCheck, UsersRound } from 'lucide-vue-next'
+import { ShieldCheck, UsersRound } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 import PermissionsLoader from '@/components/rbac/PermissionsLoader.vue'
 

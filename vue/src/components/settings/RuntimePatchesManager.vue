@@ -7,7 +7,7 @@
 // releases the feed announces.
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RefreshCw, ShieldAlert, ChevronDown, ChevronRight, ExternalLink, BellRing, Zap, CalendarClock } from 'lucide-vue-next'
+import { RefreshCw, ShieldAlert, ChevronDown, ChevronRight, ExternalLink, BellRing, Zap, CalendarClock } from '@lucide/vue'
 import { runtimePatchesApi } from '@/api/runtimePatches'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { KeyRound, RefreshCw, Save, Eye, Radio } from 'lucide-vue-next'
+import { KeyRound, RefreshCw, Save, Eye, Radio } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { workflowsApi } from '../api/workflows'

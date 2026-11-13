@@ -4,7 +4,7 @@
 // unfinished uploads) and delete.
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Package, Upload, RefreshCw, Trash2, Copy } from 'lucide-vue-next'
+import { Package, Upload, RefreshCw, Trash2, Copy } from '@lucide/vue'
 import { imagesApi } from '../api'
 import ImageUploadDialog from './ImageUploadDialog.vue'
 import { useSettingsStore } from '@/stores/settings'

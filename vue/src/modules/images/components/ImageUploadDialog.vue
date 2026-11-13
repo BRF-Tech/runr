@@ -4,7 +4,7 @@
 // stopped (reload, network) resumes from what the region already has — pass it as `resume`.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Upload } from 'lucide-vue-next'
+import { X, Upload } from '@lucide/vue'
 import { imagesApi, uploadImageFile, fileSha256, nameFromFilename, validName } from '../api'
 import { isCancelled } from '@/api/errors'
 import { useSettingsStore } from '@/stores/settings'

@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { GitBranch, Plus, Pencil, Trash2, Copy } from 'lucide-vue-next'
+import { GitBranch, Plus, Pencil, Trash2, Copy } from '@lucide/vue'
 import { gitApi } from '@/api/git'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'

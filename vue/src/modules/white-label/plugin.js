@@ -3,7 +3,7 @@
 // forms (docs/security.md#bot-protection). Billing is the Billing module's.
 // Auto-loaded by modules/index.js (core plugin glob).
 import { defineAsyncComponent, markRaw } from 'vue'
-import { Palette, UserPlus, Brush, Bot } from 'lucide-vue-next'
+import { Palette, UserPlus, Brush, Bot } from '@lucide/vue'
 import router from '@/router'
 import { applyBranding, readCachedBranding } from './utils/branding'
 import { canInTenant, canManageInstall, isMultiTenantBuild } from './utils/context'

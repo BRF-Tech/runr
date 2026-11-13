@@ -1,6 +1,6 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
-import { ArrowDownToLine, ArrowUpDown, Clock, Minus, Plus } from 'lucide-vue-next'
+import { ArrowDownToLine, ArrowUpDown, Clock, Minus, Plus } from '@lucide/vue'
 import TermText from '@/components/TermText.vue'
 import WarmerSchedule from '@/components/project/WarmerSchedule.vue'
 import { defaultWarmerRows } from '@/utils/warmSchedule'

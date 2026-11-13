@@ -6,7 +6,7 @@
 // kept, replaced or removed. RunR's catalog (the default source) only changes interval and on/off.
 import { ref, reactive, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { GitBranch, Package, Loader2, CheckCircle2, XCircle, AlertTriangle, ShieldCheck, PlugZap } from 'lucide-vue-next'
+import { GitBranch, Package, Loader2, CheckCircle2, XCircle, AlertTriangle, ShieldCheck, PlugZap } from '@lucide/vue'
 import SourceSecretField from '@/components/settings/runtimes/SourceSecretField.vue'
 import TermText from '@/components/TermText.vue'
 import { runtimeSourcesApi } from '@/api/runtimeSources'

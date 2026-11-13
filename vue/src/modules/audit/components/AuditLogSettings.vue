@@ -5,7 +5,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
 import { useAuditLog } from '../composables/useAuditLog'
-import { ScrollText, Download, X, ChevronLeft, ChevronRight, Filter, RotateCcw } from 'lucide-vue-next'
+import { ScrollText, Download, X, ChevronLeft, ChevronRight, Filter, RotateCcw } from '@lucide/vue'
 
 const { t, locale } = useI18n()
 const toast = useToast()

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Link2, ExternalLink, Unlink, Search, Check } from 'lucide-vue-next'
+import { Link2, ExternalLink, Unlink, Search, Check } from '@lucide/vue'
 import { PROJECT_GIT } from '@/composables/useProjectGit'
 import { usePermissionsStore } from '@/stores/permissions'
 import TermText from '@/components/TermText.vue'

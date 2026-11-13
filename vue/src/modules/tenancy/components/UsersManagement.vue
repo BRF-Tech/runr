@@ -9,7 +9,7 @@ import { useLatest } from '@/composables/useLatest'
 import { useTutorialStore } from '@/stores/tutorial'
 import { createTutorial } from '@/composables/useTutorial'
 import TenantUsers from './TenantUsers.vue'
-import { Users, Pencil, Trash2, ShieldCheck, ShieldOff } from 'lucide-vue-next'
+import { Users, Pencil, Trash2, ShieldCheck, ShieldOff } from '@lucide/vue'
 
 const { t }       = useI18n()
 const { confirm }  = useConfirm()

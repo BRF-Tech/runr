@@ -295,6 +295,8 @@ test('one-click Hugging Face model: browse, deploy, playground, bind to a projec
   await dialog.getByTestId('deploy-region').selectOption('r1')
   await dialog.getByTestId('deploy-submit').click()
 
+  // the click returns before the POST reaches the fake: wait for it, then read it
+  await expect.poll(() => api.serviceCreates.length).toBe(1)
   expect(api.serviceCreates[0]).toMatchObject({
     hub_id: 'sentence-transformers/all-MiniLM-L6-v2', revision: '8b3219a92973c328a8e22fadcfa821b5dc75636a',
     knative_region_id: 'r1', mode: 'online', device: 'cpu', engine: 'auto', deploy: true,
@@ -324,6 +326,7 @@ test('one-click Hugging Face model: browse, deploy, playground, bind to a projec
   await expect(models.getByTestId('bind-env-preview')).toContainText('RUNR_MODEL_EMBED_URL=http://m-all-minilm-l6-v2.fn.svc.cluster.local')
   await models.getByTestId('bind-submit').click()
 
+  await expect.poll(() => api.bindCreates.length).toBe(1)
   expect(api.bindCreates[0]).toEqual({ ai_model_service_id: 'ms1', alias: 'EMBED', mount_weights: false })
   const bound = models.locator('[data-binding="EMBED"]')
   await expect(bound.getByTestId('binding-env')).toContainText('RUNR_MODEL_EMBED_OPENAI_BASE=http://m-all-minilm-l6-v2.fn.svc.cluster.local/v1')

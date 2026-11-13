@@ -6,7 +6,7 @@
 // project's lines name the environment their usage came from when it ran in more than production.
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ExternalLink } from 'lucide-vue-next'
+import { ChevronDown, ExternalLink } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { apiMessage, formatDate, formatMoney, formatNumber, formatPeriod, formatUnitPrice } from '../utils/billing'
 

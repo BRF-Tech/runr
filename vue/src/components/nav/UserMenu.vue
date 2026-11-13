@@ -8,7 +8,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { CircleHelp, Languages, LogOut, Moon, Sun } from 'lucide-vue-next'
+import { CircleHelp, Languages, LogOut, Moon, Sun } from '@lucide/vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTutorialStore } from '@/stores/tutorial'
 import { useTheme } from '@/composables/useTheme'

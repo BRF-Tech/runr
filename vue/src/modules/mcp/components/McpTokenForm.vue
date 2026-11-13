@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { useApiTokens } from '@/composables/useApiTokens'
 import AbilityPicker from '@/components/settings/AbilityPicker.vue'
 import TokenExpiryPicker from '@/components/settings/TokenExpiryPicker.vue'
-import { Key, Plus, Copy, Check } from 'lucide-vue-next'
+import { Key, Plus, Copy, Check } from '@lucide/vue'
 
 const emit = defineEmits(['created'])
 const { t } = useI18n()

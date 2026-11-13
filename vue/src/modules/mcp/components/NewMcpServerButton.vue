@@ -4,7 +4,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usePermissionsStore } from '@/stores/permissions'
 import CreateMcpServerModal from './CreateMcpServerModal.vue'
-import { Bot } from 'lucide-vue-next'
+import { Bot } from '@lucide/vue'
 
 defineProps({
   hasReadyRegion: { type: Boolean, default: true },

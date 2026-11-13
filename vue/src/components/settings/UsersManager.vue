@@ -5,7 +5,7 @@ import { useUsersManager } from '@/composables/useUsersManager'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useRbacLabels } from '@/composables/useRbac'
 import RoleSelect from '@/components/rbac/RoleSelect.vue'
-import { Plus, ShieldOff, ShieldCheck } from 'lucide-vue-next'
+import { Plus, ShieldOff, ShieldCheck } from '@lucide/vue'
 
 const { t } = useI18n()
 const perms = usePermissionsStore()

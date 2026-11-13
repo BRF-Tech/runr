@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Ban, RefreshCw, RotateCcw, Repeat, Copy } from 'lucide-vue-next'
+import { ArrowLeft, Ban, RefreshCw, RotateCcw, Repeat, Copy } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useLatest } from '@/composables/useLatest'

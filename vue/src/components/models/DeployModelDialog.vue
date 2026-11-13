@@ -4,7 +4,7 @@
 // pick for the task and size), resources, scaling and an advanced image / args / env override.
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Info, ChevronDown, ChevronRight, Globe, ShieldOff } from 'lucide-vue-next'
+import { X, Info, ChevronDown, ChevronRight, Globe, ShieldOff } from '@lucide/vue'
 import { aiApi } from '@/api/ai'
 import { useAiStore } from '@/stores/ai'
 import { useSettingsStore } from '@/stores/settings'

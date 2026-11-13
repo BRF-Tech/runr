@@ -6,7 +6,7 @@
 // data-captcha-solve-ms carries how long the local check took (the e2e tests measure it).
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Loader2, ShieldCheck, ShieldAlert } from 'lucide-vue-next'
+import { Loader2, ShieldCheck, ShieldAlert } from '@lucide/vue'
 import CaptchaWidget from './CaptchaWidget.vue'
 
 const props = defineProps({

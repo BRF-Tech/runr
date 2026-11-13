@@ -4,6 +4,18 @@ import { afterEach } from 'vitest'
 // entrypoint) has no window: the browser shims below are for jsdom
 const browser = typeof window !== 'undefined'
 
+// Node.js 25 and later have a Web Storage of their own on globalThis (on by default; without
+// --localstorage-file its localStorage is undefined), and Vitest's jsdom environment leaves
+// Node's in place: the window gets jsdom's localStorage and sessionStorage back, as in a browser.
+if (browser && globalThis.jsdom?.window) {
+  for (const name of ['localStorage', 'sessionStorage']) {
+    const storage = globalThis.jsdom.window[name]
+    if (Object.getOwnPropertyDescriptor(globalThis, name)?.value !== storage) {
+      Object.defineProperty(globalThis, name, { value: storage, configurable: true, enumerable: true, writable: true })
+    }
+  }
+}
+
 // jsdom has no layout engine; vue-router's scrollBehavior calls this on navigation.
 if (browser) window.scrollTo = () => {}
 

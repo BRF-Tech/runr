@@ -10,7 +10,7 @@ import {
   PROTOCOL_VERSION, rpc, initializeMessage, responseFor, formFields, initialValues, argumentsFromForm,
 } from '../utils/inspector'
 import JsonBlock from '@/modules/workflows/components/JsonBlock.vue'
-import { Plug, Play, List, FileText, MessageSquare, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { Plug, Play, List, FileText, MessageSquare, ChevronDown, ChevronRight } from '@lucide/vue'
 
 const props = defineProps({ project: { type: Object, required: true } })
 const { t } = useI18n()

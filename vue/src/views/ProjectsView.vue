@@ -25,7 +25,7 @@ import CreateProjectModal from '@/components/CreateProjectModal.vue'
 import EditProjectModal from '@/components/EditProjectModal.vue'
 import RuntimePatchDialog from '@/components/project/RuntimePatchDialog.vue'
 import { moduleRegistry } from '@/modules/index'
-import { Gauge, Inbox, LayoutGrid } from 'lucide-vue-next'
+import { Gauge, Inbox, LayoutGrid } from '@lucide/vue'
 
 const { t, locale } = useI18n()
 const route         = useRoute()

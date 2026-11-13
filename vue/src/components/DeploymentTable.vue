@@ -6,7 +6,7 @@ import { usePermissionsStore } from '@/stores/permissions'
 import TermText from '@/components/TermText.vue'
 import { isLegacyServiceType } from '@/utils/projectHelpers'
 import { asRollout, projectStrategy, rolloutRoles, keepsPrevious, holdsTraffic, clockTime } from '@/utils/deployStrategy'
-import { SlidersHorizontal } from 'lucide-vue-next'
+import { SlidersHorizontal } from '@lucide/vue'
 
 const { t, locale } = useI18n()
 

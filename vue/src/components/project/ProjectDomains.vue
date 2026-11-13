@@ -11,7 +11,7 @@ import { useSettingsStore } from '@/stores/settings'
 import {
   Globe, Copy, Check, ExternalLink, Lock, Trash2, RefreshCw,
   ChevronDown, ChevronRight, Plus, AlertTriangle, ShieldCheck,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 const props = defineProps({
   projectId: { type: [String, Number], required: true },

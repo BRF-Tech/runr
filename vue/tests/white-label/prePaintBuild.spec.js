@@ -1,5 +1,5 @@
 // @vitest-environment node
-// esbuild (which the plugin bundles with) does not run under jsdom: the built script runs in a
+// Vite's build (which the plugin bundles with) does not run under jsdom: the built script runs in a
 // JSDOM window of its own here.
 import { beforeAll, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'

@@ -4,7 +4,7 @@
 // page of an organization). Shapes and rules: @/utils/capacityBudgets.
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Cpu, MemoryStick } from 'lucide-vue-next'
+import { Cpu, MemoryStick } from '@lucide/vue'
 import { budgetRows, pct, barWidth, fillColor } from '@/utils/capacityBudgets'
 
 const props = defineProps({

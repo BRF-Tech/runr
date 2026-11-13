@@ -1,7 +1,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Flame } from 'lucide-vue-next'
+import { Plus, Trash2, Flame } from '@lucide/vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { useRuntimesStore } from '@/stores/runtimes'

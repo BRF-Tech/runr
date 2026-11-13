@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { Workflow as WorkflowIcon, Play, Pause, AlertTriangle, Clock, Radio, Zap } from 'lucide-vue-next'
+import { Workflow as WorkflowIcon, Play, Pause, AlertTriangle, Clock, Radio, Zap } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { usePermissionsStore } from '@/stores/permissions'
 import { workflowsApi } from '../api/workflows'

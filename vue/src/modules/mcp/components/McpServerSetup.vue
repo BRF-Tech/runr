@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mcpApi } from '../api/mcp'
 import AccessModePicker from './AccessModePicker.vue'
-import { Bot } from 'lucide-vue-next'
+import { Bot } from '@lucide/vue'
 
 const props = defineProps({ project: { type: Object, required: true } })
 const emit = defineEmits(['saved'])

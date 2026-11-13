@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Clock, Pause, Play, Square, TerminalSquare, Zap } from 'lucide-vue-next'
+import { X, Clock, Pause, Play, Square, TerminalSquare, Zap } from '@lucide/vue'
 import SandboxStatusBadge from './SandboxStatusBadge.vue'
 import SandboxFileBrowser from './SandboxFileBrowser.vue'
 import SandboxProcesses from './SandboxProcesses.vue'

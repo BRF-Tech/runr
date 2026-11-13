@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Lock, FolderKanban } from 'lucide-vue-next'
+import { Lock, FolderKanban } from '@lucide/vue'
 import { useRbacLabels, expandPermissions } from '@/composables/useRbac'
 
 /**

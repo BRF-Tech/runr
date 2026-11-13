@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Eye, ShieldAlert, Waypoints } from 'lucide-vue-next'
+import { Eye, ShieldAlert, Waypoints } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useSettingsStore } from '@/stores/settings'

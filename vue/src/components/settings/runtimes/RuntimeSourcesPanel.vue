@@ -7,7 +7,7 @@
 // Runtime managers also choose the Built-in runtimes the platform offers.
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, RefreshCw, Pencil, Trash2, ChevronDown, ChevronRight, GitBranch, Package, ShieldCheck, ShieldAlert, Info } from 'lucide-vue-next'
+import { Plus, RefreshCw, Pencil, Trash2, ChevronDown, ChevronRight, GitBranch, Package, ShieldCheck, ShieldAlert, Info } from '@lucide/vue'
 import RuntimeSourceModal from '@/components/settings/runtimes/RuntimeSourceModal.vue'
 import RuntimeSourceDetail from '@/components/settings/runtimes/RuntimeSourceDetail.vue'
 import BuiltinRuntimesCard from '@/components/settings/runtimes/BuiltinRuntimesCard.vue'

@@ -6,7 +6,7 @@
 // decide (an open recommendation) or to deploy (an applied size the running deployment lacks).
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Gauge, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { Gauge, ChevronDown, ChevronUp } from '@lucide/vue'
 import { rightsizingApi } from '@/api/rightsizing'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useToast } from '@/composables/useToast'

@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectsApi } from '@/api/projects'
 import { saveBlob } from '@/modules/supply-chain/api'
-import { Lock } from 'lucide-vue-next'
+import { Lock } from '@lucide/vue'
 
 const { t } = useI18n()
 

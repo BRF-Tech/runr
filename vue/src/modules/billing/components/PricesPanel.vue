@@ -6,7 +6,7 @@
 // prices → (tenant) the platform's default prices → RunR's defaults.
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { History, Plus, Trash2 } from 'lucide-vue-next'
+import { History, Plus, Trash2 } from '@lucide/vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { billingApi } from '../api/billing'

@@ -5,7 +5,7 @@
 // while the socket is down the open transfers are polled.
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArchiveRestore, RefreshCw, Download, X, FileText, Play } from 'lucide-vue-next'
+import { ArchiveRestore, RefreshCw, Download, X, FileText, Play } from '@lucide/vue'
 import { orgTransferApi, unwrap, savePackage, ACTIVE_STATUSES } from '../api'
 import ExportPanel from './ExportPanel.vue'
 import ImportPanel from './ImportPanel.vue'

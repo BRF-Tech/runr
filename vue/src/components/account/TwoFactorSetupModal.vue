@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X } from 'lucide-vue-next'
+import { X } from '@lucide/vue'
 import QRCode from 'qrcode'
 import { useRecoveryCodesPdf } from '@/composables/useRecoveryCodesPdf'
 

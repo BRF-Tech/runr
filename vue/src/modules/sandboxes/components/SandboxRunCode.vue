@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Play } from 'lucide-vue-next'
+import { Play } from '@lucide/vue'
 import { sandboxesApi } from '../api/sandboxes'
 import { RUN_LANGUAGES, apiError, defaultLanguage, extraRunLanguage, formatBytes } from '../utils'
 

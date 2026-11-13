@@ -1,7 +1,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Box, Plus, X, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { Box, Plus, X, ChevronDown, ChevronRight } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { useRuntimesStore } from '@/stores/runtimes'
 import { pickableVersions } from '@/utils/runtimeLifecycle'

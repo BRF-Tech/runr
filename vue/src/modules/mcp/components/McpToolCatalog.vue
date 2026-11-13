@@ -5,7 +5,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRbacLabels } from '@/composables/useRbac'
 import { mcpApi } from '../api/mcp'
-import { Lock, Search } from 'lucide-vue-next'
+import { Lock, Search } from '@lucide/vue'
 import TermText from '@/components/TermText.vue'
 
 const { t, te } = useI18n()

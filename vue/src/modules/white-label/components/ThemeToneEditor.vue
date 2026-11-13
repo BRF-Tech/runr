@@ -6,7 +6,7 @@
 // { shade: "#rrggbb" | "" } | null (null: every shade derived).
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RotateCcw, TriangleAlert } from 'lucide-vue-next'
+import { RotateCcw, TriangleAlert } from '@lucide/vue'
 import { SURFACE_SHADES, contrastRatio, editorSurfaceScale, isHexColor, normalizeHex, readableTextOn } from '../utils/color'
 
 const props = defineProps({

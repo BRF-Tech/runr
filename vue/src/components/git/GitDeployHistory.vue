@@ -1,7 +1,7 @@
 <script setup>
 import { inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { History, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { History, ChevronDown, ChevronRight } from '@lucide/vue'
 import { PROJECT_GIT } from '@/composables/useProjectGit'
 import GitStatusBadge from '@/components/git/GitStatusBadge.vue'
 import TermText from '@/components/TermText.vue'

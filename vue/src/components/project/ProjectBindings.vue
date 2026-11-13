@@ -16,7 +16,7 @@ import {
   envNames, bindingEnvNames, envConflicts, isValidPrefix, isValidName, normalizePrefix,
   bindingStatusClass, bindingPayload, defaultSettings, isBusy, fmtBytes, limitBytes,
 } from '@/utils/bindings'
-import { Database, HardDrive, Boxes, KeyRound, Plus, Pencil, RefreshCw, Eye, Copy, X, Check, AlertTriangle } from 'lucide-vue-next'
+import { Database, HardDrive, Boxes, KeyRound, Plus, Pencil, RefreshCw, Eye, Copy, X, Check, AlertTriangle } from '@lucide/vue'
 import { useLatest } from '@/composables/useLatest'
 
 const props = defineProps({ project: { type: Object, required: true } })

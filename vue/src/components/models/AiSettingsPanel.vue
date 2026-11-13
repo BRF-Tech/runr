@@ -3,7 +3,7 @@
 // encrypted, handed to the regions as a Kubernetes Secret) and the GPU quota per region.
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { KeyRound, Cpu } from 'lucide-vue-next'
+import { KeyRound, Cpu } from '@lucide/vue'
 import { aiApi } from '@/api/ai'
 import { useAiStore } from '@/stores/ai'
 import { useSettingsStore } from '@/stores/settings'

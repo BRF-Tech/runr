@@ -4,7 +4,7 @@
 // could not do, lists every item and the manual steps that remain (DNS, secrets to enter again).
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X } from 'lucide-vue-next'
+import { X } from '@lucide/vue'
 import { formatBytes } from '@/utils/ai'
 
 const { t } = useI18n()

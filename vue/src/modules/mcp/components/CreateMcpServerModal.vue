@@ -1,6 +1,7 @@
 <script setup>
-// One-click hosted MCP server: a project from a starter (Python with FastMCP, TypeScript with
-// the official SDK) or an existing image, served behind the RunR gateway (docs/mcp.md).
+// One-click hosted MCP server: a project from a starter (Python with `MCPServer` of the MCP Python
+// SDK 2, TypeScript with the official SDK) or an existing image, served behind the RunR gateway
+// (docs/mcp.md).
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -13,7 +14,7 @@ import { slugError, projectSlug } from '@/composables/projectValidation'
 import RegionSelector from '@/components/project/RegionSelector.vue'
 import { mcpApi } from '../api/mcp'
 import AccessModePicker from './AccessModePicker.vue'
-import { Bot, Box, Container, Loader2 } from 'lucide-vue-next'
+import { Bot, Box, Container, Loader2 } from '@lucide/vue'
 
 const props = defineProps({
   existingNames: { type: Array, default: () => [] },

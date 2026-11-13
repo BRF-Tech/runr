@@ -4,7 +4,7 @@
 // payment link of a closed bill, set by the invoicing system.
 import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Wallet } from 'lucide-vue-next'
+import { Wallet } from '@lucide/vue'
 import { billingApi } from '../api/billing'
 import { apiMessage, currentPeriod, formatMoney, recentPeriods } from '../utils/billing'
 import BillRow from './BillRow.vue'

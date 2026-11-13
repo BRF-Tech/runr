@@ -9,7 +9,7 @@ import { useToast } from '@/composables/useToast'
 import { useSettingsStore } from '@/stores/settings'
 import { signupApi } from '../api/whiteLabel'
 import { parseDomains } from '../utils/signup'
-import { ShieldCheck } from 'lucide-vue-next'
+import { ShieldCheck } from '@lucide/vue'
 
 const { t } = useI18n()
 const toast = useToast()

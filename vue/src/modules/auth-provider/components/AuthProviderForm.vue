@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Key, Shield, ShieldCheck, Settings, Layers, Copy, Users } from 'lucide-vue-next'
+import { Key, Shield, ShieldCheck, Settings, Layers, Copy, Users } from '@lucide/vue'
 import { rbacApi } from '@/api/rbac'
 import RoleSelect from '@/components/rbac/RoleSelect.vue'
 import TermText from '@/components/TermText.vue'

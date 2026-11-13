@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BellRing, Pencil, Plus, Send, Trash2, RefreshCw } from 'lucide-vue-next'
+import { BellRing, Pencil, Plus, Send, Trash2, RefreshCw } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useLatest } from '@/composables/useLatest'

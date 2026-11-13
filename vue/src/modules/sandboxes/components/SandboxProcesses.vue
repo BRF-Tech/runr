@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RefreshCw, Square } from 'lucide-vue-next'
+import { RefreshCw, Square } from '@lucide/vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { sandboxesApi } from '../api/sandboxes'

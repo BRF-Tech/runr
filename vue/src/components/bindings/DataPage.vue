@@ -14,7 +14,7 @@ import {
   BINDING_TYPES, bindingStatusClass, bindingPayload, defaultSettings, isValidName, isBusy,
   fmtBytes, limitBytes, usagePercent,
 } from '@/utils/bindings'
-import { Database, HardDrive, Boxes, KeyRound, Plus, RefreshCw, Trash2, Undo2, Eye, Copy } from 'lucide-vue-next'
+import { Database, HardDrive, Boxes, KeyRound, Plus, RefreshCw, Trash2, Undo2, Eye, Copy } from '@lucide/vue'
 import { useLatest } from '@/composables/useLatest'
 
 const { t, locale } = useI18n()

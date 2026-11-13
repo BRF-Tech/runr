@@ -5,7 +5,7 @@
 // Clicking it opens the RuntimePatchDialog (the parent decides, @open).
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ShieldAlert, Pin, ShieldCheck } from 'lucide-vue-next'
+import { ShieldAlert, Pin, ShieldCheck } from '@lucide/vue'
 import { levelKey, patchBadge } from '@/utils/runtimePatches'
 
 const props = defineProps({

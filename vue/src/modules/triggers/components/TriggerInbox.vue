@@ -4,7 +4,7 @@
 // attempts and last error; replay one event or every failed one.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, RefreshCw, RotateCcw, X } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, RotateCcw, X } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'

@@ -5,7 +5,7 @@
 // keep deploying. Replaces EXECUTOR_RUNTIMES: until saved, that variable is the value.
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Boxes, Loader2 } from 'lucide-vue-next'
+import { Boxes, Loader2 } from '@lucide/vue'
 import { runtimeCatalogApi } from '@/api/runtimeSources'
 import { apiErrorMessage } from '@/composables/useRuntimesManager'
 import { useRuntimesStore } from '@/stores/runtimes'

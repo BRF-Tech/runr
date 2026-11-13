@@ -3,7 +3,7 @@
 // clients connected through OAuth and the tool catalog (docs/mcp.md).
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Lock } from 'lucide-vue-next'
+import { Lock } from '@lucide/vue'
 import { usePermissionsStore } from '@/stores/permissions'
 import { mcpApi } from '../api/mcp'
 import CopyBlock from './CopyBlock.vue'

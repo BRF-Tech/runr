@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { Activity, AlertTriangle, Search, Snowflake } from 'lucide-vue-next'
+import { Activity, AlertTriangle, Search, Snowflake } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { usePermissionsStore } from '@/stores/permissions'
 import { observabilityApi } from '../api/observability'

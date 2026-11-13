@@ -1,7 +1,7 @@
 <script setup>
 import { computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Lock } from 'lucide-vue-next'
+import { Lock } from '@lucide/vue'
 import AppHeader from '@/components/AppHeader.vue'
 import AccountProfileTab from '@/components/account/AccountProfileTab.vue'
 import { useAuthStore } from '@/stores/auth'

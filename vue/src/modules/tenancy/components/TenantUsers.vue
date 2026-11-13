@@ -10,7 +10,7 @@ import { useLatest } from '@/composables/useLatest'
 import { useTutorialStore } from '@/stores/tutorial'
 import { usePermissionsStore } from '@/stores/permissions'
 import { createTutorial } from '@/composables/useTutorial'
-import { UserPlus, X, RefreshCw, Mail, CheckCircle, AlertTriangle, Send, ShieldCheck, ShieldOff } from 'lucide-vue-next'
+import { UserPlus, X, RefreshCw, Mail, CheckCircle, AlertTriangle, Send, ShieldCheck, ShieldOff } from '@lucide/vue'
 
 const props = defineProps({
   tenantId: { type: [String, Number], required: true },

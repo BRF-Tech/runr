@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { RefreshCw, Send, Search, X } from 'lucide-vue-next'
+import { RefreshCw, Send, Search, X } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import { usePermissionsStore } from '@/stores/permissions'
 import { workflowsApi } from '../api/workflows'

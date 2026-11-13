@@ -6,7 +6,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { bindingsApi } from '@/api/bindings'
 import { useToast } from '@/composables/useToast'
-import { Database } from 'lucide-vue-next'
+import { Database } from '@lucide/vue'
 
 const props = defineProps({
   tenantId: { type: [String, Number], required: true },

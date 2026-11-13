@@ -4,7 +4,7 @@
 // is also kept in the event log (GET /billing/events) for catching up after an outage.
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RefreshCw, Send } from 'lucide-vue-next'
+import { RefreshCw, Send } from '@lucide/vue'
 import { useToast } from '@/composables/useToast'
 import SecretInput from '@/modules/white-label/components/SecretInput.vue'
 import { billingApi } from '../api/billing'

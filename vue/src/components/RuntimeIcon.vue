@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { Code2 } from 'lucide-vue-next'
+import { Code2 } from '@lucide/vue'
 import { runtimeIcon } from '@/utils/runtimes'
 
 const props = defineProps({

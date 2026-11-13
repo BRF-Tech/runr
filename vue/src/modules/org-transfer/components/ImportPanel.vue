@@ -8,7 +8,7 @@
 // in the background (status fetching) and a read that failed resumes from the bytes it has.
 import { ref, computed, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FileUp, Upload, FileText, Download, RotateCw } from 'lucide-vue-next'
+import { FileUp, Upload, FileText, Download, RotateCw } from '@lucide/vue'
 import { orgTransferApi, unwrap, uploadPackage, resumableImport, importSourcePayload, importSourceComplete } from '../api'
 import ImportPlanView from './ImportPlanView.vue'
 import { sha256Hex, SHA256_MAX_BYTES } from '@/api/ai'

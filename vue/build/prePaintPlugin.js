@@ -1,32 +1,44 @@
 // Vite plugin: index.html's pre-paint script. The `<!-- runr:pre-paint -->` placeholder becomes
 // an inline classic script, src/modules/white-label/prePaint.js bundled with its colour helpers
-// (esbuild, the bundler Vite itself runs on), so it runs before the first paint and derives the
-// theme tones of the platform's branding defaults with the same code as the app. In the dev
-// server and in the build alike.
-import { build } from 'esbuild'
+// (by Vite's own build: a library build of its own, without the console's config), so it runs
+// before the first paint and derives the theme tones of the platform's branding defaults with the
+// same code as the app. In the dev server and in the build alike.
+import { build } from 'vite'
 import { fileURLToPath } from 'node:url'
-import { dirname } from 'node:path'
 
 export const PRE_PAINT_PLACEHOLDER = '<!-- runr:pre-paint -->'
 
 const whiteLabelDir = fileURLToPath(new URL('../src/modules/white-label/', import.meta.url))
 
+// The script's entry, a module of no file: it runs prePaint() at once
+const ENTRY = '\0runr-pre-paint'
+const entryCode = `import { prePaint } from ${JSON.stringify(whiteLabelDir + 'prePaint.js')}\n`
+  + "try { prePaint() } catch (e) { /* RunR's own theme stays */ }\n"
+
 /** The pre-paint as a classic script's code: an IIFE that runs prePaint() at once. */
 export async function prePaintScript() {
-  const result = await build({
-    stdin: {
-      contents: "import { prePaint } from './prePaint.js'\ntry { prePaint() } catch (e) { /* RunR's own theme stays */ }\n",
-      resolveDir: dirname(whiteLabelDir + 'prePaint.js'),
-      loader: 'js',
+  const out = await build({
+    configFile: false,
+    envFile: false,
+    root: whiteLabelDir,
+    publicDir: false,
+    logLevel: 'silent',
+    plugins: [{
+      name: 'runr-pre-paint-entry',
+      resolveId: (id) => (id === ENTRY ? id : null),
+      load: (id) => (id === ENTRY ? entryCode : null),
+    }],
+    build: {
+      write: false,
+      minify: true,
+      target: 'es2019',
+      modulePreload: false,
+      copyPublicDir: false,
+      reportCompressedSize: false,
+      rolldownOptions: { input: ENTRY, output: { format: 'iife', comments: { legal: false } } },
     },
-    bundle: true,
-    write: false,
-    format: 'iife',
-    minify: true,
-    target: 'es2019',
-    legalComments: 'none',
   })
-  return result.outputFiles[0].text.trim()
+  return (Array.isArray(out) ? out[0] : out).output[0].code.trim()
 }
 
 export function prePaintPlugin() {

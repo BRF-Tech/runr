@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { UserCheck, Tag, X } from 'lucide-vue-next'
+import { UserCheck, Tag, X } from '@lucide/vue'
 import { fetchTicketStaff, assignTicket, updateTicketTags } from '../api/support'
 
 // Support staff controls of a ticket: assignee (members who work the queue) and tags

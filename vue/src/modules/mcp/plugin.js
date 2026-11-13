@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { Bot } from 'lucide-vue-next'
+import { Bot } from '@lucide/vue'
 import router from '@/router'
 import { usePermissionsStore } from '@/stores/permissions'
 

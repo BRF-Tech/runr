@@ -6,7 +6,7 @@
 // payment links and paid status.
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Building2 } from 'lucide-vue-next'
+import { Building2 } from '@lucide/vue'
 import { billingApi } from '../api/billing'
 import { apiMessage, can, recentPeriods } from '../utils/billing'
 import BillRow from './BillRow.vue'

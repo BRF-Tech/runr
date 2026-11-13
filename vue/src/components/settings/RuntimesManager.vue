@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Eye, Pencil, Trash2, Rocket, Hammer, Boxes, RefreshCw, Link2 } from 'lucide-vue-next'
+import { Plus, Eye, Pencil, Trash2, Rocket, Hammer, Boxes, RefreshCw, Link2 } from '@lucide/vue'
 import RuntimeIcon from '@/components/RuntimeIcon.vue'
 import RuntimeEditorModal from '@/components/settings/runtimes/RuntimeEditorModal.vue'
 import RuntimeManifestModal from '@/components/settings/runtimes/RuntimeManifestModal.vue'

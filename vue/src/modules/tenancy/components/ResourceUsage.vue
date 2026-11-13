@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { tenantsApi } from '../api/tenants'
 import { useTutorialStore } from '@/stores/tutorial'
 import { createTutorial } from '@/composables/useTutorial'
-import { Cpu, HardDrive, AlertTriangle, ChevronDown, BarChart3, Globe } from 'lucide-vue-next'
+import { Cpu, HardDrive, AlertTriangle, ChevronDown, BarChart3, Globe } from '@lucide/vue'
 
 const { t } = useI18n()
 const regions = ref([])

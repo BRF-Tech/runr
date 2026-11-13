@@ -75,6 +75,30 @@ describe('request interceptor', () => {
   })
 })
 
+describe('XSRF cookie', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  // The API authenticates with the bearer token and sets no XSRF-TOKEN cookie. axios 1.21's XHR
+  // adapter awaits the browser's Cookie Store for that cookie before every same-origin request
+  // when it may send one (about 50 ms per request in Chromium); the client never sends it.
+  it('sends a request at once, without reading the Cookie Store', async () => {
+    const get = vi.fn(async () => null)
+    vi.stubGlobal('cookieStore', { get })
+    const send = vi.spyOn(XMLHttpRequest.prototype, 'send').mockImplementation(() => {})
+    client.defaults.adapter = originalAdapter
+
+    client.post('/model-services', { name: 'm' }).catch(() => {})
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(get).not.toHaveBeenCalled()
+    expect(client.defaults.withXSRFToken).toBe(false)
+  })
+})
+
 describe('ETag cache', () => {
   it('replays the cached body when the server answers 304', async () => {
     reply(200, { items: [1, 2] }, { etag: 'W/"v1"' })

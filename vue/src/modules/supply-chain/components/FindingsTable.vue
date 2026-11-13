@@ -3,7 +3,7 @@
 // version, title — filterable by severity, text and "fixable only".
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ExternalLink } from 'lucide-vue-next'
+import { ExternalLink } from '@lucide/vue'
 
 const props = defineProps({
   findings: { type: Array, default: () => [] },

@@ -6,7 +6,7 @@ import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLatest } from '@/composables/useLatest'
 import { mcpApi } from '../api/mcp'
-import { RefreshCw } from 'lucide-vue-next'
+import { RefreshCw } from '@lucide/vue'
 
 const props = defineProps({ project: { type: Object, required: true } })
 const { t, locale } = useI18n()

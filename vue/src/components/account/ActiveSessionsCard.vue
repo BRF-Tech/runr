@@ -1,7 +1,7 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 import { useConfirm } from '@/composables/useConfirm'
-import { Monitor, Smartphone, Tablet, Globe } from 'lucide-vue-next'
+import { Monitor, Smartphone, Tablet, Globe } from '@lucide/vue'
 
 const { t } = useI18n()
 const { confirm } = useConfirm()

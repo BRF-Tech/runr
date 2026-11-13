@@ -1,7 +1,7 @@
 <script setup>
 import { inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Eye, ExternalLink, Trash2, RotateCw, GitPullRequest } from 'lucide-vue-next'
+import { Eye, ExternalLink, Trash2, RotateCw, GitPullRequest } from '@lucide/vue'
 import { PROJECT_GIT } from '@/composables/useProjectGit'
 import GitStatusBadge from '@/components/git/GitStatusBadge.vue'
 import TermText from '@/components/TermText.vue'

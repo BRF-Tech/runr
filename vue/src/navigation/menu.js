@@ -18,7 +18,7 @@
 import { markRaw } from 'vue'
 import {
   Activity, Boxes, Database, Gauge, KeyRound, MapPin, Rocket, Server, ShieldAlert, ShieldCheck, Sparkles, Stamp, UserCog, Users,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 /** Main-menu groups (after Projects), in order, with their sections in order. */
 export const NAV_GROUPS = [

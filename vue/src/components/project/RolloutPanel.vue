@@ -13,7 +13,7 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import {
   LIMITS, asRollout, isOpenRollout, keepsPrevious, countdown, clockTime,
 } from '@/utils/deployStrategy'
-import { Bird, Columns2, ExternalLink, History, ChevronDown, ChevronRight, Activity, HeartPulse, AlertTriangle } from 'lucide-vue-next'
+import { Bird, Columns2, ExternalLink, History, ChevronDown, ChevronRight, Activity, HeartPulse, AlertTriangle } from '@lucide/vue'
 
 const props = defineProps({
   project: { type: Object, required: true },

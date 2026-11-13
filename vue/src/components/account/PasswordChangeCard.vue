@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Lock } from 'lucide-vue-next'
+import { Lock } from '@lucide/vue'
 
 const { t } = useI18n()
 const emit  = defineEmits(['change'])

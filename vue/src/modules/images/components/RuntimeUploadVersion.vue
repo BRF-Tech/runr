@@ -4,7 +4,7 @@
 // manifest text (appendUploadVersion).
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { PackagePlus } from 'lucide-vue-next'
+import { PackagePlus } from '@lucide/vue'
 import { imagesApi } from '../api'
 import { usePermissionsStore } from '@/stores/permissions'
 

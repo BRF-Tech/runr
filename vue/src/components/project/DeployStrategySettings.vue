@@ -14,7 +14,7 @@ import GitToggle from '@/components/git/GitToggle.vue'
 import {
   STEP_PRESETS, LIMITS, isEligibleTrigger, strategyForm, strategyPayload, strategyChanges, validateStrategy, serverFieldErrors,
 } from '@/utils/deployStrategy'
-import { Rocket, Columns2, Bird, Plus, X, AlertTriangle, Activity, Info } from 'lucide-vue-next'
+import { Rocket, Columns2, Bird, Plus, X, AlertTriangle, Activity, Info } from '@lucide/vue'
 
 const props = defineProps({
   project:     { type: Object, required: true },

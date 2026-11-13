@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Folder, File, FileSymlink, ArrowUp, RefreshCw, Upload, FolderPlus, Download, Archive, Trash2, X } from 'lucide-vue-next'
+import { Folder, File, FileSymlink, ArrowUp, RefreshCw, Upload, FolderPlus, Download, Archive, Trash2, X } from '@lucide/vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { useLatest } from '@/composables/useLatest'

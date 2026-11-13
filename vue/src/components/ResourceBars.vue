@@ -5,7 +5,7 @@
 // platform region shows the organization's quota there, split the same way.
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Cpu, MemoryStick, MapPin, ChevronDown } from 'lucide-vue-next'
+import { Cpu, MemoryStick, MapPin, ChevronDown } from '@lucide/vue'
 import CapacityBudgets from '@/components/region/CapacityBudgets.vue'
 
 const { t } = useI18n()

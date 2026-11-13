@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Box, Plus, RefreshCw, Eye, TerminalSquare, Clock, Pause, Play, Square, Zap } from 'lucide-vue-next'
+import { Box, Plus, RefreshCw, Eye, TerminalSquare, Clock, Pause, Play, Square, Zap } from '@lucide/vue'
 import AppHeader from '@/components/AppHeader.vue'
 import ShellTerminalModal from '@/components/ShellTerminalModal.vue'
 import SandboxStatusBadge from '../components/SandboxStatusBadge.vue'

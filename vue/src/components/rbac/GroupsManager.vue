@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Pencil, Trash2, Users, X, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, Users, X, ChevronDown, ChevronRight } from '@lucide/vue'
 import { rbacApi } from '@/api/rbac'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useConfirm } from '@/composables/useConfirm'

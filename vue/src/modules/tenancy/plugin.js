@@ -1,5 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
-import { BarChart3, Building2, Users } from 'lucide-vue-next'
+import { BarChart3, Building2, Users } from '@lucide/vue'
 import { useSettingsStore } from '@/stores/settings'
 import { usePermissionsStore } from '@/stores/permissions'
 import { setBroadcastChannelPrefix, resubscribeBroadcast } from '@/composables/useRealtimeNotifications'

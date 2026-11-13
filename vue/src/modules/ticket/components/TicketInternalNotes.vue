@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ShieldAlert, Send } from 'lucide-vue-next'
+import { ShieldAlert, Send } from '@lucide/vue'
 import { sendAdminReply } from '../api/support'
 
 const props = defineProps({
