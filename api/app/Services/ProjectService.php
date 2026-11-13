@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Jobs\BuildVersionJob;
 use App\Models\ContainerConfig;
+use App\Models\ExecutorImage;
 use App\Models\FaasConfig;
 use App\Models\Project;
 use App\Models\Version;
@@ -257,7 +258,9 @@ class ProjectService
 
     /**
      * The runtime manifest's starter template for the project's handler file and function; the
-     * main file always exists ("{file}" names it), the dependency file only for FaaS.
+     * main file always exists ("{file}" names it), the dependency file only for FaaS. The template
+     * of the project's runtime version (the runtime's default without one) when that version has
+     * its own (versions[].template).
      *
      * @return array<string, string>
      */
@@ -268,7 +271,8 @@ class ProjectService
             return [$entry->filename => '# Hello, World!'.PHP_EOL];
         }
 
-        $files = $manifest->templateFiles($entry->filename, $entry->handler, $withDependencies);
+        $version = $project->runtime_version ?: (ExecutorImage::defaultVersion($manifest->id()) ?? $manifest->defaultVersion());
+        $files = $manifest->templateFiles($entry->filename, $entry->handler, $withDependencies, $version);
 
         return [$entry->filename => $files[$entry->filename] ?? ''] + $files;
     }

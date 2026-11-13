@@ -153,7 +153,7 @@ class FunctionBuildService
         $mode = $this->resolveTrigger($project) === 'schedule' ? 'schedule' : 'http';
 
         $files = $this->git->getAllFilesAtVersion($project, $version->commit_id);
-        $files = array_merge($files, $this->buildFiles($manifest, $mode));
+        $files = array_merge($files, $this->buildFiles($manifest, $mode, $executor->version));
         $imageRef = $this->buildImageRef($region, $project, $version);
 
         $cmName = $jobName ?? self::buildJobName($project, $version);
@@ -323,14 +323,15 @@ class FunctionBuildService
     }
 
     /**
-     * Extra files a runtime adds next to the code (Go: the wrapper source of the trigger).
+     * Extra files a runtime adds next to the code (Go: the wrapper source of the trigger), the
+     * version's own when it has them.
      *
      * @return array<string, string>
      */
-    private function buildFiles(RuntimeManifest $manifest, string $mode): array
+    private function buildFiles(RuntimeManifest $manifest, string $mode, ?string $version = null): array
     {
         $files = [];
-        foreach ($manifest->build()['files'] ?? [] as $name => $content) {
+        foreach ($manifest->buildFiles($version) as $name => $content) {
             $files[$name] = is_array($content) ? $content[$mode] : $content;
         }
 

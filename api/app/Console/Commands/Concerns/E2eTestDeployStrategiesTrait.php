@@ -154,6 +154,7 @@ PY;
 
         // Kept warm: the previous revision (tag "previous", 0 %) keeps at least one pod
         $revision = (string) (collect($this->dsServiceTraffic($test['slug']))->firstWhere('tag', 'previous')['revisionName'] ?? '');
+        $this->warmUntil(fn () => ($this->warmAutoscalerValue($revision) ?? 0) >= 1, self::WARM_FOLLOW_SECONDS);
         $minScale = $this->warmAutoscalerValue($revision);
 
         return $minScale !== null && $minScale >= 1
@@ -277,6 +278,7 @@ PY;
                 return 'scale schedule answered '.$schedule->status().': '.mb_substr($schedule->body(), 0, 300);
             }
             $this->call('projects:warm');
+            $this->warmUntil(fn () => array_values(array_unique($min())) === [1], self::WARM_FOLLOW_SECONDS);
             $values = $min();
             if (array_values(array_unique($values)) !== [1]) {
                 return 'after projects:warm the PodAutoscalers carry '.json_encode($values).', want 1 on both (before: '.json_encode($before).')';
@@ -286,6 +288,7 @@ PY;
             $this->call('projects:warm');
         }
 
+        $this->warmUntil(fn () => $min() == $before, self::WARM_FOLLOW_SECONDS);
         $values = $min();
 
         return $values == $before ? true : 'the schedule removed, the PodAutoscalers carry '.json_encode($values).', want '.json_encode($before).' again';

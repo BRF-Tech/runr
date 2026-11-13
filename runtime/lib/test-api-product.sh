@@ -2,7 +2,7 @@
 #
 # cmd_test_api_product — `ci.sh test-api-product [cmd_test flags]`: builds the gateway-auth image
 #                        from runtime/gateway-auth (the tag the API deploys:
-#                        ghcr.io/brf-tech/runr/gateway-auth:1.0.0), loads it into the Kind
+#                        ghcr.io/brf-tech/runr/gateway-auth:1.1.0), loads it into the Kind
 #                        cluster and runs Kind + Knative (cmd_test) with only the API product suite
 #                        (test:e2e --suite=api-product, E2eTestApiProductTrait) on one Python
 #                        function routed through the admin's gateway:
@@ -18,9 +18,9 @@
 #
 # KIND_LOCK              — one Kind cluster at a time on a shared host; this suite defaults it to
 #                          /tmp/runr-kind.lock (test-runtimes.sh: acquire_kind_lock).
-# GATEWAY_AUTH_IMAGE     — the tag to build and load (default ghcr.io/brf-tech/runr/gateway-auth:1.0.0)
+# GATEWAY_AUTH_IMAGE     — the tag to build and load (default ghcr.io/brf-tech/runr/gateway-auth:1.1.0)
 
-GATEWAY_AUTH_IMAGE="${GATEWAY_AUTH_IMAGE:-${REGISTRY}/gateway-auth:1.0.0}"
+GATEWAY_AUTH_IMAGE="${GATEWAY_AUTH_IMAGE:-${REGISTRY}/gateway-auth:1.1.0}"
 
 # TEST_AFTER_KIND_CREATE hook of cmd_test: the locally built gateway-auth into every node.
 api_product_after_kind_create() {

@@ -312,13 +312,15 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
         $this->assertSame(['loki-stack', 'grafana/loki-stack', 'observability', '2.10.3'], [$release, $chart, $namespace, $version]);
         $this->assertSame(ManagedLoki::helmSetJson(), $set);
 
-        // the command line: pinned, values reused, no --wait (the Loki rollout goes on in the cluster)
+        // the command line: pinned, values reused, Helm 3's client-side apply, no wait (the Loki
+        // rollout goes on in the cluster)
         $loki = $this->helm('upgrade')[1];
         $this->assertSame(['helm', 'upgrade', 'loki-stack', 'grafana/loki-stack', '-n', 'observability'], array_slice($loki, 0, 6));
         $this->assertSame(['--reuse-values', '--version', '2.10.3'], array_slice($loki, 8, 3));
         $this->assertContains('loki.config.compactor.retention_enabled=true', $loki);
         $this->assertContains('loki.config.limits_config.retention_period="876000h"', $loki);
-        $this->assertNotContains('--wait', $loki);
+        $this->assertContains(HelmService::CLIENT_SIDE_APPLY, $loki);
+        $this->assertSame([], preg_grep('/^--wait/', $loki));
         $this->assertContains(['helm', 'list', '-n', 'observability', '--kubeconfig', $this->helm('list')[2][5], '--filter', '^loki-stack$', '-o', 'json'], $this->helm('list'));
     }
 

@@ -146,6 +146,8 @@ Every API route is in one group of the API reference (`/api/docs`), one of `Norm
 (`api/app/Http/Middleware/NormalizeApiTags.php`): a new controller names it with a `@tags <group>`
 line at the end of its class comment, or gets an entry in the class map there (a module registers
 its own with `NormalizeApiTags::registerTags`). `ApiDocsTest` fails for a route in any other group.
+The reference documents controller actions only: a route with a closure (`/api/version`, the
+reference's own `/api/docs`) is not in it.
 
 Every operation has a summary: the first paragraph of the controller method's PHPDoc, one line of at
 most 80 characters that says what the operation does ("List the project's workflows"), without the
@@ -417,7 +419,7 @@ Every suite runs locally with the commands below; CI runs the same commands
 | UI unit (Vitest) | `vue/tests/` | `cd vue && npm test` |
 | UI e2e (Playwright) | `vue/e2e/` | `cd vue && npm run test:e2e:mock` / `npm run test:e2e` |
 | Go | every `go.mod`: `cli`, `terraform-provider-runr`, `runtime/agent`, `runtime/queue-consumer`, `runtime/image-upload`, `proxy`, `examples/runtimes/q/interpreter` | `gofmt -l . && go vet ./... && go test -race ./...` per module |
-| Helm chart | `helm/`, scenarios in `ci/helm-values/` | `bash ci/check-helm-chart.sh` (`helm lint --strict` + `helm template` per scenario, kubeconform against Kubernetes 1.30–1.35; needs helm and kubeconform or docker) |
+| Helm chart | `helm/`, scenarios in `ci/helm-values/` | `bash ci/check-helm-chart.sh` (`helm lint --strict` + `helm template` per scenario, kubeconform against Kubernetes 1.30, the oldest RunR supports, and 1.37, the newest; needs helm and kubeconform or docker) |
 | Kubernetes e2e (Kind) | `runtime/lib/test*.sh` | `bash runtime/ci.sh test`, and one suite per feature: `test-runtimes`, `test-wasm`, `test-images`, `test-org-transfer`, `test-observability`, `test-triggers`, `test-trigger-sources`, `test-reconcile`, `test-network`, `test-internal-network`, `test-cert-manager`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp`, `test-admission`, `test-runtime-patches`, `test-warmer`, `test-deploy-strategies`, `test-secrets`, `test-environments`, `test-api-product`, `test-region-move`, `test-global-projects` |
 
 ### API (PHPUnit)
@@ -664,8 +666,8 @@ go test -race ./...       # the race detector needs cgo (gcc)
 ```
 
 Without a local Go toolchain:
-`docker run --rm -v "$PWD":/src -w /src/runtime/agent ghcr.io/brf-tech/runr/reqs/golang:1.26-alpine sh -c 'apk add --no-cache build-base && CGO_ENABLED=1 go test -race ./...'`
-(CI's `go` job runs Go 1.26.9; `GOTOOLCHAIN=auto` fetches a newer toolchain for a module that asks for one).
+`docker run --rm -v "$PWD":/src -w /src/runtime/agent ghcr.io/brf-tech/runr/reqs/golang:1.27-alpine sh -c 'apk add --no-cache build-base && CGO_ENABLED=1 go test -race ./...'`
+(CI's `go` job runs Go 1.27.4; `GOTOOLCHAIN=auto` fetches a newer toolchain for a module that asks for one).
 The queue-consumer stream tests use an in-process miniredis; set
 `QC_TEST_REDIS=localhost:6379` to run them against a real Redis. The Sentry tunnel's tests
 (`proxy/`) need no Redis either: the handlers and the worker run against an in-memory queue, the
@@ -694,8 +696,9 @@ version, that answers only when a matrix product gives its sum: off by default, 
 run. BRF-Tech/runr-runtimes' language bot runs it with one ML runtime offered.
 
 `bash runtime/ci.sh test-helm-upgrade` checks the Helm upgrade path instead: the chart and images of
-`main` in a Kind cluster, data created through that version's API, then `helm upgrade` to the
-checkout ([upgrade.md](upgrade.md#testing-the-upgrade-path)).
+the previous release (the newest `vX.Y.Z` tag at or below the checkout's version that is not
+`HEAD`, the release `main` carries) in a Kind cluster, data created through that version's API,
+then `helm upgrade` to the checkout ([upgrade.md](upgrade.md#testing-the-upgrade-path)).
 
 `bash runtime/ci.sh test-region-move` runs on two Kind clusters: the e2e region moves from the
 first to the second and is rolled back ([Moving a region to another
@@ -738,7 +741,7 @@ Each version is first made and tested alone:
 1. **The bump**, on the base tag: the tag's own `ci/deps-bump.sh <dep> <version>` (the charts and
    their pins are the rows of `ci/check-helm-releases.sh`). It first renders the pinned and the new
    chart with RunR's values (`ci/deps/helm-values.php`, from the code the install runs) on
-   Kubernetes 1.30 and 1.35. Then it moves the pin, every test and doc that names the pinned
+   Kubernetes 1.30 and 1.37. Then it moves the pin, every test and doc that names the pinned
    version as the current one, and adds a line under `[Unreleased]` → `Changed` of `CHANGELOG.md`.
    Lines that record the past keep their version: a RunR release or a date next to them, a
    measurement, the changelog, `docs/upgrade.md`. The commit is `fix(regions): <chart> chart
@@ -911,8 +914,16 @@ comes through the GitHub API's asset endpoint (`ci/deps/fetch.sh`, the filex bot
 each pin's line is: helm, Scalar, syft, cosign, oras, kind, cloud-provider-kind, kubeconform, crane,
 actionlint, gitleaks, Terraform and govulncheck move within their major (a 0.x version: its minor);
 kubectl within its minor (one minor of the Kubernetes it talks to); a newer line is a finding of
-its own. containerd-shim-spin (its version without RunR's `-runr.N`) is RunR's patched build of
-upstream: every newer release is a person's. The workflows' `go-version`, `node-version` and
+its own. The API image carries a kubectl for every second Kubernetes minor (`kubectl-1.31`,
+`kubectl-1.33`, `kubectl-1.35`, `kubectl-1.37`: each covers the clusters of the minor below and the
+one above it, and the API runs the one of each region's minor, `KubectlBinary`): each row moves its
+own patch, and only the newest one's line is `minor`, the others' `patch` (a newer minor is no
+finding of theirs). A Kubernetes minor newer than the newest one's is that row's finding: with 1.38
+the set still covers every cluster (1.37 is within one minor of it); when 1.39 is out a person adds
+`kubectl-1.39` (its `ARG KUBECTL_1_39_VERSION`, its checksums in both API Dockerfiles, its row with
+line `minor`, the previous newest one's line `patch`, the docs that list the set); the image
+build refuses a pin outside its directory's minor. containerd-shim-spin (its version without
+RunR's `-runr.N`) is RunR's patched build of upstream: every newer release is a person's. The workflows' `go-version`, `node-version` and
 `php-version` are toolchains the code is written for: only a newer line is a finding (the Go one
 as `go-toolchain`, with the advisories' finding), never a bump.
 
@@ -941,7 +952,7 @@ package that moved goes to a person with nothing left changed.
 | Go, CLI, Terraform provider, dev tunnel (`go-cli`, `go-terraform-provider`, `go-proxy`) | as above | one per module | as above | next: a dependency release builds no CLI and no provider; `proxy/` is the dev stack's Sentry tunnel | `go:<dir>` |
 | GitHub Actions pins (`actions`) | the `uses: <action>@<sha> # <tag>` pins of `.github/workflows/` and `actions/*/action.yml`: `git ls-remote --tags` of each repository (a floating `@v4` only for its next major) | one per check | the pin's commit (the tag's, peeled) and its comment, in every workflow that pins the old one | next: no shipped bytes, a release never changes `.github/` and the App has no Workflows permission (a pin of RunR's own `actions/` would release; one in both goes to a person) | `actionlint` |
 | Dockerfile bases (`docker`: every Dockerfile of `DEPS_DOCKERFILES`) | the tags of each `FROM` image (its ARGs' defaults filled in) on ghcr.io, anonymously: the reqs mirror's, which BRF-Tech/runr-runtimes publishes, and other ghcr.io images (Trivy); the same form (prefix, components, suffix such as `-alpine`) and release line | one per check, across the Dockerfiles | the tag, and the digest of one pinned by digest | release when the Dockerfile of a release's image moved (api, ui, agent, queue-consumer; gateway-auth, image-upload, supply-chain and the Spin shim move their own version a patch); the dev stack's, the e2e's test images and the examples': next | `image:<Dockerfile>` and the suites of that image (the API's PHPUnit, e2e and upgrade; the UI's `caddy` and `ui-stack`; the Q interpreter's `ci.sh test-runtimes`; …, `DEPS_DOCKERFILES`) |
-| Version pins of the images (`pins-images`: helm, kubectl and Scalar of the API image, syft, cosign and oras of supply-chain, the Spin shim's upstream and build inputs) | the stable tags of the upstream's GitHub repository (`git ls-remote --tags`), npm's versions (Scalar), the crates.io index | one per check | the version at every place of the pin (`ARG`, the API reference page's script URL), and its checksums (above) | release: helm, kubectl and Scalar ship in the API image; syft, cosign and oras move supply-chain's own version a patch | `image:<Dockerfile>` and the suites of that image (the API's PHPUnit, e2e and upgrade; supply-chain's `ci.sh test-supply-chain`) |
+| Version pins of the images (`pins-images`: helm, the kubectl of each second Kubernetes minor and Scalar of the API image, syft, cosign and oras of supply-chain, the Spin shim's upstream and build inputs) | the stable tags of the upstream's GitHub repository (`git ls-remote --tags`), npm's versions (Scalar), the crates.io index | one per check | the version at every place of the pin (`ARG`, the API reference page's script URL), and its checksums (above) | release: helm, kubectl and Scalar ship in the API image; syft, cosign and oras move supply-chain's own version a patch | `image:<Dockerfile>` and the suites of that image (the API's PHPUnit, e2e and upgrade; supply-chain's `ci.sh test-supply-chain`) |
 | Version pins of the workflows (`pins-ci`: helm, kubectl, kind, cloud-provider-kind, kubeconform, crane, actionlint, gitleaks, Terraform, govulncheck; the toolchains `go-version`, `node-version`, `php-version`) | the tags of the upstream's GitHub repository, ghcr.io (gitleaks), the module proxy (govulncheck), go.dev, nodejs.org's LTS lines, php.net (the toolchains) | one per check | as the images' pins, in every workflow (and the dev stack's and the e2e's copy of the same pin: cloud-provider-kind in `compose/kind-setup.sh` and `runtime/lib/test-runtimes.sh`, kubeconform's image in `ci/check-helm-chart.sh`) | next: no shipped bytes, and a release never changes `.github/` | `actionlint` (and the checksums the bump checked); the workflows that use the pins run from the default branch, so the next full release's CI is the first to run them |
 | npm, examples (`npm-example-mcp`, `npm-example-wasm-js`, `npm-example-workflows`) | as the console | one per check | none: no lockfile, so only their majors are findings | next | the MCP starter's image build (`image:`), `ci.sh test-wasm` (it deploys `examples/wasm/js`); none for the workflow sample (it needs a RunR to run against, and its only package is RunR's SDK, held) |
 | Go, examples (`go-example-q`, `go-example-wasm`) | as the region images'; a module that requires others without a `go.sum` (`examples/wasm/go`) is a manifest without its lockfile: a copy of its `go.mod` is read and only its majors are findings | one per module | as the region images' | next | the Q interpreter: `go:<dir>` (ci.yml's go job tests it too), `image:<Dockerfile>`, `ci.sh test-runtimes`; none for `examples/wasm/go` (TinyGo: ci.yml leaves `examples/wasm/` out, `test-wasm` deploys the Rust and JavaScript examples) |
@@ -1109,9 +1120,9 @@ GitHub Actions is the repository's CI; the workflows live in `.github/workflows/
 | Workflow → job | Runs | When | Blocking |
 |---|---|---|---|
 | `ci.yml` → `gitleaks` | gitleaks on the files of the commit (not its history), allowlist `.gitleaks.toml` | every pull request, pushes to `main`, by hand | yes |
-| `ci.yml` → `reqs-mirror` | `ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference resolves anonymously on ghcr.io; BRF-Tech/runr-runtimes publishes the mirror | same | yes |
+| `ci.yml` → `reqs-mirror` | `ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference resolves anonymously on ghcr.io; BRF-Tech/runr-runtimes publishes the mirror. A test image of the e2e harness (a `*IMAGE` default of `runtime/ci.sh` / `runtime/lib/*.sh`, a `*IMAGE` constant of the e2e commands) straight from Docker Hub, Codeberg, quay.io … fails it: test images come from the mirror; a CI script's tool image (a `*IMAGE` default of `ci/**/*.sh`) comes from the mirror or its upstream's own ghcr.io image, never Docker Hub or another registry | same | yes |
 | `ci.yml` → `build-scripts` | `ci/check-dockerfiles.sh` (no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step, every image labels `org.opencontainers.image.source`); `ci/check-caddyfiles.sh` (`vue/Caddyfile` and `compose/Caddyfile` validate, index.html for every console route is never cached, the hashed build files for a year, a missing build file answers 404); `runtime/test/*_test.sh` (`runtime/ci.sh` without Docker or a registry, the pinned runtime images, the release workflow, these workflows) | same | yes |
-| `ci.yml` → `helm` | `ci/check-helm-chart.sh` (helm 3.16, kubeconform) | same | yes |
+| `ci.yml` → `helm` | `ci/check-helm-chart.sh` (helm 4.3, kubeconform; the checks also pass with helm 3) | same | yes |
 | `ci.yml` → `api` | Pint, PHPUnit with the coverage floor, Larastan on PHP 8.2 (8.2.35 or later); the API reference as the image builds it, every module enabled (`api/docker/api-docs.sh --check`, `ApiDocsTest`); the steps are `api-tests.yml` | same | yes |
 | `ci.yml` → `ui` | lint without warnings, Vitest with the coverage floor (report: artifact `ui-coverage`), build; the steps are `ui-tests.yml`, whose result is read from Vitest's JSON report too (`ci/ui-results.sh`: a run where `tests/composables/tutorialSteps.spec.js` did not run and pass fails) | same | yes |
 | `ci.yml` → `ui-e2e` | Playwright, mocked API (report: artifact `playwright-report`) | same | yes |
@@ -1128,10 +1139,11 @@ GitHub Actions is the repository's CI; the workflows live in `.github/workflows/
 | `api-tests.yml`, `ui-tests.yml`, `kind-suite.yml`, `ui-stack-suite.yml` | reusable workflows (`on: workflow_call`): the API checks and the UI checks of `ci.yml`, one `runtime/ci.sh` Kind suite and the UI stack suite of `e2e.yml`, also run on a dependency bump by `deps-test.yml` (both of its test phases) | when called | — |
 | `release-images.yml` | the release images (below) | release tag `v<version>`, by hand | — |
 
-By hand: Actions → the workflow → **Run workflow**, or `gh workflow run e2e.yml -f suite=kind -f
-k8s=1.35.0` (`suite`: `all`, `kind`, `ui-stack`; `workers`: `1` for a runner short of disk). The
-version is a `kindest-node` tag of the reqs mirror: `1.32.0` (the default, Knative 1.20), `1.34.3`
-(Knative 1.23), `1.35.0` (Knative 1.24).
+By hand: Actions → the workflow → **Run workflow**, or `gh workflow run e2e.yml -f suite=kind`
+(`suite`: `all`, `kind`, `ui-stack`; `workers`: `1` for a runner short of disk). CI runs the
+newest Kubernetes only: the `k8s` input (a `kindest-node` tag of the reqs mirror) is `1.37.0` by
+default, the newest node image of Kind v0.33.0, with kubectl 1.37; the dependency bot's suites run
+it too, and a Knative minor that needs a newer Kubernetes waits for Kind's next node image.
 
 The two e2e suites run on standard GitHub-hosted runners (4 vCPUs, 16 GB, the runner's own
 Docker). `ci.sh test` needs neither `/dev/kvm` nor a GPU: its sandbox cases run the gVisor
@@ -1194,7 +1206,10 @@ Module tests that need no cluster: `ci.sh test-tenancy`, `ci.sh test-authprovide
 (the last two run single-tenant, like `ci.sh test`). They reset the database of the Compose stack.
 
 Upgrade of a Compose install (`compose/`), no cluster: `ci.sh test-upgrade [--from=REF] [--tenancy]`
-builds the API image of the previous release (default `main`) and of the checkout, fills a PostgreSQL
+builds the API image of the previous release (default: the newest `vX.Y.Z` tag at or below the
+checkout's version that is not `HEAD`, the release `main` carries; also in a checkout without
+`main`, such as the bundle of `kind-suite.yml`, and in a shallow one without tags, which fetches
+that tag from `origin`) and of the checkout, fills a PostgreSQL
 database on the old release and upgrades it the way `compose/README.md` → Updating describes, then
 checks sign-in, access, API tokens, environment variables (encrypted at rest, read back unchanged)
 and settings. `--from-dir=DIR` takes an unpacked release instead of a git ref; `--keep` leaves the
@@ -1206,6 +1221,14 @@ stack running (Compose project `runr-upgrade`, API on `127.0.0.1:18060`).
   (the API broadcasts to Reverb, queued mail goes to Mailpit, as in an install);
   an empty `APP_KEY=` line of `api/.env.docker` gets a generated key first, as `scripts/devready.sh` does
   (secrets are encrypted at rest, and the Octane workers resolve the encrypter when they start)
+- **Runtime catalog**: the e2e stack runs with `RUNR_RUNTIME_CATALOG_REF` empty
+  (`docker-compose.yml` passes it to the API services; the dev stack's default is the published
+  `ghcr.io/brf-tech/runr/runtime-catalog:stable`): the API reads the checkout's
+  `api/resources/runtimes/builtin.json`, so a suite tests the runtimes and versions of the tree it
+  runs on, also before BRF-Tech/runr-runtimes publishes them with the release (wasm-rust 4.2 of
+  0.7.0). `ci.sh test-runtime-sources` keeps the published catalog: its `rs-default-catalog` case
+  reads and verifies it. A `RUNR_RUNTIME_CATALOG_REF` set before the run is kept
+  (`e2e_runtime_catalog`, `runtime/lib/test.sh`)
 - **API port**: `API_PORT` (default 8060), from `docker-compose.yml`
 - **Two runs on one Docker host**: each sets its own `COMPOSE_PROJECT_NAME`, `KIND_LOCK` and ports
   (`API_PORT`, `DB_PORT`, `REDIS_PORT`, `REVERB_PORT`); the run then names the Compose network
@@ -1288,7 +1311,7 @@ runr/
 │   ├── docker/             entrypoint.sh, schedule-watch.sh, PHP config
 │   ├── .env.docker         Env for Docker Compose
 │   ├── .env.example        Env template for Valet
-│   ├── Dockerfile          Development image (PHP 8.3 on Alpine, kubectl, Helm)
+│   ├── Dockerfile          Development image (PHP 8.3 on Alpine, the kubectl set, Helm)
 │   └── Dockerfile.prod     Production image (FrankenPHP, PHP 8.3)
 ├── vue/                    Vue 3 + Vite frontend
 ├── helm/                   Helm chart

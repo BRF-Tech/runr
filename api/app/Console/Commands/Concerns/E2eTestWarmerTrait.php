@@ -15,9 +15,10 @@ use Illuminate\Support\Carbon;
  *  - warm-deploy-renders   created with "* * * * *" → 2: the revision template carries min-scale 2,
  *                          the PodAutoscaler min-scale 2 (CheckDeploymentReadyJob), two pods run and
  *                          the project shows warm_scale.applied 2
- *  - warm-patch-no-restart the schedule changed to 1 (saved, not deployed): the warmer patches the
- *                          PodAutoscaler to 1 — no new revision — and Knative scales down to one of
- *                          the pods that ran before, not restarted
+ *  - warm-patch-no-restart the schedule changed to 1 (saved, not deployed): the warmer brings the
+ *                          PodAutoscaler to 1 (through the Revision from Knative 1.21 on,
+ *                          WarmScaleService::holder()) — no new revision — and Knative scales down
+ *                          to one of the pods that ran before, not restarted
  *  - warm-step             two daily rows relative to now in the zone: the row that fired last
  *                          decides (2, then 0 once the counts are swapped)
  *  - warm-off              the schedule removed: the PodAutoscaler gets min_scale (0) back, the
@@ -33,6 +34,13 @@ def handler(event, context):
 PY;
 
     private const WARM_ZONE = 'Europe/Istanbul';
+
+    /**
+     * Seconds the PodAutoscaler gets to show a value the warmer set: from Knative 1.21 on the
+     * warmer annotates the Revision and Knative's revision reconciler copies it onto the
+     * PodAutoscaler (WarmScaleService::holder()), within moments.
+     */
+    private const WARM_FOLLOW_SECONDS = 30;
 
     private function runWarmerSuite(string $regionId): array
     {
@@ -146,7 +154,7 @@ PY;
         }
         $this->call('projects:warm');
 
-        if ($this->warmAutoscalerValue($revision) !== 1) {
+        if (! $this->warmUntil(fn () => $this->warmAutoscalerValue($revision) === 1, self::WARM_FOLLOW_SECONDS)) {
             return "PodAutoscaler {$revision} min-scale ".var_export($this->warmAutoscalerValue($revision), true).' after projects:warm, want 1';
         }
 
@@ -189,6 +197,7 @@ PY;
             $this->call('projects:warm');
 
             $revision = (string) ($this->warmService($test['slug'])['status']['latestReadyRevisionName'] ?? '');
+            $this->warmUntil(fn () => $this->warmAutoscalerValue($revision) === $want, self::WARM_FOLLOW_SECONDS);
             $value = $this->warmAutoscalerValue($revision);
             $project = $this->api()->get("/api/projects/{$test['projectId']}");
             if ($value !== $want || $project->json('data.warm_scale.applied') !== $want) {
@@ -209,6 +218,7 @@ PY;
         $this->call('projects:warm');
 
         $revision = (string) ($this->warmService($test['slug'])['status']['latestReadyRevisionName'] ?? '');
+        $this->warmUntil(fn () => $this->warmAutoscalerValue($revision) === 0, self::WARM_FOLLOW_SECONDS);
         $project = $this->api()->get("/api/projects/{$test['projectId']}");
 
         return $this->warmAutoscalerValue($revision) === 0 && $project->json('data.warm_scale') === null

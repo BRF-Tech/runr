@@ -488,13 +488,14 @@ func runtimesValidateCmd(app *App) *cobra.Command {
 }
 
 func runtimesTemplateCmd(app *App) *cobra.Command {
-	var serviceType, handler, outDir string
+	var serviceType, handler, outDir, version string
 	var force bool
 	tpl := &cobra.Command{
 		Use:   "template RUNTIME",
 		Short: "Print or write the starter files of a runtime",
 		Example: "  runr runtimes template q\n" +
-			"  runr runtimes template q --type faas --handler main.handler --out ./qfn",
+			"  runr runtimes template q --type faas --handler main.handler --out ./qfn\n" +
+			"  runr runtimes template wasm-rust --runtime-version 4.2",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if serviceType != runr.TypeFaaS && serviceType != runr.TypeXaaS {
@@ -504,7 +505,7 @@ func runtimesTemplateCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			files, err := c.RuntimeTemplate(cmd.Context(), args[0], serviceType, handler)
+			files, err := c.RuntimeVersionTemplate(cmd.Context(), args[0], version, serviceType, handler)
 			if runr.IsNotFound(err) {
 				return &runr.NotFoundError{Kind: "runtime", Ref: args[0]}
 			}
@@ -557,6 +558,7 @@ func runtimesTemplateCmd(app *App) *cobra.Command {
 	f := tpl.Flags()
 	f.StringVar(&serviceType, "type", runr.TypeXaaS, "project type: xaas (one script) or faas (a set of files)")
 	f.StringVar(&handler, "handler", "", "handler: the function (xaas) or file.function (faas); default the runtime's")
+	f.StringVar(&version, "runtime-version", "", "the starter of this runtime version (default: the runtime's default version)")
 	f.StringVar(&outDir, "out", "", "write the files into this directory instead of printing them")
 	f.BoolVar(&force, "force", false, "overwrite existing files with --out")
 	return tpl

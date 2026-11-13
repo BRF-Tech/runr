@@ -198,6 +198,7 @@ class RegionMigrateRollbackTest extends TestCase
             'gpu_available' => ['nvidia.com/gpu' => 2], 'gpu_allocated' => ['nvidia.com/gpu' => 1],
             'function_tls_mode' => 'custom', 'function_tls_secret_name' => 'runr-function-tls',
             'function_tls_expires_at' => '2027-01-31 12:00:00',
+            'kubernetes_version' => 'v1.32.4',
         ];
         // What the installs and checks on the new cluster leave: its Zot, none of the selected nodes,
         // a Serving installed at another version, a new agent token, the default Kata hypervisor, …
@@ -223,6 +224,7 @@ class RegionMigrateRollbackTest extends TestCase
             'gpu_available' => [], 'gpu_allocated' => [],
             'function_tls_mode' => 'console', 'function_tls_secret_name' => 'runr-function-tls-new',
             'function_tls_expires_at' => '2027-06-30 12:00:00',
+            'kubernetes_version' => 'v1.33.0',
         ];
         $this->assertEqualsCanonicalizing(RegionMigrateService::CLUSTER_STATE, array_keys($before), 'a value before the move for every column the rollback restores');
         $this->assertEqualsCanonicalizing(RegionMigrateService::CLUSTER_STATE, array_keys($after));
@@ -230,6 +232,7 @@ class RegionMigrateRollbackTest extends TestCase
         $this->region->forceFill($before + ['external_ip' => '198.51.100.1'])->save();
 
         $this->migrateTo('10.96.2.2:5000');
+        $this->assertSame('v1.33.0', $this->region->fresh()->kubernetes_version, "the move records the new cluster's Kubernetes version (kubectl's minor)");
         $this->region->fresh()->forceFill($after + ['external_ip' => '203.0.113.9'])->save();
 
         $this->rollback();

@@ -97,12 +97,13 @@ Q;
         }
     }
 
-    private function runtimeEntry(string $name, string $runtime, string $trigger, string $code, string $regionId, array $expect): array
+    /** @param  string|null  $version  the runtime version (null: the runtime's default) */
+    private function runtimeEntry(string $name, string $runtime, string $trigger, string $code, string $regionId, array $expect, ?string $version = null): array
     {
         $entry = $this->makeTestEntry($name, [
             'service_type' => 'xaas',
             'runtime' => $runtime,
-            'runtime_version' => null,
+            'runtime_version' => $version,
             'trigger_type' => $trigger,
             'code' => $code,
         ], $regionId);

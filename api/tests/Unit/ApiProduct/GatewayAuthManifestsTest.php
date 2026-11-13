@@ -77,7 +77,7 @@ class GatewayAuthManifestsTest extends TestCase
 
     public function test_the_deployment_runs_hardened_and_restarts_with_its_secret(): void
     {
-        $deployment = GatewayAuthManifests::deployment('fn', 'registry.test/gateway-auth:1.0.0', 2, 'rev-1', 10, 30);
+        $deployment = GatewayAuthManifests::deployment('fn', 'registry.test/gateway-auth:1.1.0', 2, 'rev-1', 10, 30);
         $pod = $deployment['spec']['template'];
         $container = $pod['spec']['containers'][0];
 
@@ -92,6 +92,10 @@ class GatewayAuthManifestsTest extends TestCase
         $this->assertSame(['cpu' => '1', 'memory' => '256Mi'], $container['resources']['limits']);
         $this->assertNotEmpty($deployment['metadata']['annotations'][GatewayAuthManifests::SPEC_ANNOTATION]);
         $this->assertContains(['name' => 'SYNC_SECONDS', 'value' => '10'], $container['env']);
+        $this->assertContains(['name' => 'ON_DEMAND_SYNC_SECONDS', 'value' => '2'], $container['env'], 'on-demand syncs by default');
+
+        $off = GatewayAuthManifests::deployment('fn', 'img', 1, 'rev', 10, 30, null, 0)['spec']['template']['spec']['containers'][0];
+        $this->assertContains(['name' => 'ON_DEMAND_SYNC_SECONDS', 'value' => '0'], $off['env'], '0 turns them off');
     }
 
     public function test_usage_buckets_are_unique_per_hour_and_dimension(): void

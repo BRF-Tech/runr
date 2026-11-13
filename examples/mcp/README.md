@@ -6,7 +6,7 @@ itself, its dependency file and a Dockerfile for the bring-your-own-image route.
 
 | Starter | Directory | Runtime id | SDK | Entry file |
 |---|---|---|---|---|
-| Python | [`python/`](python/) | `mcp-python` | official MCP Python SDK (FastMCP) | `server.py` |
+| Python | [`python/`](python/) | `mcp-python` | official MCP Python SDK 2 (`MCPServer`) | `server.py` |
 | TypeScript | [`node/`](node/) | `mcp-node` | official TypeScript SDK (`@modelcontextprotocol/sdk`) | `server.ts` |
 
 Both serve Streamable HTTP at `/mcp` on `$PORT`, run statelessly (every request stands on its

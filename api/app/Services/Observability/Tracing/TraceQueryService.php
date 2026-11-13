@@ -69,7 +69,7 @@ class TraceQueryService
     /**
      * Log lines of the project's pods containing the trace id, around the trace's time.
      *
-     * @return list<array{ts_ms: int, pod: string, line: string}>
+     * @return list<array{ts_ms: int, pod: string, container: string|null, line: string}>
      *
      * @throws TracingNotQueryableException|TempoUnavailableException
      */

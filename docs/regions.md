@@ -56,7 +56,21 @@ Supply chain). Changing a region needs `regions.manage` or the permission of the
 
 RunR reads the cluster's version when it checks the kubeconfig and refuses a cluster older than
 **Kubernetes 1.30**. The minimum is the Helm value `knative.minK8sMinor` (environment variable
-`KNATIVE_MIN_K8S_MINOR`, default `30`).
+`KNATIVE_MIN_K8S_MINOR`, default `30`). There is no upper bound.
+
+The region records the version it read (at its creation, a replaced kubeconfig and a
+[migration](#moving-a-region-to-another-cluster); `region:reconcile`, which every upgrade runs,
+reads it again, so an upgraded cluster is seen). It picks the kubectl the API runs against the
+cluster for the [console's terminal](web-shell.md) and the sandbox commands that go through
+`kubectl exec` ([Sandbox API](sandbox-api.md)): kubectl is supported within one minor of the API
+server, so the API image carries kubectl **1.31, 1.33, 1.35 and 1.37** and takes the one of the
+cluster's minor, else the one below it, else the one above (Kubernetes 1.30–1.38 each have one
+within a minor). A cluster newer than 1.38 gets kubectl 1.37, and the API logs `kubectl: no kubectl
+of the API image is within one minor of Kubernetes 1.N` once per process; a later RunR adds the
+next kubectl. `SANDBOX_KUBECTL` (via `extraEnv`) names one binary for every cluster instead.
+The chart's Jobs pick the same way for the cluster RunR is installed on: they run `runr-kubectl`
+(`api/docker/runr-kubectl`), which asks the server its version and runs the bundled kubectl of its
+minor.
 
 ### Knative and Kubernetes versions
 

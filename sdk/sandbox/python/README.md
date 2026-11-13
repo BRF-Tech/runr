@@ -9,7 +9,7 @@ unless you allow it.
 pip install runr-sandbox
 ```
 
-Python 3.9 or newer. Dependencies: [httpx](https://www.python-httpx.org/) and, for the exec
+Python 3.11 or newer. Dependencies: [httpx](https://www.python-httpx.org/) and, for the exec
 WebSocket, [websockets](https://websockets.readthedocs.io/).
 
 ## Configuration

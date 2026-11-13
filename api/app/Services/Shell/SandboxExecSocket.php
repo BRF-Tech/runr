@@ -107,7 +107,7 @@ class SandboxExecSocket
 
         $loop = Loop::get();
         $tty = ! empty($config['tty']);
-        $target = new PodTarget($config['kubeconfig'], $config['namespace'], $config['pod'], $config['container'] ?? 'sandbox', $config['sandbox_id'] ?? null);
+        $target = new PodTarget($config['kubeconfig'], $config['namespace'], $config['pod'], $config['container'] ?? 'sandbox', $config['sandbox_id'] ?? null, $config['kubernetes_version'] ?? null);
 
         // One message and close handler for the session (Reverb takes them once, at openBuffer):
         // they follow the path, which changes when the native stream is refused before it started

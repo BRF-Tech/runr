@@ -1,6 +1,6 @@
 module github.com/brf-tech/runr/terraform-provider-runr
 
-go 1.26.9
+go 1.27.4
 
 require (
 	github.com/brf-tech/runr/cli v0.0.0

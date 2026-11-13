@@ -53,7 +53,7 @@ _gp_agent_image="${GLOBAL_AGENT_IMAGE-${REGISTRY}/agent:e2e-global}"
 # held). cmd_test's locals (k8s_ver, kind_api_addr, kube_server_addr) are visible here.
 global_projects_create_target() {
   local cluster="${1}-global" config status=0
-  local version="${k8s_ver:-${K8S_VERSION:-1.32.0}}"
+  local version="${k8s_ver:-${K8S_VERSION:-1.37.0}}"
   local etcd_patch
   etcd_patch=$(kind_etcd_patch)
 
@@ -148,7 +148,7 @@ global_projects_prepare_phase2() {
   local nginx="${REGISTRY}/reqs/nginx:1.27-alpine"
   local upload_tag="${REGISTRY}/image-upload:$(image_upload_version)"
   local transfer_tag="${REGISTRY}/image-upload:${ORG_TRANSFER_AGENT_VERSION:-$(image_upload_version)}"
-  local gateway_auth="${GATEWAY_AUTH_IMAGE:-${REGISTRY}/gateway-auth:1.0.0}"
+  local gateway_auth="${GATEWAY_AUTH_IMAGE:-${REGISTRY}/gateway-auth:1.1.0}"
   local archive_tag="runr-e2e/gp-nginx:upload"
 
   echo ""

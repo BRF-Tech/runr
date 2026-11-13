@@ -4,8 +4,14 @@
 #
 #   WRAPPER_VERSION       ghcr.io/brf-tech/runr/wrapper            test-runtimes (and every suite
 #                                                                  that runs prepare_runtime_e2e)
-#   WASM_RUNTIME_VERSION  ghcr.io/brf-tech/runr/exec-wasm-<lang>   test-wasm (rust, js), test-images
-#                                                                  (exec)
+#   WASM_RUNTIME_VERSION  ghcr.io/brf-tech/runr/exec-wasm-<lang>   the version of all five WebAssembly
+#                                                                  runtimes (the default of go, python
+#                                                                  and exec): test-wasm (rust),
+#                                                                  test-images (exec)
+#   WASM_NEXT_VERSION     ghcr.io/brf-tech/runr/exec-wasm-<lang>   the SDK generation next to it, of
+#                                                                  WASM_NEXT_LANGS (rust, js), their
+#                                                                  default: test-wasm (rust, js),
+#                                                                  test-supply-chain
 #   HF_SERVE_VERSION      ghcr.io/brf-tech/runr/hf-serve           test-ai
 #
 # Each pin is also a default of the product: change them together. runtime/test/runtime_images_test.sh
@@ -26,15 +32,37 @@ RUNTIMES_REPO="https://github.com/BRF-Tech/runr-runtimes"
 
 WRAPPER_VERSION="${WRAPPER_VERSION:-1.1.0}"
 WASM_RUNTIME_VERSION="${WASM_RUNTIME_VERSION:-4.1}"
+WASM_NEXT_VERSION="${WASM_NEXT_VERSION:-4.2}"
+WASM_NEXT_LANGS="rust js"
 HF_SERVE_VERSION="${HF_SERVE_VERSION:-1.1.1}"
 
 wrapper_image() {
   echo "${RUNTIME_IMAGES_REGISTRY}/wrapper:${WRAPPER_VERSION}"
 }
 
-# wasm_runtime_image LANG — the build image of a WebAssembly runtime (rust, go, js, python, exec)
+# wasm_runtime_image LANG [VERSION] — the build image of a WebAssembly runtime (rust, go, js, python,
+# exec) at VERSION (default WASM_RUNTIME_VERSION)
 wasm_runtime_image() {
-  echo "${RUNTIME_IMAGES_REGISTRY}/exec-wasm-$1:${WASM_RUNTIME_VERSION}"
+  echo "${RUNTIME_IMAGES_REGISTRY}/exec-wasm-$1:${2:-${WASM_RUNTIME_VERSION}}"
+}
+
+# wasm_runtime_default LANG — the default version of a WebAssembly runtime in the catalog:
+# WASM_NEXT_VERSION of WASM_NEXT_LANGS, WASM_RUNTIME_VERSION of the others
+wasm_runtime_default() {
+  if [[ " ${WASM_NEXT_LANGS} " == *" $1 "* ]]; then
+    echo "$WASM_NEXT_VERSION"
+  else
+    echo "$WASM_RUNTIME_VERSION"
+  fi
+}
+
+# wasm_runtime_versions LANG — the versions of a WebAssembly runtime the catalog has: every runtime's
+# WASM_RUNTIME_VERSION, WASM_NEXT_LANGS' WASM_NEXT_VERSION too
+wasm_runtime_versions() {
+  echo "$WASM_RUNTIME_VERSION"
+  if [[ " ${WASM_NEXT_LANGS} " == *" $1 "* ]]; then
+    echo "$WASM_NEXT_VERSION"
+  fi
 }
 
 hf_serve_image() {

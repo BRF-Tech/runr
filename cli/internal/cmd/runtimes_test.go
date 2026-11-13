@@ -204,6 +204,13 @@ func TestRuntimesTemplate(t *testing.T) {
 	h.mustRun("runtimes", "template", "q", "--type", "faas", "--handler", "app.run", "--out", out, "--force")
 	h.expectCode(ExitUsage, "runtimes", "template", "q", "--type", "caas")
 	h.expectCode(ExitNotFound, "runtimes", "template", "cobol")
+
+	// the starter of a runtime version (a version may bring its own, as wasm-rust 4.2 does)
+	h.mustRun("runtimes", "template", "q", "--runtime-version", "2.0")
+	calls := h.srv.CallsTo("GET /runtimes/{runtime}/template")
+	if q := calls[len(calls)-1].Query; q != "service_type=xaas&version=2.0" {
+		t.Fatalf("template query with a version = %q", q)
+	}
 }
 
 func TestRuntimesScopedTokens(t *testing.T) {

@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM ghcr.io/brf-tech/runr/reqs/golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM ghcr.io/brf-tech/runr/reqs/golang:1.27-alpine AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH
 WORKDIR /app

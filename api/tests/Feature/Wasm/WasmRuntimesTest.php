@@ -9,6 +9,7 @@ use App\Services\Runtimes\BuiltinCatalog;
 use App\Services\Runtimes\ManifestValidator;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Services\Wasm\WasmRuntimes;
+use App\Services\Wasm\WasmShim;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Yaml\Yaml;
@@ -64,7 +65,9 @@ class WasmRuntimesTest extends TestCase
             $this->assertStringStartsWith('data:image/svg+xml;base64,', $m->icon(), $id);
 
             $version = $m->versions()[0];
-            $this->assertSame(['4.1', "ghcr.io/brf-tech/runr/exec-{$id}:4.1", true], [$version['version'], $version['image'], $version['default']], $id);
+            $this->assertSame(['4.1', "ghcr.io/brf-tech/runr/exec-{$id}:4.1"], [$version['version'], $version['image']], $id);
+            // new projects: 4.2 of Rust and JavaScript (their next SDK generation), 4.1 of the others
+            $this->assertSame(in_array($id, ['wasm-rust', 'wasm-js'], true) ? '4.2' : '4.1', $m->defaultVersion(), $id);
         }
     }
 
@@ -79,18 +82,22 @@ class WasmRuntimesTest extends TestCase
 
         foreach ($expect as $id => [$file, $marker]) {
             $m = $this->registry()->require($id);
-            $files = $m->templateFiles($m->defaultFilename(), $m->handlerFunction(), false);
-
             $this->assertSame($file, $m->defaultFilename(), $id);
-            $code = $files[$file];
-            $this->assertMatchesRegularExpression($m->handlerPattern(), $code, $id);
-            foreach (['dev.runr.schedule.tick', 'dev.runr.queue.message', 'ce-type', $marker] as $needle) {
-                $this->assertStringContainsString($needle, $code, "{$id}: {$needle}");
+
+            // every version's starter (4.2 of Rust has its own)
+            $versions = array_column($m->versions(), 'version');
+            foreach ($versions as $version) {
+                $code = $m->templateFiles($m->defaultFilename(), $m->handlerFunction(), false, $version)[$file];
+                $this->assertMatchesRegularExpression($m->handlerPattern(), $code, "{$id} {$version}");
+                foreach (['dev.runr.schedule.tick', 'dev.runr.queue.message', 'ce-type', $marker] as $needle) {
+                    $this->assertStringContainsString($needle, $code, "{$id} {$version}: {$needle}");
+                }
             }
-            // the example of the language is the starter code
+            // the example of the language is the starter code of its newest version
             $example = base_path('../examples/wasm/'.str_replace('wasm-', '', $id)."/{$file}");
             if (is_file($example)) {
-                $this->assertSame(trim(str_replace("\r\n", "\n", file_get_contents($example))), trim($code), "{$id}: examples/wasm");
+                $newest = $m->templateFiles($m->defaultFilename(), $m->handlerFunction(), false, end($versions))[$file];
+                $this->assertSame(trim(str_replace("\r\n", "\n", file_get_contents($example))), trim($newest), "{$id}: examples/wasm");
             }
         }
     }
@@ -102,15 +109,30 @@ class WasmRuntimesTest extends TestCase
             $this->markTestSkipped('the catalog sources (runtimes/ of BRF-Tech/runr-runtimes) are not here: set RUNR_RUNTIME_CATALOG');
         }
 
+        $spin = [];
         foreach (self::WASM as $id) {
             $this->assertFileExists("{$dir}/{$id}/Dockerfile");
             $raw = Yaml::parseFile("{$dir}/{$id}/runtime.yaml");
             foreach ($raw['build']['files'] as $name => $ref) {
                 $this->assertFileExists("{$dir}/{$id}/".ltrim($ref, '@'), "{$id}: {$name}");
             }
-            // the build image ships the Spin CLI of the runtime the shim embeds
-            $this->assertStringContainsString('ARG SPIN_VERSION=4.1.0', file_get_contents("{$dir}/{$id}/Dockerfile"), $id);
+            // every version: its own directory (an SDK generation side by side: 4.2/) or the
+            // runtime's, with the build files it references
+            foreach ($raw['versions'] as $v) {
+                $vdir = is_file("{$dir}/{$id}/{$v['version']}/Dockerfile") ? "{$dir}/{$id}/{$v['version']}" : "{$dir}/{$id}";
+                foreach ($v['build']['files'] ?? [] as $name => $ref) {
+                    $this->assertFileExists("{$dir}/{$id}/".ltrim($ref, '@'), "{$id} {$v['version']}: {$name}");
+                    $this->assertStringStartsWith("@{$v['version']}/", $ref, "{$id} {$v['version']}: {$name} is the version's own");
+                }
+                preg_match('/^ARG SPIN_VERSION=(\S+)$/m', file_get_contents("{$vdir}/Dockerfile"), $m);
+                $spin["{$id} {$v['version']}"] = $m[1] ?? null;
+            }
         }
+        // one Spin CLI in every build image (BRF-Tech/runr-runtimes moves them together), of a Spin
+        // release not older than the runtime the shim embeds
+        $this->assertCount(1, array_unique($spin), json_encode($spin));
+        $this->assertNotNull(reset($spin));
+        $this->assertTrue(version_compare((string) reset($spin), WasmShim::SPIN_RUNTIME, '>='), json_encode($spin));
         // the same manifests validate as built-ins from their source (next to wasm-exec, the
         // executor of uploaded .wasm modules: docs/images.md)
         $this->assertEqualsCanonicalizing(
@@ -125,8 +147,14 @@ class WasmRuntimesTest extends TestCase
         $this->syncCatalog();
 
         foreach (self::WASM as $id) {
-            $image = ExecutorImage::where('runtime', $id)->sole();
-            $this->assertSame(['4.1', "ghcr.io/brf-tech/runr/exec-{$id}:4.1", true, true], [$image->version, $image->docker_image, $image->is_default, $image->is_active], $id);
+            // Rust and JavaScript have 4.2 (their next SDK generation) next to 4.1, the default of
+            // new projects; Go (4.2 waits for WASIp3 in a Go release) and Python have 4.1
+            $next = in_array($id, ['wasm-rust', 'wasm-js'], true);
+            $images = ExecutorImage::where('runtime', $id)->orderBy('version')->get();
+            $this->assertSame($next ? ['4.1', '4.2'] : ['4.1'], $images->pluck('version')->all(), $id);
+            foreach ($images as $image) {
+                $this->assertSame(["ghcr.io/brf-tech/runr/exec-{$id}:{$image->version}", $image->version === ($next ? '4.2' : '4.1'), true], [$image->docker_image, (bool) $image->is_default, (bool) $image->is_active], "{$id} {$image->version}");
+            }
         }
         // their images are build toolchains: never pre-pulled onto the nodes
         $this->assertSame([], array_filter($this->registry()->prepullImages(), fn ($i) => str_contains($i, 'exec-wasm-')));

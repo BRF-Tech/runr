@@ -188,7 +188,7 @@ without the image fails with a message naming the region.
    (or `skopeo copy --all docker://… oci-archive:myapp.tar` for every platform).
 2. Bring the file to a machine that reaches the RunR console, and upload it (console, CLI or API).
 3. The region pulls nothing from outside: the receiver image itself must be in a registry the
-   region reaches — mirror `ghcr.io/brf-tech/runr/image-upload:1.1.2` into the region registry or your own
+   region reaches — mirror `ghcr.io/brf-tech/runr/image-upload:1.2.0` into the region registry or your own
    mirror and set `RUNR_IMAGE_UPLOAD_IMAGE` (Helm `images.uploadImage`).
 4. Run it: a CaaS project on the uploaded image, or a runtime version / wasm-exec function on it.
 
@@ -287,7 +287,7 @@ An uploaded image:
 
 | Variable (Helm value) | Default | Meaning |
 |---|---|---|
-| `RUNR_IMAGE_UPLOAD_IMAGE` (`images.uploadImage`) | `ghcr.io/brf-tech/runr/image-upload:1.1.2` | the receiver image (`runtime/ci.sh image-upload [--push]`) |
+| `RUNR_IMAGE_UPLOAD_IMAGE` (`images.uploadImage`) | `ghcr.io/brf-tech/runr/image-upload:1.2.0` | the receiver image (`runtime/ci.sh image-upload [--push]`) |
 | `RUNR_IMAGES_QUOTA_GB` (`images.quotaGb`) | `50` | storage per organization over every region, `0` = unlimited |
 | `RUNR_IMAGE_UPLOAD_MAX_GB` (`images.maxUploadGb`) | `20` | largest file of one upload, in GiB |
 | `RUNR_IMAGE_UPLOAD_TTL_HOURS` (`images.uploadTtlHours`) | `24` | an upload not completed within this time is aborted |

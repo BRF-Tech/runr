@@ -34,7 +34,7 @@ set -euo pipefail
 #
 # A chart bump is mechanical only when the new chart takes RunR's values and renders what the
 # pinned one renders: the same objects (Kind, namespace and name) with RunR's values on Kubernetes
-# 1.30 and 1.35, the same CRDs (Helm never upgrades them), every value RunR sets still a key of the
+# 1.30 and 1.37, the same CRDs (Helm never upgrades them), every value RunR sets still a key of the
 # chart, no new major, no other kubeVersion, and no new app version where RunR pins the image
 # from the reqs mirror. Then the pin moves, and with it every test and doc that names the pinned
 # version as the current one (ci/deps/lib.sh: deps_replace_version), and the changelog gets a
@@ -55,10 +55,10 @@ DEPS_ROOT="$ROOT"
 source "$ROOT/ci/deps/lib.sh"
 
 # Kubernetes versions the charts are rendered for: RunR's minimum (KNATIVE_MIN_K8S_MINOR) and the
-# newest the e2e runs
-DEPS_KUBE_VERSIONS="${DEPS_KUBE_VERSIONS:-1.30.0 1.35.0}"
-# the Kind node image of the e2e (e2e.yml, lib/test.sh)
-DEPS_DEFAULT_K8S="${DEPS_DEFAULT_K8S:-1.32.0}"
+# newest, the one the e2e runs
+DEPS_KUBE_VERSIONS="${DEPS_KUBE_VERSIONS:-1.30.0 1.37.0}"
+# the Kind node image of the e2e (kind-suite.yml, lib/test.sh): CI runs the newest Kubernetes only
+DEPS_DEFAULT_K8S="${DEPS_DEFAULT_K8S:-1.37.0}"
 SCHEDULE_URL="https://github.com/knative/community/blob/main/mechanics/RELEASE-SCHEDULE.md"
 
 dep="${1:-}"
@@ -229,7 +229,7 @@ render() {
 
 # ── Knative: the unreleased row of the minor, through ci/check-knative-releases.sh ──
 bump_knative() {
-  local compat="api/app/Services/Helpers/KnativeVersionHelper.php" minor min tag tags enabled m k
+  local compat="api/app/Services/Helpers/KnativeVersionHelper.php" minor min tag enabled m k
   if ! [[ "$version" =~ ^1\.([0-9]+)$ ]]; then
     echo "knative: '${version}' is not a Knative minor (1.25)" >&2
     exit 1
@@ -267,18 +267,11 @@ bump_knative() {
     echo "edit docs/regions.md: | 1.${m} | 1.${k} |" >> "$report/edits.log"
   done <<< "$(printf '%s\n' "$enabled" | sort -n)"
 
-  # the e2e needs a Kind node image of a Kubernetes the minor supports (the reqs mirror's kindest-node)
-  tags="${DEPS_KIND_NODE_TAGS:-}"
-  if [ -z "$tags" ]; then
-    local token
-    token="$(curl -fsSL "https://ghcr.io/token?scope=repository:brf-tech/runr/reqs/kindest-node:pull" | jq -r .token)" || token=""
-    tags="$(curl -fsSL -H "Authorization: Bearer ${token}" "https://ghcr.io/v2/brf-tech/runr/reqs/kindest-node/tags/list?n=1000" 2>/dev/null \
-      | jq -r '.tags[]?' | sed -n 's/^v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p' | tr '\n' ' ')" || tags=""
-  fi
-  # shellcheck disable=SC2086 # the tags, one per word
-  tag="$(printf '%s\n' $tags | awk -F. -v min="$min" '$1 == 1 && $2 >= min' | sort -V | head -n 1)"
-  if [ -z "$tag" ]; then
-    reasons+=("Knative ${version} needs Kubernetes 1.${min}, and the reqs mirror has no Kind node image of it (\`ghcr.io/brf-tech/runr/reqs/kindest-node\`: ${tags:-no tags read}): the e2e cannot run it. Mirror \`kindest/node:v1.${min}.x\` (BRF-Tech/runr-runtimes) and run this again; the Kind of e2e.yml must know that node image.")
+  # the e2e runs the newest Kubernetes only (DEPS_DEFAULT_K8S, the Kind node of kind-suite.yml):
+  # the minor must support it
+  tag="$DEPS_DEFAULT_K8S"
+  if ! [[ "$tag" =~ ^1\.([0-9]+)\. ]] || [ "${BASH_REMATCH[1]}" -lt "$min" ]; then
+    reasons+=("Knative ${version} needs Kubernetes 1.${min}, newer than the Kubernetes ${tag} of the e2e's Kind node: the e2e cannot run it. Kind moves to a release with a node image of Kubernetes 1.${min} or newer first (\`KIND_VERSION\` of kind-suite.yml, \`kindest/node:v1.${min}.x\` in the reqs mirror of BRF-Tech/runr-runtimes, \`DEPS_DEFAULT_K8S\` here); then run this again.")
     attention
   fi
 

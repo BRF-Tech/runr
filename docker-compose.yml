@@ -77,6 +77,9 @@ services:
       RUNR_INTERNAL_AUTHZ_IMAGE: ${RUNR_INTERNAL_AUTHZ_IMAGE:-}
       RUNR_QUEUE_CONSUMER_IMAGE: ${RUNR_QUEUE_CONSUMER_IMAGE:-}
       RUNR_AGENT_IMAGE: ${RUNR_AGENT_IMAGE:-}
+      # RunR's runtime catalog (config/runtime_sources.php): the published signed one; set empty
+      # (runtime/lib/test.sh does for the e2e suites), the checkout's resources/runtimes/builtin.json
+      RUNR_RUNTIME_CATALOG_REF: ${RUNR_RUNTIME_CATALOG_REF-ghcr.io/brf-tech/runr/runtime-catalog:stable}
       BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
@@ -111,6 +114,9 @@ services:
       RUNR_INTERNAL_AUTHZ_IMAGE: ${RUNR_INTERNAL_AUTHZ_IMAGE:-}
       RUNR_QUEUE_CONSUMER_IMAGE: ${RUNR_QUEUE_CONSUMER_IMAGE:-}
       RUNR_AGENT_IMAGE: ${RUNR_AGENT_IMAGE:-}
+      # RunR's runtime catalog (config/runtime_sources.php): the published signed one; set empty
+      # (runtime/lib/test.sh does for the e2e suites), the checkout's resources/runtimes/builtin.json
+      RUNR_RUNTIME_CATALOG_REF: ${RUNR_RUNTIME_CATALOG_REF-ghcr.io/brf-tech/runr/runtime-catalog:stable}
       BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
@@ -141,6 +147,9 @@ services:
       RUNR_INTERNAL_AUTHZ_IMAGE: ${RUNR_INTERNAL_AUTHZ_IMAGE:-}
       RUNR_QUEUE_CONSUMER_IMAGE: ${RUNR_QUEUE_CONSUMER_IMAGE:-}
       RUNR_AGENT_IMAGE: ${RUNR_AGENT_IMAGE:-}
+      # RunR's runtime catalog (config/runtime_sources.php): the published signed one; set empty
+      # (runtime/lib/test.sh does for the e2e suites), the checkout's resources/runtimes/builtin.json
+      RUNR_RUNTIME_CATALOG_REF: ${RUNR_RUNTIME_CATALOG_REF-ghcr.io/brf-tech/runr/runtime-catalog:stable}
       BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}

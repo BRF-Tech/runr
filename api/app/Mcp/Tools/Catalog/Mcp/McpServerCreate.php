@@ -28,14 +28,14 @@ class McpServerCreate extends Tool
 
     public function description(): string
     {
-        return 'Creates an MCP server (Streamable HTTP) as a RunR project in one step: from the Python starter (official MCP Python SDK, FastMCP), the TypeScript starter (official TypeScript SDK) or your own container image. RunR\'s gateway fronts it at a stable URL and handles authentication (access mode public, token or oauth), so the server needs no auth code of its own. With deploy true (default) it is built and deployed, with progress. Then edit its tools with code_write_files and redeploy with deploy.';
+        return 'Creates an MCP server (Streamable HTTP) as a RunR project in one step: from the Python starter (official MCP Python SDK 2, MCPServer), the TypeScript starter (official TypeScript SDK) or your own container image. RunR\'s gateway fronts it at a stable URL and handles authentication (access mode public, token or oauth), so the server needs no auth code of its own. With deploy true (default) it is built and deployed, with progress. Then edit its tools with code_write_files and redeploy with deploy.';
     }
 
     public function inputSchema(): array
     {
         return Schema::object([
             'name' => Schema::string('Project name (lower-case letters, digits, dashes).', ['minLength' => 1, 'maxLength' => 44, 'pattern' => '^[A-Za-z][A-Za-z0-9 _-]*$']),
-            'template' => Schema::enum(['python', 'node', 'image'], 'python (FastMCP), node (TypeScript SDK) or image (your own container).'),
+            'template' => Schema::enum(['python', 'node', 'image'], 'python (MCP Python SDK, MCPServer), node (TypeScript SDK) or image (your own container).'),
             'region' => Schema::string('Region id or name; optional when only one is available.', ['maxLength' => 64]),
             'image' => Schema::string('template image: the container image of the MCP server.', ['maxLength' => 500]),
             'port' => Schema::integer('template image: the port it listens on (default 8080).', 1, 65535),

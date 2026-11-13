@@ -139,7 +139,7 @@ Commands:
                                       OpenBao, references) and rolled back (restored state, values copied back,
                                       the second cluster emptied of the projects) (lib/test-region-move.sh;
                                       KIND_LOCK defaults to /tmp/runr-kind.lock)
-  test-helm-upgrade [flags]          Kind: install the released chart + images (--from, default main), create
+  test-helm-upgrade [flags]          Kind: install the released chart + images (--from, default the previous release), create
                                       data, helm upgrade to this checkout, check users, roles, env vars at rest,
                                       secret env, tokens, the function during the upgrade, the agent and
                                       white-label; --edition=multi-tenant: tenant roles and 0.5.x billing data;
@@ -151,7 +151,7 @@ Commands:
   test-authprovider                   AuthProvider e2e test (API-only, no K8s needed)
   test-ticket                         Ticket e2e test (API + WS mock, no K8s needed)
   test-upgrade [--from=REF] [--tenancy] [--keep] [--skip-build]
-                                      Compose upgrade (compose/): REF (default main) with data on
+                                      Compose upgrade (compose/): REF (default the previous release) with data on
                                       PostgreSQL, then this checkout on the same database (no K8s)
   setup                               Detect the CPU architecture, create docker-compose.override.yml
   build-deploy [--no-cache]            Build + save tars only (no cluster needed)
@@ -172,7 +172,7 @@ Environment:
 
 Examples:
   ci.sh test-image --push        nginx-test build + push
-  ci.sh test --k8s=1.32.0       e2e test with Kind
+  ci.sh test --k8s=1.37.0       e2e test with Kind
   ci.sh test-helm-upgrade        main's release → this checkout through helm upgrade
   ci.sh test-tenancy             Tenancy e2e test (Docker Compose)
   ci.sh test-authprovider        AuthProvider e2e test (Docker Compose)

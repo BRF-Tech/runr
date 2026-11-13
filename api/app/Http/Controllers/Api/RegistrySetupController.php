@@ -9,6 +9,7 @@ use App\Http\Requests\RegistrySetup\TestS3Request;
 use App\Jobs\InstallRegistryAndCreateRegionJob;
 use App\Services\KnativeStatusService;
 use App\Services\KubernetesClient;
+use App\Services\Sandboxes\Exec\KubectlBinary;
 use App\Services\ZotRegistryService;
 use App\Support\RequestTime;
 use Illuminate\Http\JsonResponse;
@@ -29,8 +30,9 @@ class RegistrySetupController extends Controller
         $validated = $request->validated();
         $validated['kubeconfig'] = KubernetesClient::adaptKubeconfig($validated['kubeconfig']);
 
-        // Sync validations: kubeconfig connectivity + namespace check
-        $this->validateKubeconfig($validated['kubeconfig']);
+        // Sync validations: kubeconfig connectivity + namespace check; the cluster's version is
+        // recorded on the region (it picks kubectl's minor for exec, KubectlBinary)
+        $validated['kubernetes_version'] = KubectlBinary::versionFrom($this->validateKubeconfig($validated['kubeconfig']));
         $this->checkNamespace($statusService, $validated['kubeconfig'], $validated['name']);
 
         $token = Str::uuid()->toString();
@@ -81,7 +83,7 @@ class RegistrySetupController extends Controller
 
         $validated = $request->validated();
         $validated['kubeconfig'] = KubernetesClient::adaptKubeconfig($validated['kubeconfig']);
-        $this->validateKubeconfig($validated['kubeconfig']);
+        $validated['kubernetes_version'] = KubectlBinary::versionFrom($this->validateKubeconfig($validated['kubeconfig']));
         $this->checkNamespace($statusService, $validated['kubeconfig'], $validated['name']);
 
         Cache::put($key, [
@@ -143,7 +145,12 @@ class RegistrySetupController extends Controller
 
     // ── Private helpers ─────────────────────────────────────────────────────
 
-    private function validateKubeconfig(string $kubeconfig): void
+    /**
+     * The cluster answers and runs a Kubernetes version regions support.
+     *
+     * @return array<string, mixed> its /version answer
+     */
+    private function validateKubeconfig(string $kubeconfig): array
     {
         try {
             $k8s = new KubernetesClient($kubeconfig);
@@ -166,6 +173,8 @@ class RegistrySetupController extends Controller
                 'kubeconfig' => __('api.region.connect_failed', ['message' => $e->getMessage()]),
             ]);
         }
+
+        return $version;
     }
 
     private function checkNamespace(KnativeStatusService $statusService, string $kubeconfig, string $name): void

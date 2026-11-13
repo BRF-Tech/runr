@@ -9,6 +9,7 @@ use App\Models\ProjectEnvironment;
 use App\Services\Environments\DeployTarget;
 use App\Services\Environments\EnvironmentProject;
 use App\Services\Environments\EnvironmentScope;
+use App\Services\Helpers\KnativeVersionHelper;
 use App\Services\Helpers\ResourceReservation;
 use App\Services\KubernetesClient;
 use App\Services\Rollouts\RolloutTraffic;
@@ -24,20 +25,28 @@ use Illuminate\Support\Facades\Log;
  * schedule (config.scale_schedule, ScaleSchedule) goes onto the Knative PodAutoscaler of its
  * latest ready revision as autoscaling.knative.dev/min-scale.
  *
- * Measured on Kind: annotating the PodAutoscaler takes effect without a new revision or a restart,
- * survives Knative's reconciles and controller restarts, and 0 releases the containers within
- * about a second. A min-scale on the Revision does nothing (the PodAutoscaler keeps its own
- * annotations) and restarts the revision's pods — the Revision is never touched. A new revision
- * (every deploy) gets a fresh PodAutoscaler from its template: the deploy renders the value of the
- * moment there (KnativeManifestTrait) and afterReady() applies the value again once the revision is
- * ready (CheckDeploymentReadyJob).
+ * Where the annotation is set depends on the region's Knative Serving (holder()):
+ *  - from Knative 1.21 on (knative/serving#16186) the revision reconciler copies the Revision's
+ *    autoscaling.knative.dev annotations onto its PodAutoscaler and puts back any other value
+ *    there at once; they no longer reach the pod template. The warmer annotates the Revision: the
+ *    PodAutoscaler follows within moments, without a new revision or a restart. An annotation on the
+ *    PodAutoscaler alone was undone right away (the 0.7.0 test on Kind, Knative 1.24).
+ *  - before 1.21, measured on Kind: annotating the PodAutoscaler takes effect without a new
+ *    revision or a restart and survives Knative's reconciles and controller restarts; a min-scale
+ *    on the Revision does nothing (the PodAutoscaler keeps its own annotations) and restarts the
+ *    revision's pods — the Revision is not touched there. A region without a recorded version
+ *    (no Serving RunR knows of: KnativeStatusService records the running one) counts as such.
+ * 0 releases the containers within about a second. A new revision (every deploy) gets a fresh
+ * PodAutoscaler from its template: the deploy renders the value of the moment there
+ * (KnativeManifestTrait) and afterReady() applies the value again once the revision is ready
+ * (CheckDeploymentReadyJob).
  *
  *  - the schedule is the project's config: a saved change applies on the next run, no deploy
  *    needed; the crons run in the organization's time zone (OrgTimezone), read on every run;
  *    scale to zero and max_scale are those the live deployment was applied with
  *  - run() (every minute, ApplyWarmScalesJob): one list of the Knative Services and one of the
- *    PodAutoscalers per region, a patch only where the PodAutoscaler's value differs; offline,
- *    inactive and demo regions are skipped
+ *    Revisions (PodAutoscalers before Knative 1.21) per region, a patch only where the value
+ *    differs; offline, inactive and demo regions are skipped
  *  - a schedule turned off gives the PodAutoscaler the project's min_scale back once
  *  - projects.warm_scale_applied / _at: the count last applied and when, for the console; null
  *    while no warmer runs
@@ -60,6 +69,16 @@ class WarmScaleService
     public const PA_API = 'autoscaling.internal.knative.dev/v1alpha1';
 
     public const PA_KIND = 'PodAutoscaler';
+
+    public const REVISION_API = 'serving.knative.dev/v1';
+
+    public const REVISION_KIND = 'Revision';
+
+    /**
+     * The first Knative Serving minor whose revision reconciler keeps the PodAutoscaler's
+     * autoscaling annotations in line with the Revision's (knative/serving#16186).
+     */
+    public const REVISION_HOLDS_MIN_SCALE_FROM = '1.21';
 
     /** Seconds of warm_log kept before the latest entry older than that (metering recalculates two days). */
     private const LOG_KEEP_SECONDS = 4 * 86400;
@@ -133,12 +152,13 @@ class WarmScaleService
 
             $k8s = new KubernetesClient($region->kubeconfig);
             $namespace = self::namespace($region);
+            $holder = self::holder($region);
             $desired = self::desired($rows, $deployment, now(), OrgTimezone::get());
             foreach ($revisions as $revision) {
-                $autoscaler = $k8s->getResourceStatus(self::PA_API, self::PA_KIND, $revision, $namespace);
-                if ($autoscaler) {
+                $object = $k8s->getResourceStatus($holder[0], $holder[1], $revision, $namespace);
+                if ($object) {
                     // without one yet the scheduled run applies it once the PodAutoscaler exists
-                    $this->converge($k8s, $namespace, $project, $deployment, $revision, $autoscaler, $desired, $desired);
+                    $this->converge($k8s, $holder, $namespace, $project, $deployment, $revision, $object, $desired, $desired);
                 }
             }
         } catch (\Throwable $e) {
@@ -173,12 +193,29 @@ class WarmScaleService
         return $max > 0 ? min($value, $max) : $value;
     }
 
-    /** The PodAutoscaler's min-scale annotation, null without one. */
-    public static function currentMinScale(array $autoscaler): ?int
+    /** The min-scale annotation of a PodAutoscaler or a Revision, null without one. */
+    public static function currentMinScale(array $object): ?int
     {
-        $value = $autoscaler['metadata']['annotations'][self::ANNOTATION] ?? null;
+        $value = $object['metadata']['annotations'][self::ANNOTATION] ?? null;
 
         return is_numeric($value) ? (int) $value : null;
+    }
+
+    /**
+     * The object of a revision whose min-scale annotation the region's Knative Serving scales it
+     * by, [apiVersion, kind] (named like the revision): the Revision from Knative 1.21 on, whose
+     * reconciler copies it onto the PodAutoscaler and undoes any other value there; the
+     * PodAutoscaler itself before, or when the region has no Serving version recorded.
+     *
+     * @return array{0: string, 1: string}
+     */
+    public static function holder(?KnativeRegion $region): array
+    {
+        $minor = KnativeVersionHelper::minorOf($region?->knative_serving_version);
+
+        return $minor !== null && version_compare($minor, self::REVISION_HOLDS_MIN_SCALE_FROM, '>=')
+            ? [self::REVISION_API, self::REVISION_KIND]
+            : [self::PA_API, self::PA_KIND];
     }
 
     /**
@@ -351,11 +388,12 @@ class WarmScaleService
     {
         $k8s = new KubernetesClient($region->kubeconfig);
         $namespace = self::namespace($region);
+        $holder = self::holder($region);
 
         $services = $k8s->listResources('serving.knative.dev/v1', 'Service', $namespace);
-        $autoscalers = $k8s->listResources(self::PA_API, self::PA_KIND, $namespace);
+        $autoscalers = $k8s->listResources($holder[0], $holder[1], $namespace);
         if ($services === null || $autoscalers === null) {
-            Log::warning('Timed warmer: the region did not list its Knative Services / PodAutoscalers', ['region' => $region->name]);
+            Log::warning("Timed warmer: the region did not list its Knative Services / {$holder[1]}s", ['region' => $region->name]);
 
             return 0;
         }
@@ -388,21 +426,21 @@ class WarmScaleService
                 continue;
             }
             foreach ($revisions[$project->slug] ?? [] as $revision) {
-                $autoscaler = $byName[$revision] ?? null;
-                if (! $autoscaler) {
-                    continue; // not ready yet: afterReady() or the next run applies it
+                $object = $byName[$revision] ?? null;
+                if (! $object) {
+                    continue; // not there yet: afterReady() or the next run applies it
                 }
 
                 if ($rows !== null) {
                     $desired = self::desired($rows, $live, $now, $timezone);
-                    $patched += $this->converge($k8s, $namespace, $project, $live, $revision, $autoscaler, $desired, $desired) ? 1 : 0;
+                    $patched += $this->converge($k8s, $holder, $namespace, $project, $live, $revision, $object, $desired, $desired) ? 1 : 0;
 
                     continue;
                 }
 
                 // The schedule was turned off: min_scale applies again, the warmer lets go
                 $static = self::bounded($live, (int) (($live->deploy_config ?? [])['min_scale'] ?? $config->min_scale ?? 0));
-                $patched += $this->converge($k8s, $namespace, $project, $live, $revision, $autoscaler, $static, null) ? 1 : 0;
+                $patched += $this->converge($k8s, $holder, $namespace, $project, $live, $revision, $object, $static, null) ? 1 : 0;
             }
         }
 
@@ -410,25 +448,28 @@ class WarmScaleService
     }
 
     /**
-     * Patch the PodAutoscaler when its min-scale differs from $desired, log what the deployment
-     * runs with, and record $record (null: no warmer) on the project.
+     * Patch the revision's holder of the min-scale (holder(): the Revision or the PodAutoscaler)
+     * when its value differs from $desired, log what the deployment runs with, and record $record
+     * (null: no warmer) on the project.
      *
+     * @param  array{0: string, 1: string}  $holder
+     * @param  array<string, mixed>  $object  the holder as the cluster returned it
      * @return bool whether it was patched
      */
-    private function converge(KubernetesClient $k8s, string $namespace, Project $project, Deployment $live, string $revision, array $autoscaler, int $desired, ?int $record): bool
+    private function converge(KubernetesClient $k8s, array $holder, string $namespace, Project $project, Deployment $live, string $revision, array $object, int $desired, ?int $record): bool
     {
-        if (self::currentMinScale($autoscaler) === $desired) {
+        if (self::currentMinScale($object) === $desired) {
             $this->log($live, $desired);
             $this->record($project, $record);
 
             return false;
         }
 
-        $ok = $k8s->mergePatch(self::PA_API, self::PA_KIND, $revision, $namespace, [
+        $ok = $k8s->mergePatch($holder[0], $holder[1], $revision, $namespace, [
             'metadata' => ['annotations' => [self::ANNOTATION => (string) $desired]],
         ]);
         if (! $ok) {
-            Log::warning('Timed warmer: the PodAutoscaler patch failed', ['project' => $project->slug, 'revision' => $revision, 'min_scale' => $desired]);
+            Log::warning("Timed warmer: the {$holder[1]} patch failed", ['project' => $project->slug, 'revision' => $revision, 'min_scale' => $desired]);
 
             return false;
         }

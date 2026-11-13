@@ -19,9 +19,9 @@ on:
         type: string
         default: test
       k8s:
-        description: 'Kubernetes version of the Kind cluster (a kindest-node tag of the reqs mirror)'
+        description: 'Kubernetes version of the Kind cluster (a kindest-node tag of the reqs mirror: CI runs the newest only)'
         type: string
-        default: '1.32.0'
+        default: '1.37.0'
       workers:
         description: 'Kind worker nodes (1: a runner short of disk)'
         type: string
@@ -60,16 +60,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.timeout }}
     env:
-      # the first Kind with node images of Kubernetes 1.34 and 1.35, which Knative 1.22 and newer need
-      KIND_VERSION: v0.31.0
-      KIND_SHA256: eb244cbafcc157dff60cf68693c14c9a75c4e6e6fedaf9cd71c58117cb93e3fa
-      KUBECTL_VERSION: v1.32.0
-      KUBECTL_SHA256: 646d58f6d98ee670a71d9cdffbf6625aeea2849d567f214bc43a35f8ccb7bf70
-      CLOUD_PROVIDER_KIND_VERSION: v0.10.0
-      CLOUD_PROVIDER_KIND_SHA256: 8b88095d72f8dbb4ce65ecf34e4bde5c1c8a3de90c65e66dda7dcd65fba2d58b
+      # CI runs the newest Kubernetes only: the newest node image of this Kind (the reqs mirror's
+      # kindest-node:v1.37.0, by the digest of Kind v0.33.0) and the newest stable kubectl
+      KIND_VERSION: v0.33.0
+      KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+      KUBECTL_VERSION: v1.37.2
+      KUBECTL_SHA256: c04487523e7aa7d1493f7808174c899db93d7a9cf57531420cd76b9bd415f8f4
+      CLOUD_PROVIDER_KIND_VERSION: v0.12.0
+      CLOUD_PROVIDER_KIND_SHA256: 5716aca8f01a85172c12f3b6329c70f151bec02c91b6f600c9f230845ee138e6
       # the helm of the API image (api/Dockerfile.prod): test-helm-upgrade and the bot's checks
-      HELM_VERSION: v3.16.0
-      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
+      HELM_VERSION: v4.3.1
+      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
       K8S_VERSION: ${{ inputs.k8s }}
       KIND_WORKERS: ${{ inputs.workers }}
       SUITE_COMMAND: ${{ inputs.command }}
@@ -98,7 +99,7 @@ jobs:
       - name: Suite, Kubernetes version and environment
         run: |
           if ! [[ "$K8S_VERSION" =~ ^1\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::k8s '${K8S_VERSION}' is not a Kubernetes version (1.32.0)"
+            echo "::error::k8s '${K8S_VERSION}' is not a Kubernetes version (1.37.0)"
             exit 1
           fi
           command_re='^test(-[a-z-]+)?( [A-Za-z0-9=:,./{}_-]+)*$'

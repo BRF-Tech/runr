@@ -130,6 +130,8 @@ class SandboxExecController extends SandboxApiController
         // Encrypted like the web shell's session config: it carries the region kubeconfig
         Redis::setex("sandbox:exec:{$token}", $ttl, Crypt::encryptString(json_encode([
             'kubeconfig' => $region->kubeconfig,
+            // kubectl of the region's Kubernetes minor (KubectlBinary)
+            'kubernetes_version' => $region->kubernetes_version,
             'namespace' => $row->namespace,
             'pod' => $row->pod_name,
             'container' => 'sandbox',
@@ -218,6 +220,8 @@ class SandboxExecController extends SandboxApiController
                 'session_id' => $sessionId,
             ],
             'kubeconfig' => $region->kubeconfig,
+            // kubectl of the region's Kubernetes minor (KubectlBinary)
+            'kubernetes_version' => $region->kubernetes_version,
             'namespace' => $row->namespace,
             'pod' => $row->pod_name,
             'container' => 'sandbox',

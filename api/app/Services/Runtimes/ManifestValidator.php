@@ -132,6 +132,10 @@ class ManifestValidator
             $seen[$version['version']] = true;
             $defaults += ! empty($version['default']) ? 1 : 0;
             $this->lifecycleProblems($version, $path, $add);
+            // a version's own build files replace the runtime's: they need its build (build.command)
+            if (isset($version['build']) && ! isset($data['build'])) {
+                $add("{$path}/build", 'only applies to a runtime with a build (build.command)');
+            }
         }
         foreach ($data['versionDiscovery']['lifecycle'] ?? [] as $label => $lifecycle) {
             $this->lifecycleProblems((array) $lifecycle, '/versionDiscovery/lifecycle/'.$label, $add);
@@ -188,10 +192,16 @@ class ManifestValidator
             $add('/build/image', 'is required for a WebAssembly runtime with upload versions: the build runs in this toolchain image and gets the uploaded module as RUNR_WASM_MODULE');
         }
 
-        foreach ($data['build']['files'] ?? [] as $name => $content) {
-            foreach ((array) $content as $variant) {
-                if (! $builtin && str_starts_with((string) $variant, '@')) {
-                    $add("/build/files/{$name}", 'file references (@path) are only resolved in catalogs (the built-in catalog, runtime sources)');
+        $buildFiles = ['/build/files' => $data['build']['files'] ?? []];
+        foreach ($data['versions'] ?? [] as $i => $version) {
+            $buildFiles["/versions/{$i}/build/files"] = $version['build']['files'] ?? [];
+        }
+        foreach ($buildFiles as $path => $entries) {
+            foreach ($entries as $name => $content) {
+                foreach ((array) $content as $variant) {
+                    if (! $builtin && str_starts_with((string) $variant, '@')) {
+                        $add("{$path}/{$name}", 'file references (@path) are only resolved in catalogs (the built-in catalog, runtime sources)');
+                    }
                 }
             }
         }
@@ -228,7 +238,13 @@ class ManifestValidator
                 'default' => (bool) ($v['default'] ?? false),
                 'eol' => $v['eol'] ?? null,
                 'gpu' => (bool) ($v['gpu'] ?? false),
-            ] + array_filter(['deprecated' => $v['deprecated'] ?? null, 'sunset' => $v['sunset'] ?? null], fn ($x) => $x !== null);
+            ] + array_filter([
+                'deprecated' => $v['deprecated'] ?? null,
+                'sunset' => $v['sunset'] ?? null,
+                // a version's own starter files and build files (an SDK whose code differs by version)
+                'template' => $v['template'] ?? null,
+                'build' => $v['build'] ?? null,
+            ], fn ($x) => $x !== null);
         }
         if ($versions && ! in_array(true, array_column($versions, 'default'), true)) {
             $versions[array_key_last($versions)]['default'] = true;

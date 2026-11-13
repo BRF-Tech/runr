@@ -48,7 +48,7 @@ installs `runr` into `/usr/local/bin` when that is writable, else into `~/.local
 
 ```sh
 curl -fsSL https://runr.sh/install.sh | sh
-curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.6.12 sh             # a specific release
+curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.7.0 sh             # a specific release
 curl -fsSL https://runr.sh/install.sh | RUNR_INSTALL_DIR="$HOME/bin" sh    # another directory
 ```
 
@@ -1018,7 +1018,7 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr runtimes update RUNTIME` | Change manifest and files, regions, enabled (`-f`, `--files`, `--region`, `--all-regions`, `--enable`, `--disable`, `--wait`) |
 | `runr runtimes rm RUNTIME` | Delete a registered runtime (`--yes`) |
 | `runr runtimes validate -f FILE` | Check a manifest without registering it (`--files`) |
-| `runr runtimes template RUNTIME` | Starter files (`--type`, `--handler`, `--out`, `--force`) |
+| `runr runtimes template RUNTIME` | Starter files (`--type`, `--handler`, `--runtime-version`: a version's own starter, such as `wasm-rust` 4.2's; `--out`, `--force`) |
 | `runr runtimes builds\|build RUNTIME` | Region image builds of dockerfile and git versions; `build` rebuilds (`--region`, `--version`, `--wait`) |
 | `runr runtimes test-deploy RUNTIME` | Deploy the starter template as a test project (`--region`, `--version`) |
 | `runr runtimes sources [ls]\|get SOURCE` | Runtime sources (RunR's catalog, OCI catalogs, Git repositories): status, runtimes, last read; `get` adds credentials set, its runtimes' lifecycle, problems, patches |
@@ -3330,7 +3330,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.6.12
+    RUNR_VERSION: v0.7.0
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL https://runr.sh/install.sh | sh

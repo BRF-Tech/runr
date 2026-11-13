@@ -6,7 +6,7 @@
   (bootstrap.regionReconcileSeconds, 4800 by default): the worst case of one region cluster on an
   upgrade from 0.5.10, every wait of every step at its limit — private-ingress 1715 s (two Traefik
   rollouts with helm --wait 600 s each, the pods 300 s, the KIngresses 180 s, the DNS grace 35 s),
-  traefik-chart 1260 s (helm --atomic: its wait 600 s and its rollback 600 s),
+  traefik-chart 1260 s (helm --rollback-on-failure: its wait 600 s and its rollback 600 s),
   internal-network 780 s (the authz 180 s, helm --wait 600 s), cert-manager 700 s (Available 150 s,
   the issuers 3 × 115 s and 30 s, the ACME account 145 s), a Kata KVM probe 150 s, the helm
   processes — is about 4660 s. The step running at the deadline runs to its end: the time limit adds

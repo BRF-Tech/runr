@@ -94,7 +94,8 @@ func pluginTemplate(ctx context.Context, app *App, o *scaffold.Options) error {
 		}
 		o.Handler = handler
 	}
-	files, err := c.RuntimeTemplate(ctx, rt.ID, o.Type, handler)
+	// the starter of the version the project will run (a version may bring its own: wasm-rust 4.2)
+	files, err := c.RuntimeVersionTemplate(ctx, rt.ID, o.RuntimeVersion, o.Type, handler)
 	if err != nil {
 		return err
 	}

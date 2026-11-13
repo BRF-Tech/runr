@@ -92,7 +92,7 @@ The shell is embedded in the Reverb process instead of a separate service. Rever
 |------|------|
 | `app/Services/Shell/ShellAwareFactory.php` | Reverb factory; registers the `/shell` route (and the `/agent/{regionId}` route for runr-agent) |
 | `app/Services/Shell/ShellController.php` | WebSocket handler: wake phase, PTY bridge, keep-alive, idle timeout |
-| `app/Services/Shell/ShellPtyProcess.php` | PTY spawn, kubectl exec, I/O, resize |
+| `app/Services/Shell/ShellPtyProcess.php` | PTY spawn, kubectl exec (the kubectl of the region's Kubernetes minor, `KubectlBinary`: [Kubernetes version](regions.md#kubernetes-version)), I/O, resize |
 | `app/Services/Shell/SafeRouter.php` | Reverb router fix (WebSocket upgrade detection, 400 for non-WS requests) |
 | `app/Console/Commands/ShellWakeCommand.php` | `shell:wake` — find or wake a pod, JSON-line status output |
 | `app/Console/Commands/StartReverbCommand.php` | `reverb:start-shell` artisan command |

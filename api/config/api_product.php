@@ -14,6 +14,9 @@ use App\Support\Images\RegistryMove;
 | callback_url         RunR's base URL as the regions reach it (config sync, usage reports); empty:
 |                      the base the region agent connects to (IngestUrl)
 | sync_seconds         how often gateway-auth asks for changed keys / plans (ETag: unchanged = 304)
+| on_demand_sync_seconds  least seconds between two on-demand syncs of a gateway-auth pod: a check
+|                      that meets a key or route the pod does not know asks RunR again first, so a
+|                      new key works at once (0: none, it waits for the pod's next sync)
 | flush_seconds        how often gateway-auth reports the calls it counted
 | replicas             gateway-auth pods per region with Redis (counters shared there); a region
 |                      without Redis runs one pod with in-memory counters
@@ -23,9 +26,10 @@ use App\Support\Images\RegistryMove;
 */
 
 return [
-    'gateway_auth_image' => RegistryMove::ref(env('RUNR_GATEWAY_AUTH_IMAGE') ?: 'ghcr.io/brf-tech/runr/gateway-auth:1.0.0'),
+    'gateway_auth_image' => RegistryMove::ref(env('RUNR_GATEWAY_AUTH_IMAGE') ?: 'ghcr.io/brf-tech/runr/gateway-auth:1.1.0'),
     'callback_url' => env('RUNR_GATEWAY_AUTH_CALLBACK_URL'),
     'sync_seconds' => (int) env('RUNR_GATEWAY_AUTH_SYNC_SECONDS', 10),
+    'on_demand_sync_seconds' => (int) env('RUNR_GATEWAY_AUTH_ON_DEMAND_SYNC_SECONDS', 2),
     'flush_seconds' => (int) env('RUNR_GATEWAY_AUTH_FLUSH_SECONDS', 30),
     'replicas' => (int) env('RUNR_GATEWAY_AUTH_REPLICAS', 2),
     'rotation_overlap_minutes' => (int) env('RUNR_API_KEY_ROTATION_OVERLAP_MINUTES', 1440),

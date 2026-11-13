@@ -48,7 +48,7 @@
 # KIND_LOCK=/path       — one Kind cluster at a time on a shared host (see test-runtimes.sh).
 
 SANDBOX_CLI_E2E_IMAGE="${SANDBOX_CLI_E2E_IMAGE:-runr-sandbox-cli-e2e:latest}"
-SANDBOX_CLI_GO_IMAGE="${SANDBOX_CLI_GO_IMAGE:-ghcr.io/brf-tech/runr/reqs/golang:1.26-alpine}"
+SANDBOX_CLI_GO_IMAGE="${SANDBOX_CLI_GO_IMAGE:-ghcr.io/brf-tech/runr/reqs/golang:1.27-alpine}"
 SANDBOX_CLI_PYTHON_IMAGE="${SANDBOX_CLI_PYTHON_IMAGE:-ghcr.io/brf-tech/runr/reqs/python:3.13-slim-bookworm}"
 
 # Hardware virtualization as RunR's node probe sees it (KataKvmProbeTrait): the CPU's vmx / svm

@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Services\Observability\Tracing\TempoUnavailableException;
 use App\Services\Observability\Tracing\TraceQueryService;
 use App\Services\Observability\Tracing\TracingNotQueryableException;
+use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -30,6 +31,7 @@ class TraceController extends Controller
      * @queryParam to int unix seconds (default: now)
      * @queryParam limit int 1–200
      */
+    #[OpenApiResponse(200, 'The TraceQL query, its range (unix seconds) and the matching traces', type: 'array{data: array{traceql: string, from: int, to: int, traces: list<array<string, mixed>>}}')]
     public function index(Request $request, Project $project): JsonResponse
     {
         $filters = $request->validate([
@@ -49,6 +51,7 @@ class TraceController extends Controller
     }
 
     /** Get the waterfall of one trace. */
+    #[OpenApiResponse(200, 'The trace and its spans', type: 'array{data: array<string, mixed>}')]
     public function show(Project $project, string $traceId): JsonResponse
     {
         if (! preg_match('/^[0-9a-fA-F]{32}$/', $traceId)) {
@@ -63,6 +66,7 @@ class TraceController extends Controller
     }
 
     /** List the project's log lines with the trace's id. */
+    #[OpenApiResponse(200, "The log lines of the project's pods with the trace's id, around the trace's time", type: 'array{data: list<array{ts_ms: int, pod: string, container: string|null, line: string}>}')]
     public function logs(Project $project, string $traceId): JsonResponse
     {
         if (! preg_match('/^[0-9a-fA-F]{32}$/', $traceId)) {

@@ -24,6 +24,10 @@ import (
 //	429  a plan limit (RateLimit-Limit / -Remaining / -Reset / -Policy, Retry-After)
 //	503  no configuration yet, or the route is not known yet (Retry-After)
 //
+// A key or a route the snapshot does not know is asked about once more before the answer: the
+// on-demand sync (Syncer.Refresh, at most one per ON_DEMAND_SYNC_SECONDS per pod) loads a key or
+// route created since the last scheduled sync, and the check runs again on that snapshot.
+//
 // With ?meter=1 (a route whose calls go through the metering proxy, proxy.go) a 200 also carries
 // X-Runr-Gateway-Ticket: what was decided, signed for the proxy (ticket.go).
 //
@@ -39,6 +43,10 @@ type Authorizer struct {
 	Now       func() time.Time
 	// Tickets signs the ticket of an allowed call of a metered route (nil: none is issued)
 	Tickets *Tickets
+	// Refresher is the on-demand sync asked for an unknown key or route (nil: none)
+	Refresher interface {
+		Refresh(ctx context.Context) (ran bool, err error)
+	}
 }
 
 func (a *Authorizer) now() time.Time {
@@ -55,6 +63,12 @@ type denial struct {
 }
 
 func (a *Authorizer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	a.serve(w, r, true)
+}
+
+// serve decides on the snapshot as it is; with refresh, an unknown key or route first gets the
+// on-demand sync and, when it loaded a new snapshot, the check runs again on that one.
+func (a *Authorizer) serve(w http.ResponseWriter, r *http.Request, refresh bool) {
 	routeID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/auth/"), "/")
 	snap := a.Snapshots.Snapshot()
 	if snap == nil {
@@ -63,6 +77,10 @@ func (a *Authorizer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	route := snap.Route(routeID)
 	if route == nil {
+		if refresh && a.refreshed(r.Context(), snap) {
+			a.serve(w, r, false)
+			return
+		}
 		unavailable(w, "route_unknown", "The gateway is updating this route; try again in a moment.")
 		return
 	}
@@ -76,12 +94,26 @@ func (a *Authorizer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch route.Mode {
 	case "key":
-		a.checkKey(r.Context(), w, r, snap, route, method, usage, now)
+		a.checkKey(r.Context(), w, r, snap, route, method, usage, now, refresh)
 	case "jwt":
 		a.checkJWT(r.Context(), w, r, snap, route, usage, now)
 	default:
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+// refreshed runs the on-demand sync for a key or route snap does not know; true when it loaded
+// another snapshot. A failed sync keeps the snapshot (the Syncer reports it); the check answers
+// on it.
+func (a *Authorizer) refreshed(ctx context.Context, snap *Snapshot) bool {
+	if a.Refresher == nil {
+		return false
+	}
+	if ran, _ := a.Refresher.Refresh(ctx); !ran {
+		return false
+	}
+	next := a.Snapshots.Snapshot()
+	return next != nil && next != snap
 }
 
 // allow lets the call through: counted, the consumer's headers for the function and, for a
@@ -95,7 +127,7 @@ func (a *Authorizer) allow(w http.ResponseWriter, r *http.Request, usage UsageKe
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *Authorizer) checkKey(ctx context.Context, w http.ResponseWriter, r *http.Request, snap *Snapshot, route *RouteConfig, method string, usage UsageKey, now time.Time) {
+func (a *Authorizer) checkKey(ctx context.Context, w http.ResponseWriter, r *http.Request, snap *Snapshot, route *RouteConfig, method string, usage UsageKey, now time.Time, refresh bool) {
 	key := extractKey(r)
 	if key == "" {
 		a.deny(w, usage, CounterUnauthorized, denial{http.StatusUnauthorized, "missing_key", "An API key is required: send it as X-Api-Key or Authorization: Bearer."})
@@ -103,6 +135,11 @@ func (a *Authorizer) checkKey(ctx context.Context, w http.ResponseWriter, r *htt
 	}
 	sum := sha256.Sum256([]byte(key))
 	k := snap.KeyByHash(hex.EncodeToString(sum[:]))
+	if k == nil && refresh && a.refreshed(ctx, snap) {
+		// a key created since the last sync: decided on the snapshot that may have it
+		a.serve(w, r, false)
+		return
+	}
 	var c *Consumer
 	if k != nil {
 		c = snap.Consumer(k.ConsumerID)

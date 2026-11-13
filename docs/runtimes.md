@@ -680,9 +680,40 @@ versions:
 | `deprecated` | the version is deprecated from this date, or now (`true`): a badge and a one-time notice ([Lifecycle](#lifecycle)) |
 | `sunset` | like `eol`, set by the runtime's maintainer: after this date the version leaves the picker and its projects can no longer be saved or deployed |
 | `gpu` | the version needs a GPU node (with [`resources.gpu`](#resources)) |
+| `template` | `{files}` as the runtime's [`template`](#handler-and-template): the starter files of a new project on this version, instead of the runtime's — for an SDK generation whose code differs from the other versions' |
+| `build` | `{files}` only, as the runtime's `build.files`: the files the build adds on this version, instead of the runtime's (the runtime's `build.command` builds them); needs the runtime's `build`. `@path` references in a catalog may point into a directory of the version (`@4.2/Cargo.toml`) |
 
 Up to 50 versions. Removing a version from the manifest retires it: projects pinned to it run on
 the default version, as with any retired version.
+
+**SDK generations side by side.** A version with `template` and `build` of its own is a new SDK
+next to the old one, as `wasm-rust` 4.1 (Spin Rust SDK 5) and 4.2 (Spin Rust SDK 8) are
+([wasm.md](wasm.md#versions)): the projects of the old version keep building with its files and
+image, new projects pick either, and `GET /runtimes/{id}/template?version=` (the console's starter
+preview) gives the version's starter. Keep `handler.pattern` matching every version's starter. A
+project without a version runs the default one, so moving `default` to the new generation moves
+those projects to code they were not written for: pin them first (RunR 0.7.0 pins its wasm-rust and
+wasm-js projects without a version to 4.1 as 4.2 becomes their default). A project moves to another
+version of its runtime with `PUT /projects/{id}` `{"runtime_version": "4.2"}` once its code is
+ported.
+
+```yaml
+versions:
+  - version: "4.1"
+    image: ghcr.io/brf-tech/runr/exec-wasm-rust:4.1   # the runtime's template and build.files
+  - version: "4.2"
+    default: true                                      # new projects
+    image: ghcr.io/brf-tech/runr/exec-wasm-rust:4.2
+    template:
+      files:
+        "{file}": |
+          #[http_service]
+          async fn handle(req: Request) -> anyhow::Result<impl IntoResponse> { … }
+    build:
+      files:
+        Cargo.toml: "@4.2/Cargo.toml"
+        spin.toml: "@4.2/spin.toml"
+```
 
 `versionDiscovery` (catalogs: the built-in catalog and runtime sources) replaces a static list with the image tags:
 `executor:sync` lists the clean `X.Y[.Z]` tags of the image `repository`
@@ -1187,7 +1218,7 @@ All endpoints are under `/api`, authenticated with a session or an API token.
 |---|---|---|
 | `GET /runtimes` | | catalog: `{data: Runtime[], abilities: {manage, use_custom}, custom_enabled}` — the enabled runtimes the current organization can use; `?region=<id>` filters by availability, `?all=1` (manage or use_custom) adds disabled runtimes (all of them for manage, the custom ones for use_custom) |
 | `GET /runtimes/{id}` | | one runtime with `manifest` (normalized, every default filled in), `manifest_source` (as submitted; built-ins rendered as YAML) and `files` (`{name: content}`); disabled runtimes for manage / use_custom only |
-| `GET /runtimes/{id}/template` | | starter files: `?service_type=xaas\|faas&handler=main.handler` → `{files: {name: content}}` |
+| `GET /runtimes/{id}/template` | | starter files: `?service_type=xaas\|faas&handler=main.handler&version=4.2` → `{files: {name: content}}`; `version`: the starter of a version with its own `template` (default: the runtime's default version) |
 | `POST /runtimes/validate` | manage or use_custom | `{manifest, files?}` → `{valid: true, manifest}` or 422 |
 | `POST /runtimes` | manage or use_custom | `{manifest, files?, regions?}` → 201 `{data}`; holders of manage register platform runtimes, use_custom-only members custom runtimes of their organization |
 | `PUT /runtimes/{id}` | manage, or use_custom for a custom runtime of the own organization | `{manifest?, files?, regions?, is_enabled?}` → `{data}`; the id cannot change; built-in runtimes accept `regions` and `is_enabled` only |

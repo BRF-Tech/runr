@@ -189,7 +189,10 @@ class TraefikChartReconcileStepTest extends TestCase
         $argv = $upgrades[0];
         $this->assertSame(['traefik', 'traefik/traefik'], [$argv[2], $argv[3]]);
         $this->assertSame(KnativeConstants::TRAEFIK_CHART_VERSION, $argv[array_search('--version', $argv, true) + 1]);
-        $this->assertContains('--atomic', $argv, 'pods that do not become ready bring the release back');
+        $this->assertContains('--rollback-on-failure', $argv, 'pods that do not become ready bring the release back');
+        $this->assertContains(HelmService::WAIT, $argv, "Helm 3's wait, not kstatus");
+        $this->assertContains(HelmService::CLIENT_SIDE_APPLY, $argv);
+        $this->assertNotContains('--atomic', $argv);
         $this->assertNotContains('--reuse-values', $argv, 'the chart\'s schema refuses the release\'s logging keys');
 
         $values = json_decode($this->valuesFiles[0], true);
@@ -351,7 +354,7 @@ class TraefikChartReconcileStepTest extends TestCase
 
         $this->assertStringStartsWith("upgraded Helm release knative-serving/traefik to chart {$this->pinned()} again, its last upgrade failed, its values kept: ", $lines[0]);
         $this->assertCount(1, $upgrades = $this->upgrades());
-        $this->assertContains('--atomic', $upgrades[0]);
+        $this->assertContains('--rollback-on-failure', $upgrades[0]);
         $this->assertSame(['level' => 'INFO'], json_decode($this->valuesFiles[0], true)['log'], 'values already rewritten stay');
     }
 
@@ -481,7 +484,7 @@ class TraefikChartReconcileStepTest extends TestCase
 
         try {
             (new TraefikChartStep)->run($this->cluster(), false);
-            $this->fail('the step must fail: an --atomic rollback may still run');
+            $this->fail('the step must fail: a --rollback-on-failure rollback may still run');
         } catch (RuntimeException $e) {
             $this->assertStringContainsString('another helm operation may still run on it', $e->getMessage());
         }
@@ -498,7 +501,7 @@ class TraefikChartReconcileStepTest extends TestCase
         $this->assertCount(0, array_filter($this->helm, fn ($argv) => ($argv[1] ?? '') === 'rollback'));
     }
 
-    /** --atomic's wait and its rollback each take --timeout: 660 s would kill helm in the rollback. */
+    /** --rollback-on-failure's wait and its rollback each take --timeout: 660 s would kill helm in the rollback. */
     public function test_helm_gets_the_time_of_the_wait_and_the_rollback(): void
     {
         (new TraefikChartStep)->run($this->cluster(), false);
@@ -575,14 +578,14 @@ class TraefikChartReconcileStepTest extends TestCase
 
     public function test_a_failed_upgrade_fails_the_step_and_says_where_the_release_is(): void
     {
-        $this->upgradeResults = [new HelmResult(false, '', 'release traefik failed, and has been rolled back due to atomic being set', 1)];
+        $this->upgradeResults = [new HelmResult(false, '', 'release traefik failed, and has been rolled back due to rollback-on-failure being set: resource Deployment/knative-serving/traefik not ready', 1)];
 
         try {
             (new TraefikChartStep)->run($this->cluster(), false);
             $this->fail('the step must fail');
         } catch (RuntimeException $e) {
             $this->assertStringContainsString("helm upgrade of knative-serving/traefik to chart {$this->pinned()} failed, it stays on traefik-40.3.0", $e->getMessage());
-            $this->assertStringContainsString('rolled back due to atomic', $e->getMessage());
+            $this->assertStringContainsString('rolled back due to rollback-on-failure', $e->getMessage());
         }
     }
 

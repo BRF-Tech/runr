@@ -80,5 +80,6 @@ the organization has a topic. Data is sent as JSON; with `contentType` a string,
 topic the token does not allow, 413 an event that is too large (256 KiB by default).
 `new Topics({ url, token, fetch })` takes the settings explicitly.
 
-Development needs Node.js 20+ and npm 11 (`devEngines`): the SDK keeps no lockfile, and npm 10
-fails to resolve Vitest 4. Scripts: `npm run build`, `npm run typecheck`, `npm test`.
+Development needs Node.js 22.12+ (Vitest 5) and npm 11 (`devEngines`): the SDK keeps no lockfile,
+so every install resolves the tree. TypeScript 7 builds it. Scripts: `npm run build`,
+`npm run typecheck`, `npm test`.

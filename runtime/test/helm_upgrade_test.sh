@@ -73,6 +73,19 @@ if command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' 2>/dev/null; t
     || fail "install values are no YAML map extraEnv.EXECUTOR_RUNTIMES: $out"
 fi
 
+# --- the installed version's apply: client-side, as Helm 3 installed it ---------------------------
+helm_says=""
+helm() { [ "$*" = "version --template {{.Version}}" ] && [ -n "$helm_says" ] && echo "$helm_says"; }
+for v in v4.3.1 v5.0.0 v10.1.0; do
+  helm_says=$v
+  [ "$(_upg_install_apply)" = --server-side=false ] || fail "helm ${v}: the install is not client-side: $(_upg_install_apply)"
+done
+for v in v3.16.0 v3.22.1 ""; do
+  helm_says=$v
+  [ -z "$(_upg_install_apply)" ] || fail "helm ${v:-without a version}: a flag helm 3 has not: $(_upg_install_apply)"
+done
+unset -f helm
+
 # --- tenant roles and helpers -------------------------------------------------------------------
 [ "$(_upg_mt_second_role 0.4.4)" = member ] || fail "0.4.4: $(_upg_mt_second_role 0.4.4)"
 [ "$(_upg_mt_second_role 0.5.10)" = developer ] || fail "0.5.10: $(_upg_mt_second_role 0.5.10)"

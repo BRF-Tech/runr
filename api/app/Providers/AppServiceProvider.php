@@ -58,10 +58,13 @@ class AppServiceProvider extends ServiceProvider
         );
 
         if (class_exists(Scramble::class)) {
-            // Route filter (a closure cannot be serialized in config, so it is defined here)
+            // Route filter (a closure cannot be serialized in config, so it is defined here). The
+            // controllers' routes only: Scramble documents closure routes too since 0.13, and
+            // RunR's (the reference itself, /api/version, …) were never part of the reference
             Scramble::routes(
                 fn (Route $route) => str_starts_with($route->uri, 'api/')
                     && ! str_starts_with($route->uri, 'api/internal/')
+                    && $route->getActionName() !== 'Closure'
             );
 
             // The API reference and its OpenAPI document. Not Scramble::registerUiRoute /

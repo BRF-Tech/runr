@@ -12,15 +12,16 @@
 #                              data-location pin of region migration.
 # prepare_supply_chain_e2e   — builds the tools image and loads it into the Kind cluster, and
 #                              prepares the Spin app check like test-wasm (prepare_wasm_e2e: the
-#                              wasm-rust build image, examples/wasm in the API container)
+#                              wasm-rust 4.2 build image, examples/wasm in the API container)
 #                              (called by cmd_test for --suite=supply-chain).
-# SUPPLY_CHAIN_WASM_LANGS    — Wasm build images prepared for it (default "rust").
+# SUPPLY_CHAIN_WASM_IMAGES   — Wasm build images prepared for it, LANG:VERSION (default "rust:4.2",
+#                              the version of the Rust example: WASM_NEXT_VERSION).
 #
 # One Kind cluster at a time on a shared host: KIND_LOCK (default /tmp/runr-kind.lock here,
 # see acquire_kind_lock in test-runtimes.sh).
 
 supply_chain_image_tag() {
-  echo "${REGISTRY}/supply-chain:${SUPPLY_CHAIN_VERSION:-1.0.0}"
+  echo "${REGISTRY}/supply-chain:${SUPPLY_CHAIN_VERSION:-1.1.0}"
 }
 
 cmd_build_supply_chain() {
@@ -70,8 +71,8 @@ prepare_supply_chain_e2e() {
     echo "  tools image loaded into kind/${cluster}"
   fi
 
-  # sc-wasm-gated deploys the Rust example as a Spin app (test-wasm.sh)
-  WASM_E2E_LANGS="${SUPPLY_CHAIN_WASM_LANGS:-rust}" prepare_wasm_e2e "$cluster"
+  # sc-wasm-gated deploys the Rust example (wasm-rust 4.2) as a Spin app (test-wasm.sh)
+  WASM_E2E_IMAGES="${SUPPLY_CHAIN_WASM_IMAGES:-rust:${WASM_NEXT_VERSION}}" prepare_wasm_e2e "$cluster"
 }
 
 cmd_test_supply_chain() {

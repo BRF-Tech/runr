@@ -3,7 +3,7 @@
 # libcuda.so.1 into a GPU container, and the driver compiles the kernel's PTX for its GPU.
 #   docker build -t registry.example.com/acme/gpu-caas:1 examples/ai/gpu-caas
 # From the reqs mirror of docker.io/library/python (lib/mirror.sh of BRF-Tech/runr-runtimes).
-FROM ghcr.io/brf-tech/runr/reqs/python:3.12-slim
+FROM ghcr.io/brf-tech/runr/reqs/python:3.15-slim
 
 # LD_LIBRARY_PATH: where some Kubernetes GPU setups mount the driver's libraries
 ENV PYTHONUNBUFFERED=1 \

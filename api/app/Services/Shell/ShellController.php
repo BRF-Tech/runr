@@ -169,6 +169,9 @@ class ShellController
 
         if (! $ctx->pty->spawn([
             'kubeconfig' => $ctx->config['kubeconfig'],
+            // the version the region recorded: kubectl of its minor (a session of a release
+            // before it has none: the newest kubectl)
+            'kubernetes_version' => $ctx->config['kubernetes_version'] ?? null,
             'pod' => $pod,
             'namespace' => $ctx->config['namespace'],
             'container' => $container,

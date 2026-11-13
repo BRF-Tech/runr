@@ -472,7 +472,7 @@ gitDeploy:
 # until an administrator enables them (publish / mirror toolsImage first).
 supplyChain:
   enabled: true                 # build-ready hooks: every RunR-built image gets its supply-chain run
-  toolsImage: ""                # default ghcr.io/brf-tech/runr/supply-chain:1.0.0 (ci.sh supply-chain)
+  toolsImage: ""                # default ghcr.io/brf-tech/runr/supply-chain:1.1.0 (ci.sh supply-chain)
   jobNamespace: ""              # default runr-supply-chain (Jobs + region signing key, per region)
   rescanHours: ""               # default re-scan interval of deployed images for new regions (24)
   trivyDbSource: ""             # mirror source of the vulnerability DB (mirror.gcr.io/aquasec/trivy-db:2)
@@ -513,7 +513,7 @@ globalDns:
 # Container images (docker save / OCI layout tars) and .wasm modules uploaded through the console,
 # the API or `runr images push` into a region's internal registry. Empty values keep the defaults.
 images:
-  uploadImage: ""              # receiver image the regions pull (default ghcr.io/brf-tech/runr/image-upload:1.1.2, ci.sh image-upload)
+  uploadImage: ""              # receiver image the regions pull (default ghcr.io/brf-tech/runr/image-upload:1.2.0, ci.sh image-upload)
   quotaGb: ""                  # storage of uploaded images per organization over every region (default 50, 0 = unlimited)
   maxUploadGb: ""              # largest file of one upload (default 20)
   uploadTtlHours: ""           # an upload not completed within this time is aborted (default 24)
@@ -556,16 +556,17 @@ runtimeCatalog:
 # API keys, JWT routes, plans and usage per consumer: the regions run gateway-auth, which the
 # region Traefik asks before every call of a key / JWT route. Empty values keep the defaults.
 apiProduct:
-  gatewayAuthImage: ""         # gateway-auth image the regions pull (default ghcr.io/brf-tech/runr/gateway-auth:1.0.0, ci.sh gateway-auth)
+  gatewayAuthImage: ""         # gateway-auth image the regions pull (default ghcr.io/brf-tech/runr/gateway-auth:1.1.0, ci.sh gateway-auth)
   callbackUrl: ""              # RunR's base URL as the regions reach it (default: the region agent's URL)
   syncSeconds: ""              # how often gateway-auth fetches changed keys / plans (default 10)
+  onDemandSyncSeconds: ""      # least seconds between two fetches of a pod for a key it does not know (default 2; 0: none)
   usageRetentionDays: ""       # hourly usage rows kept (default 400)
 
 # ─── Organization export / import (docs/org-export.md) ─
 # Packages live on the API volume (api.storage.size / storage.application): size it for what you
 # export, or write exports to an object binding / S3. Empty values keep the defaults.
 orgTransfer:
-  transferImage: ""            # transfer agent the regions pull for binding data and images (default ghcr.io/brf-tech/runr/image-upload:1.1.2)
+  transferImage: ""            # transfer agent the regions pull for binding data and images (default ghcr.io/brf-tech/runr/image-upload:1.2.0)
   maxPackageGb: ""             # largest package an import takes (default 50)
   retentionHours: ""           # packages are removed after (default 168)
   podDiskGb: ""                # emptyDir of a transfer pod: one binding's dump or one image (default 20)

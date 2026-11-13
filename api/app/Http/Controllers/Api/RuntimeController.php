@@ -6,6 +6,7 @@ use App\Http\Requests\Runtime\SaveRuntimeRequest;
 use App\Http\Resources\ProjectResource;
 use App\Http\Resources\RuntimeResource;
 use App\Jobs\RuntimeTestDeployJob;
+use App\Models\ExecutorImage;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Runtime;
@@ -151,13 +152,19 @@ class RuntimeController extends Controller
         return response()->json(null, 204);
     }
 
-    /** Get a runtime's starter files for a service type and handler */
+    /**
+     * Get a runtime's starter files for a service type and handler
+     *
+     * `version`: the starter of a runtime version with a template of its own (versions[].template);
+     * without it, the runtime's default version's.
+     */
     public function template(Request $request, Runtime $runtime): JsonResponse
     {
         $this->abortUnlessVisible($runtime);
         $request->validate([
             'service_type' => 'sometimes|in:xaas,faas',
             'handler' => 'sometimes|nullable|string|max:128',
+            'version' => 'sometimes|nullable|string|max:32',
         ]);
 
         $manifest = $this->runtimes->require($runtime->id);
@@ -166,7 +173,8 @@ class RuntimeController extends Controller
             ? ProjectEntrypoint::fromHandlerString($request->input('handler') ?: ProjectEntrypoint::defaultHandlerString($manifest), $manifest)
             : new ProjectEntrypoint($manifest->defaultFilename(), $request->input('handler') ?: $manifest->handlerFunction());
 
-        $files = $manifest->templateFiles($entry->filename, $entry->handler, $faas);
+        $version = $request->input('version') ?: (ExecutorImage::defaultVersion($manifest->id()) ?? $manifest->defaultVersion());
+        $files = $manifest->templateFiles($entry->filename, $entry->handler, $faas, $version);
 
         return response()->json(['files' => (object) ([$entry->filename => $files[$entry->filename] ?? ''] + $files)]);
     }

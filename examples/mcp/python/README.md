@@ -1,13 +1,13 @@
 # MCP server starter — Python
 
 `server.py` is a Model Context Protocol server on the official
-[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (FastMCP): Streamable HTTP
+[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) 2 (`MCPServer`): Streamable HTTP
 at `/mcp` on `$PORT`, stateless, behind the RunR MCP gateway
 ([docs/mcp.md](../../../docs/mcp.md#hosting-mcp-servers)).
 
 | File | |
 |---|---|
-| `runtime.yaml` | the `mcp-python` runtime: image `ghcr.io/brf-tech/runr/reqs/python:3.13-slim`, dependencies from `requirements.txt` into `/app/vendor`, `run.command` `python -u /app/code/server.py` (http mode), starter template `server.py` |
+| `runtime.yaml` | the `mcp-python` runtime: image `ghcr.io/brf-tech/runr/reqs/python:3.15-slim` (Python 3.15, as the `Dockerfile`), dependencies from `requirements.txt` into `/app/vendor`, `run.command` `python -u /app/code/server.py` (http mode), starter template `server.py` |
 | `server.py` | tools `hello`, `add`, `whoami`, resource `starter://about`, prompt `greet`; `GatewaySignature` checks `X-RunR-Signature` |
 | `requirements.txt` | `mcp`, `uvicorn` |
 | `Dockerfile` | the same server as an image for a CaaS project |

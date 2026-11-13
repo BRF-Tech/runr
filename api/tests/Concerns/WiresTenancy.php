@@ -59,6 +59,8 @@ trait WiresTenancy
         'Modules/Tenancy/Database/TenantMigrations/0081_add_cert_manager_to_knative_regions.php',
         // projects.capacity_released_at (a resumed project awaits admission, StoppedCapacity)
         'Modules/Tenancy/Database/TenantMigrations/0111_add_capacity_released_at_to_projects.php',
+        // knative_regions.kubernetes_version (synced from the platform region; kubectl's minor)
+        'Modules/Tenancy/Database/TenantMigrations/0112_add_kubernetes_version_to_knative_regions.php',
     ];
 
     protected function setUpTenancy(): void

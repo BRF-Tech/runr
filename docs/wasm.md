@@ -9,11 +9,11 @@ Five runtime plugins then appear in that region's runtime picker, marked **Wasm*
 
 | Runtime | Language | Toolchain | Handler |
 |---|---|---|---|
-| `wasm-rust` | Rust | cargo, `wasm32-wasip1`, Spin Rust SDK 5.2 | `#[http_component] fn handle(req: Request) -> anyhow::Result<impl IntoResponse>` |
-| `wasm-go` | Go | TinyGo 0.42, Spin Go SDK v2 | `spinhttp.Handle(func(w http.ResponseWriter, r *http.Request))` in `init()` |
-| `wasm-js` | JavaScript / TypeScript | esbuild, Spin JS SDK (StarlingMonkey) | `addEventListener('fetch', (event) => event.respondWith(...))` |
+| `wasm-rust` | Rust | **4.2**: cargo, `wasm32-wasip2`, Spin Rust SDK 8 (async, WASIp3) · **4.1**: `wasm32-wasip1`, Spin Rust SDK 5.2 | 4.2: `#[http_service] async fn handle(req: Request) -> anyhow::Result<impl IntoResponse>` · 4.1: `#[http_component] fn handle(req: Request) -> …` |
+| `wasm-go` | Go | TinyGo 0.44, Spin Go SDK v2 | `spinhttp.Handle(func(w http.ResponseWriter, r *http.Request))` in `init()` |
+| `wasm-js` | JavaScript / TypeScript | **4.2**: esbuild 0.28 · **4.1**: esbuild 0.25; Spin JS SDK (StarlingMonkey) | `addEventListener('fetch', (event) => event.respondWith(...))` |
 | `wasm-python` | Python | componentize-py 0.25, Spin Python SDK 5.0 | `class HttpHandler(http.Handler)` with `async def handle_request(self, request)` |
-| `wasm-exec` | any language with a WASI target — C / C++, Zig, Go (TinyGo), an uploaded module | wasi-sdk 34, Zig 0.16, TinyGo 0.42; no SDK | a command module on Spin's WAGI executor: the request on stdin and in CGI variables, the response on stdout ([wasm-exec](#wasm-exec)) |
+| `wasm-exec` | any language with a WASI target — C / C++, Zig, Go (TinyGo), an uploaded module | wasi-sdk 34, Zig 0.17, TinyGo 0.44; no SDK | a command module on Spin's WAGI executor: the request on stdin and in CGI variables, the response on stdout ([wasm-exec](#wasm-exec)) |
 
 A Wasm function starts as a WebAssembly instance inside the shim — no container image filesystem
 to unpack, no language runtime to boot — and the shim keeps the compiled native code of each
@@ -60,7 +60,7 @@ Deploy
 
 | Shim | Release | Runtime handler | RuntimeClass | Runs |
 |---|---|---|---|---|
-| Spin (required) | containerd-shim-spin v0.26.0-runr.1 — RunR's build of v0.26.0 (Spin runtime 4.1) | `spin-runr` | `wasmtime-spin-v2` | Spin apps — the five `wasm-*` runtimes, `wasm-exec` included |
+| Spin (required) | containerd-shim-spin v0.27.2-runr.1 — RunR's build of v0.27.2 (Spin runtime 4.2) | `spin-runr` | `wasmtime-spin-v2` | Spin apps — the five `wasm-*` runtimes, `wasm-exec` included |
 | Wasmtime (optional) | containerd-shim-wasmtime v0.6.1 | `wasmtime-runr` | `wasmtime-v1` | WASI command modules and components packaged as OCI images, for platform runtimes that set `runtimeClass: wasmtime-v1` |
 
 The RuntimeClass name `wasmtime-spin-v2` is the one the Spin operator uses, so Spin apps written
@@ -71,9 +71,9 @@ and reports it instead of replacing it.
 
 ### The Spin shim RunR installs
 
-RunR installs its own build of containerd-shim-spin: **v0.26.0-runr.1**, the image
-`ghcr.io/brf-tech/runr/containerd-shim-spin:v0.26.0-runr.1`, built from `runtime/wasm-shim-spin`. It is the
-upstream tag v0.26.0 with one change in the runwasi library it is built on (containerd-shim-wasm
+RunR installs its own build of containerd-shim-spin: **v0.27.2-runr.1**, the image
+`ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1`, built from `runtime/wasm-shim-spin`. It is the
+upstream tag v0.27.2 with one change in the runwasi library it is built on (containerd-shim-wasm
 1.0.1): the Linux containers of a Wasm pod run with the environment of their pod spec. The upstream
 releases since v0.16.0 start them with the shim's own environment, and Knative's queue-proxy, which
 reads its configuration from its environment (`CONTAINER_CONCURRENCY`, `SERVING_*`, …), exits at
@@ -147,11 +147,13 @@ same version on that node loads precompiled code. That is why RunR pushes artifa
 image `FROM scratch` with `spin.toml`: the shim reads such an image from its filesystem and
 compiles it again on every start.
 
-The build images are pulled by the nodes like any image (`ghcr.io/brf-tech/runr/exec-wasm-<lang>:4.1`,
-built from `runtimes/wasm-<lang>/Dockerfile` of [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes) with its `ci.sh wasm` on base images from the reqs
+The build images are pulled by the nodes like any image (`ghcr.io/brf-tech/runr/exec-wasm-<lang>:<version>`,
+4.1 of every runtime and 4.2 of Rust and JavaScript ([Versions](#versions)), built from
+`runtimes/wasm-<lang>/Dockerfile` of [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes), or from a version's own directory
+`runtimes/wasm-<lang>/<version>/`, with its `ci.sh wasm` on base images from the reqs
 mirror; their build steps run Spin with `OTEL_SDK_DISABLED=true`, as a docker-container BuildKit
 builder hands every build step an OTLP endpoint Spin rejects) and come with the
-dependencies of the default project already fetched and compiled — Rust's `CARGO_TARGET_DIR`,
+dependencies of the version's default project already fetched and compiled — Rust's `CARGO_TARGET_DIR`,
 Go's module and TinyGo caches, JavaScript's `node_modules` — so a build of the starter code only
 compiles the function itself. The build Job runs under the region's build sandbox like Kaniko.
 
@@ -247,9 +249,12 @@ is on those nodes for all of them.
 
 ## Write a Wasm function
 
-Create a project in a region with WebAssembly support and pick one of the **Wasm** runtimes. The
-picker offers them only in regions whose WebAssembly support is ready with the Spin shim; the
-API refuses to create or deploy a Wasm project anywhere else, naming the region.
+Create a project in a region with WebAssembly support and pick one of the **Wasm** runtimes and
+its version. The picker offers them only in regions whose WebAssembly support is ready with the
+Spin shim; the API refuses to create or deploy a Wasm project anywhere else, naming the region.
+Rust and JavaScript have two versions side by side, 4.1 and 4.2 (the default of new projects) —
+SDK generations whose code does not build on the other; the starter code (and its preview in the
+picker) is the picked version's ([Versions](#versions)).
 
 - **XaaS** projects hold the handler file (`lib.rs`, `main.go`, `index.js`, `app.py`, `main.c`
   for wasm-exec); the build adds the runtime's default `spin.toml` and project files (wasm-exec
@@ -262,19 +267,23 @@ Every save is a build (the runtimes have a `build` step); the version deploys on
 is in the region registry. Starter code and complete examples: [`examples/wasm`](../examples/wasm).
 
 ```rust
+// wasm-rust 4.2: Spin Rust SDK 8, async on WASIp3
 use spin_sdk::http::{IntoResponse, Request, Response};
-use spin_sdk::http_component;
+use spin_sdk::http_service;
 
-#[http_component]
-fn handle(req: Request) -> anyhow::Result<impl IntoResponse> {
-    let name = req.query().split('&').find_map(|p| p.strip_prefix("name=")).unwrap_or("World");
+#[http_service]
+async fn handle(req: Request) -> anyhow::Result<impl IntoResponse> {
+    let query = req.uri().query().unwrap_or("");
+    let name = query.split('&').find_map(|p| p.strip_prefix("name=")).unwrap_or("World");
     Ok(Response::builder()
         .status(200)
         .header("content-type", "text/plain")
-        .body(format!("Hello, {name}! (from Rust, Wasm)"))
-        .build())
+        .body(format!("Hello, {name}! (from Rust, Wasm)"))?)
 }
 ```
+
+On 4.1 (Spin Rust SDK 5) the same function is synchronous: `#[http_component] fn handle(req: Request)`,
+`req.query()` and `Response::builder()…body(…).build()`.
 
 ```bash
 curl "https://hello.<region>.<domain>/?name=RunR"
@@ -289,9 +298,9 @@ WASI command — a preview 1 module (`wasm32-wasip1`, a `_start` export) or a WA
 it writes to stdout is the response. This is Spin's **WAGI** executor (`executor = { type = "wagi" }`
 of an HTTP trigger).
 
-**Why it works on the pinned shim.** RunR's containerd-shim-spin v0.26.0-runr.1 (`WasmShim.php`)
-embeds Spin 4.1.0; its `spin-trigger-http` crate has the WAGI executor (`crates/trigger-http/src/wagi.rs` at
-`v4.1.0`: CGI headers in the environment, the body on stdin, argv from `argv`, the module's
+**Why it works on the pinned shim.** RunR's containerd-shim-spin v0.27.2-runr.1 (`WasmShim.php`)
+embeds Spin 4.2.6; its `spin-trigger-http` crate has the WAGI executor (`crates/trigger-http/src/wagi.rs` at
+`v4.2.6`: CGI headers in the environment, the body on stdin, argv from `argv`, the module's
 `wasi:cli/run` called once per request), and the shim turns a preview 1 command module into a
 component on load with Spin's WASI command adapter (`spin-componentize`: a core module with
 `_start` and no wit-bindgen metadata is adapted with `wasi_snapshot_preview1.command`); a WASI 0.2
@@ -347,7 +356,7 @@ which WAGI modules do not read.
 ### Building
 
 The build Job runs `runr-wasm-exec build` in `ghcr.io/brf-tech/runr/exec-wasm-exec:4.1` (wasi-sdk 34, Zig
-0.16, TinyGo 0.42 with wasm-tools 1.240, the Spin CLI 4.1, `runtimes/wasm-exec` of BRF-Tech/runr-runtimes); the first match
+0.17, TinyGo 0.44 with wasm-tools 1.263, the Spin CLI 4.3, `runtimes/wasm-exec` of BRF-Tech/runr-runtimes); the first match
 makes `main.wasm`:
 
 | The project has | Build |
@@ -458,8 +467,8 @@ read the node's files.
 
 What follows from the model for the languages:
 
-- **Rust**: crates that compile to `wasm32-wasip1` work; crates that need threads, `std::process`
-  or native C libraries are for the regular runtimes.
+- **Rust**: crates that compile to `wasm32-wasip2` (4.2) or `wasm32-wasip1` (4.1) work; crates
+  that need threads, `std::process` or native C libraries are for the regular runtimes.
 - **Go**: TinyGo compiles a large part of the standard library; code that relies on `cgo` or on
   reflection-heavy packages is checked with `tinygo build` first.
 - **JavaScript / TypeScript**: web APIs (`fetch`, `Request`, `Response`, `URL`, `TextEncoder`,
@@ -550,16 +559,52 @@ needs nothing beyond creating and deploying projects.
 
 ## Versions
 
+A version of a Wasm runtime is a build image (`exec-wasm-<lang>:<version>`) with its SDK
+generation: the starter code, the default build files (`Cargo.toml`, `package.json`,
+`spin.toml`) and the toolchain that builds them. Rust and JavaScript have two side by side:
+
+| Runtime | 4.1 | 4.2 (the default of new projects) |
+|---|---|---|
+| `wasm-rust` | Spin Rust SDK 5.2, `wasm32-wasip1`, synchronous `#[http_component]` | Spin Rust SDK 8, `wasm32-wasip2`, `#[http_service] async fn` on WASIp3 (Rust 1.94 or later, edition 2024) |
+| `wasm-js` | esbuild 0.25 | esbuild 0.28; the same Spin JS SDK and handler |
+
+`wasm-go`, `wasm-python` and `wasm-exec` have 4.1 only. Go's next generation, the Spin Go SDK v4,
+builds with componentize-go, which needs WASIp3 support in Go itself; until a Go release has it
+([golang/go#76775](https://github.com/golang/go/pull/76775)) only a patched Go of a personal fork
+would build it, so wasm-go 4.2 waits for that release. Both versions run on the same Spin shim:
+Spin 4.2.6 (the shim's runtime) serves the WASIp3 components of 4.2 as it serves the components
+of 4.1.
+
+- **New projects** get 4.2 of Rust and JavaScript unless they pick 4.1 in the runtime picker
+  (`runtime_version` in the API, `--runtime-version` of `runr init`, `runtime_version` of the
+  Terraform `runr_project`): a project created without a version runs the default. The starter
+  code and its preview are the picked version's.
+- **Existing projects** keep their version and build on its image as before. The upgrade to 0.7.0
+  pins the wasm-rust and wasm-js projects without a version to 4.1 ([Upgrade](upgrade.md)), so
+  their next deploy does not move them to code they were not written for. Code of one version
+  does not build on the other — moving a project to 4.2 is porting its code to the new SDK (Rust:
+  `#[http_service] async fn`, the `http` crate's request with `req.uri().query()` and
+  `req.into_body().bytes().await`, `…body(…)?` instead of `.build()`; JavaScript: nothing but a
+  `package.json` of its own that pins esbuild), then setting its `runtime_version` to 4.2.
+  [`examples/wasm`](../examples/wasm) is 4.2's code for Rust and JavaScript.
+- **A FaaS project's own** `Cargo.toml`, `go.mod`, `package.json` or `spin.toml` replace the
+  version's defaults, as before; the version decides which defaults a project without them gets.
+
+In the runtime manifest a version carries its own starter and build files
+(`versions[].template`, `versions[].build.files`: [Runtimes → Versions](runtimes.md#versions)),
+and BRF-Tech/runr-runtimes builds a version with a directory of its own
+(`runtimes/wasm-rust/4.2/`) from it.
+
 | Component | Version |
 |---|---|
-| containerd-shim-spin | v0.26.0-runr.1: v0.26.0 built by RunR (Spin runtime 4.1.0, runwasi containerd-shim-wasm 1.0.1 with the pod environment for Linux containers) |
+| containerd-shim-spin | v0.27.2-runr.1: v0.27.2 built by RunR (Spin runtime 4.2.6, runwasi containerd-shim-wasm 1.0.1 with the pod environment for Linux containers) |
 | containerd-shim-wasmtime | v0.6.1 |
-| Spin CLI in the build images | 4.1.0 |
-| Rust | 1.98, `wasm32-wasip1`, spin-sdk 5.2 |
-| TinyGo | 0.42, spin-go-sdk v2.2.1 |
-| Node.js | 22, @spinframework/build-tools 2.1, @spinframework/wasi-http-proxy 2.0 |
+| Spin CLI in the build images | 4.3.0 (every build image the same) |
+| Rust | 4.1: 1.99, `wasm32-wasip1`, spin-sdk 5.2 · 4.2: 1.99, `wasm32-wasip2`, spin-sdk 8.0 |
+| Go | TinyGo 0.44, spin-go-sdk v2.2.1 |
+| Node.js | 22, @spinframework/build-tools 2.1, @spinframework/wasi-http-proxy 2.0; esbuild 0.25 (4.1), 0.28 (4.2) |
 | Python | 3.13, componentize-py 0.25.1, spin-sdk 5.0.0 (world `spin:up/http-trigger@4.1.0`) |
-| wasm-exec | wasi-sdk 34, Zig 0.16.0, TinyGo 0.42.0, runr-image-upload 1.0.0; the WAGI executor of Spin 4.1.0 |
+| wasm-exec | wasi-sdk 34, Zig 0.17.1, TinyGo 0.44.0, wasm-tools 1.263, runr-image-upload 1.0.0; the WAGI executor of the shim's Spin |
 
 `api/app/Services/Wasm/WasmShim.php` pins the Spin shim image (its tag is the build's version,
 `runtime/wasm-shim-spin`) and the Wasmtime release tarballs by sha256. A new shim is a change of

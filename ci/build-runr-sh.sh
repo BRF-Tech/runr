@@ -18,11 +18,11 @@
 #   --site-dir DIR  also keep the unpacked site in DIR (must not exist)
 #
 # Needs git, python3 and pandoc 3.x — a local `pandoc`, else the image $PANDOC_IMAGE
-# (default pandoc/core:3.6.4) through docker. The ZIP is deterministic for a ref: entries
+# (default ghcr.io/brf-tech/runr/reqs/pandoc:3.6.4, pandoc/core 3.6.4 on the reqs mirror) through docker. The ZIP is deterministic for a ref: entries
 # sorted, timestamps set to the commit time.
 set -euo pipefail
 
-PANDOC_IMAGE="${PANDOC_IMAGE:-pandoc/core:3.6.4}"
+PANDOC_IMAGE="${PANDOC_IMAGE:-ghcr.io/brf-tech/runr/reqs/pandoc:3.6.4}"
 ref=HEAD
 worktree=false
 release=""

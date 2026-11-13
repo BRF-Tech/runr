@@ -1,7 +1,7 @@
 # Q runtime image: the q interpreter on Alpine. The build context is this directory
 # (Dockerfile, go.mod, *.go) — RunR builds it in each region from the files uploaded with
 # the runtime and caches the image in the region registry.
-FROM ghcr.io/brf-tech/runr/reqs/golang:1.26-alpine AS build
+FROM ghcr.io/brf-tech/runr/reqs/golang:1.27-alpine AS build
 WORKDIR /src
 COPY go.mod *.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /q .

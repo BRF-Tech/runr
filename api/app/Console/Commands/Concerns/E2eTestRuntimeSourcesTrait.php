@@ -46,7 +46,8 @@ trait E2eTestRuntimeSourcesTrait
 
     private const RS_CATALOG = 'registry.e2e.runr.test/e2e/catalog:stable';
 
-    private const RS_BASH_IMAGE = 'docker.io/library/bash:5.2';
+    /** The bash image of examples/runtimes/bash on the reqs mirror (loaded into Kind by the suite). */
+    private const RS_BASH_IMAGE = 'ghcr.io/brf-tech/runr/reqs/bash:5.2';
 
     private const RS_BASH = <<<'SH'
 #!/usr/bin/env bash

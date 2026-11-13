@@ -29,7 +29,7 @@ Every value mentioned here is described in the [Helm values reference](helm-valu
 | Requirement | Details |
 | --- | --- |
 | Kubernetes | 1.23 or later (the chart's `kubeVersion`): the chart uses only stable APIs, the newest of them `autoscaling/v2` (HorizontalPodAutoscaler). A cluster that you also add as a region needs 1.30 or later (`knative.minK8sMinor`). |
-| Helm | Helm 3 (the chart's API version is `v2`). |
+| Helm | Helm 3 or Helm 4 (the chart's API version is `v2`). Helm 4 installs a new release with server-side apply and upgrades an existing one the way it was installed ([Helm 4](upgrade.md#helm-4)). |
 | Ingress controller | An ingress controller with an IngressClass for the console (`ingress.className`, default `traefik`). What it has to pass through is listed under [Ingress and TLS](#ingress-and-tls). |
 | Storage | A StorageClass that provisions ReadWriteOnce volumes: the API volume `runr-api-storage` and, with the chart's PostgreSQL, `runr-postgres-data` (chart defaults: 10Gi each). For API, Horizon, scheduler and Reverb pods on several nodes, a StorageClass with ReadWriteMany volumes for the API volume. See [Storage](#storage). |
 | cert-manager | Only for the console's `ingress.tls.mode: letsencrypt`: cert-manager and a ClusterIssuer (default name `letsencrypt-prod`). The regions need none of their own: RunR installs cert-manager there, or reuses one a region's cluster already runs, for the certificates of custom domains ([cert-manager](regions.md#cert-manager)); a cluster that is both uses the same cert-manager. |
@@ -53,7 +53,7 @@ examples below).
 The modules of the console are built into its image, so the multi-tenant console is a separate UI
 image: with `edition: multi-tenant` the UI runs `ghcr.io/brf-tech/runr/ui:<tag>-mt`
 (`ui.image.multiTenantSuffix`, default `-mt`). The tag defaults to the chart's release, its
-`appVersion`, so chart 0.6.13 runs `0.6.13-mt`; the moving tag `latest` has no multi-tenant variant
+`appVersion`, so chart 0.7.0 runs `0.7.0-mt`; the moving tag `latest` has no multi-tenant variant
 and runs `<appVersion>-mt` as well. A UI image of your own that carries the modules under its plain
 tag needs `ui.image.multiTenantSuffix: ""`.
 
@@ -185,7 +185,7 @@ A custom certificate is easiest to pass from files, and renewed by running the s
 the new files:
 
 ```sh
-helm upgrade runr brf-tech/runr --version 0.6.13 -n runr --reuse-values \
+helm upgrade runr brf-tech/runr --version 0.7.0 -n runr --reuse-values \
   --set ingress.tls.mode=custom \
   --set-file ingress.tls.certificate=fullchain.pem \
   --set-file ingress.tls.privateKey=privkey.pem
@@ -487,8 +487,10 @@ Reading the password:
 | `secret.create: false` | `ADMIN_PASSWORD` of your Secret; without it the bootstrap Job generates one and stores it in the Secret `runr-admin`: `kubectl get secret runr-admin -n runr -o jsonpath='{.data.password}' \| base64 -d` (`helm status` prints this command) |
 
 The password is never written to a log. With `secret.create: false` the bootstrap Job may read and
-patch the one Secret `runr-admin` (a Role for the `runr-api` ServiceAccount); an attempt that is
-repeated uses the password stored before, so the account and the Secret always agree.
+patch the one Secret `runr-admin` (a Role for the `runr-api` ServiceAccount), with the API image's
+kubectl of the install cluster's Kubernetes minor (`runr-kubectl`:
+[Kubernetes version](regions.md#kubernetes-version)); an attempt that is repeated uses the password
+stored before, so the account and the Secret always agree.
 
 The administrator signs in with the user name (`admin.username`, default `admin`) or the e-mail
 address (`admin.email`) in the console's **E-mail or user name** field or with
@@ -671,7 +673,7 @@ The chart generates `APP_KEY`, `REVERB_APP_SECRET` and the administrator's passw
    `api.image.tag` and `ui.image.tag` default to the chart's `appVersion`.
 
    ```sh
-   helm upgrade --install runr brf-tech/runr --version 0.6.13 \
+   helm upgrade --install runr brf-tech/runr --version 0.7.0 \
      --namespace runr --create-namespace \
      -f values-production.yaml
    ```

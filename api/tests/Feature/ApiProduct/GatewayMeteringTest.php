@@ -70,6 +70,7 @@ class GatewayMeteringTest extends TestCase
         $env = collect($container['env'])->pluck('value', 'name');
         $this->assertSame('http://traefik.knative-serving.svc.cluster.local', $env['UPSTREAM_URL']);
         $this->assertSame(':8081', $env['PROXY_LISTEN']);
+        $this->assertSame('2', $env['ON_DEMAND_SYNC_SECONDS'], 'a key it does not know: asked again at most every 2 s');
         $this->assertContains(['name' => 'proxy', 'containerPort' => 8081], $container['ports']);
         $this->assertNotEmpty($deployment['metadata']['annotations']['runr.sh/spec-revision'] ?? null);
 

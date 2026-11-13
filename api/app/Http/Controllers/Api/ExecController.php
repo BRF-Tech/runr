@@ -55,6 +55,8 @@ class ExecController extends Controller
                 'session_id' => $sessionId,
             ],
             'kubeconfig' => $region->kubeconfig,
+            // kubectl of the region's Kubernetes minor (KubectlBinary)
+            'kubernetes_version' => $region->kubernetes_version,
             'namespace' => $namespace,
             'project_slug' => $target->slug,
             'project_id' => $project->id,

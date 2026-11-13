@@ -19,7 +19,7 @@ class WasmShimTest extends TestCase
         $spin = WasmShim::get('spin');
         $this->assertSame(['containerd-shim-spin-v2', 'io.containerd.spin.v2', 'spin-runr', 'wasmtime-spin-v2'],
             [$spin->binary, $spin->runtimeType, $spin->handler, $spin->runtimeClass]);
-        $this->assertSame('v0.26.0-runr.1', $spin->version);
+        $this->assertSame('v0.27.2-runr.1', $spin->version);
         $this->assertSame('runr.dev/wasm-spin', $spin->nodeLabel());
 
         $wasmtime = WasmShim::get('wasmtime');
@@ -44,8 +44,8 @@ class WasmShimTest extends TestCase
     {
         $spin = WasmShim::get('spin');
 
-        // runtime/wasm-shim-spin: containerd-shim-spin v0.26.0 with the env of Linux containers fixed
-        $this->assertSame('ghcr.io/brf-tech/runr/containerd-shim-spin:v0.26.0-runr.1', $spin->image);
+        // runtime/wasm-shim-spin: containerd-shim-spin v0.27.2 with the env of Linux containers fixed
+        $this->assertSame('ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1', $spin->image);
         $this->assertStringEndsWith(':'.$spin->version, $spin->image, 'the image tag is the shim version');
         $this->assertSame([], $spin->artifacts);
         $this->assertSame(['x86_64', 'aarch64'], $spin->arches);
@@ -54,7 +54,7 @@ class WasmShimTest extends TestCase
         $dockerfile = (string) file_get_contents(dirname(__DIR__, 4).'/runtime/wasm-shim-spin/Dockerfile');
         $this->assertStringContainsString('ARG VERSION='.$spin->version, $dockerfile);
         $this->assertStringContainsString('ghcr.io/brf-tech/runr/containerd-shim-spin:'.$spin->version, $dockerfile);
-        $this->assertStringContainsString('ARG SHIM_SPIN_COMMIT=922760061d91bacd455c5824b8143dec2a372515', $dockerfile);
+        $this->assertStringContainsString('ARG SHIM_SPIN_COMMIT=1acd7c3a0126d16a1e7da609e06d6a45d005a9c5', $dockerfile);
     }
 
     public function test_runtime_class_lookup(): void
@@ -95,7 +95,7 @@ class WasmShimTest extends TestCase
         $spin = WasmShim::get('spin');
         $this->assertSame([
             'spin', 'containerd-shim-spin-v2', 'spin-runr', 'io.containerd.spin.v2',
-            'image', 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.26.0-runr.1', 'image', 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.26.0-runr.1',
+            'image', 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1', 'image', 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1',
         ], explode(' ', $spin->scriptLine()));
         $this->assertSame(['id', 'name', 'version', 'runtime_class', 'handler', 'description'], array_keys($spin->toArray()));
     }

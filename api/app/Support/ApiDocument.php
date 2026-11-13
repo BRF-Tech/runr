@@ -82,6 +82,8 @@ final class ApiDocument
      *  3. schema names grouped: FooRequest → Request.Foo, FooResource → Response.Foo
      *  4. the server relative to the host the document is read from (/api), not the URL the
      *     document was generated at (the image's build has no host)
+     *  5. a response's description once: Scramble joins those of the returns it merges into one
+     *     response ("An error\n\nAn error")
      *
      * @param  array<string, mixed>  $spec
      * @return array<string, mixed>
@@ -92,8 +94,26 @@ final class ApiDocument
         self::walkSchema($spec);
         self::groupSchemas($spec);
         $spec['servers'] = [['url' => '/'.trim((string) config('scramble.api_path', 'api'), '/')]];
+        self::responseDescriptionsOnce($spec);
 
         return $spec;
+    }
+
+    /** @param array<string, mixed> $spec */
+    private static function responseDescriptionsOnce(array &$spec): void
+    {
+        foreach ($spec['paths'] ?? [] as $path => $item) {
+            foreach (array_intersect_key((array) $item, array_flip(self::METHODS)) as $method => $operation) {
+                foreach ((array) ($operation['responses'] ?? []) as $code => $response) {
+                    $description = is_array($response) ? ($response['description'] ?? null) : null;
+                    if (! is_string($description) || ! str_contains($description, "\n\n")) {
+                        continue;
+                    }
+                    $paragraphs = array_unique(array_filter(array_map('trim', explode("\n\n", $description)), fn (string $p) => $p !== ''));
+                    $spec['paths'][$path][$method]['responses'][$code]['description'] = implode("\n\n", $paragraphs);
+                }
+            }
+        }
     }
 
     /**

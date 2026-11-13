@@ -5,20 +5,22 @@ set -euo pipefail
 # helm lint --strict and helm template of helm/ with the defaults and with every values file in
 # ci/helm-values/ (multi-tenant edition, white-label branding, supply chain, AI / GPU,
 # observability, high availability, external services, network policies, a shared API volume, an
-# operator-managed Secret); every rendering is validated with kubeconform against each Kubernetes
-# version RunR supports (1.30 and later: KNATIVE_MIN_K8S_MINOR). Further checks render single
-# values and look at what the templates make of them (storage, secrets, gateway, ports, …).
+# operator-managed Secret); every rendering is validated with kubeconform against the oldest
+# Kubernetes RunR supports (1.30: KNATIVE_MIN_K8S_MINOR) and the newest, the one CI's Kind suites
+# run (an API the chart takes that 1.30 lacks, or one a newer Kubernetes removed, fails one of
+# them). Further checks render single values and look at what the templates make of them
+# (storage, secrets, gateway, ports, …).
 #
 #   bash ci/check-helm-chart.sh
-#   K8S_VERSIONS="1.30.0 1.35.0" bash ci/check-helm-chart.sh
+#   K8S_VERSIONS="1.30.0 1.34.0 1.37.0" bash ci/check-helm-chart.sh
 #
 # Needs helm, and kubeconform on the PATH or docker (kubeconform then runs in a container); it
 # downloads the Kubernetes schemas from GitHub.
 # ─────────────────────────────────────────────────────────────────────────────
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-K8S_VERSIONS="${K8S_VERSIONS:-1.30.0 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0}"
-KUBECONFORM_IMAGE="${KUBECONFORM_IMAGE:-ghcr.io/yannh/kubeconform:v0.7.0}"
+K8S_VERSIONS="${K8S_VERSIONS:-1.30.0 1.37.0}"
+KUBECONFORM_IMAGE="${KUBECONFORM_IMAGE:-ghcr.io/yannh/kubeconform:v0.8.0}"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/runr-helm-check.XXXXXX")"
 trap 'rm -rf "$OUT"' EXIT
 
@@ -314,14 +316,17 @@ render() {
   shift
   helm template runr "$ROOT/helm" --namespace runr --set domain=console.acme-cloud.example "$@" >"$OUT/$name.render" 2>"$OUT/$name.err"
 }
-# refused <name> <message> [args…]: the values stop the install with that message
+# refused <name> <message> [args…]: the values stop the install with that message. A message that
+# is a values key (a.b.c) is the schema's refusal of it: helm 3.16 names it a.b.c, helm 4 (and
+# 3.18) at '/a/b/c'
 refused() {
   local name=$1 want=$2
   shift 2
   if render "$name" "$@"; then
     return 1
   fi
-  grep -q -F -- "$want" "$OUT/$name.err"
+  grep -q -F -- "$want" "$OUT/$name.err" && return 0
+  [[ $want =~ ^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+$ ]] && grep -q -F -- "at '/${want//.//}" "$OUT/$name.err"
 }
 # report <check> <what passed>: prints the problems collected in $problems, or the success line
 report() {
@@ -517,7 +522,7 @@ else
   problems+=("helm template: $(cat "$OUT"/brand-*.err)")
 fi
 refused brand-theme 'branding.defaultTheme' --set branding.defaultTheme=sepia || problems+=("branding.defaultTheme not validated")
-refused brand-shade 'Additional property 975 is not allowed' --set 'branding.colors.dark.975=#000000' || problems+=("an unknown shade of branding.colors.dark accepted")
+refused brand-shade 'branding.colors.dark' --set 'branding.colors.dark.975=#000000' || problems+=("an unknown shade of branding.colors.dark accepted")
 refused brand-tone 'branding.colors.light' --set 'branding.colors.light=white' || problems+=("branding.colors.light=white accepted")
 report branding-colors "primary scale and the themes' tones (base colour or full scale), default theme; unknown shades and themes refused"
 

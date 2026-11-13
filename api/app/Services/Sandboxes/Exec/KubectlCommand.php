@@ -36,7 +36,8 @@ final class KubectlCommand
      */
     public static function argv(PodTarget $target, string $kubeconfigPath, array $argv, bool $stdin, bool $tty = false): array
     {
-        $cmd = [(string) config('sandbox.exec.kubectl', 'kubectl'), 'exec'];
+        // the kubectl of the region's Kubernetes minor (KubectlBinary)
+        $cmd = [KubectlBinary::for($target->kubernetesVersion), 'exec'];
         if ($stdin) {
             $cmd[] = '-i';
         }

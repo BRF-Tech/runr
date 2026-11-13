@@ -14,3 +14,12 @@ github.com/google/gnostic-models v0.6.8
 # the upgrade test's history (test-helm-upgrade.sh comment, helm_upgrade_test.sh fixture)
 (0.6.8: runtime_sources and its columns stay)
 "app_version":"0.6.8"
+# 0.7.0 as history, not as a pin (2026-11-13, the 0.7.0 prep): what the release after 0.7.0 keeps
+# the org export's refusal example and the WebAssembly 4.1 pin of the 0.7.0 upgrade (docs/org-export.md,
+# docs/runtimes.md, docs/wasm.md)
+newer RunR (v0.7.0, package
+pin them first (RunR 0.7.0 pins its wasm-rust and
+build on its image as before. The upgrade to 0.7.0
+# third-party dependencies that happen to be v0.7.0 (runtime/agent/go.mod, terraform-provider-runr/go.mod)
+golang.org/x/time v0.7.0
+github.com/google/go-cmp v0.7.0

@@ -72,6 +72,50 @@ resolve_app_version() {
   fi
 }
 
+# ── The previous release: what an upgrade test starts from ──
+# previous_release_tag ROOT — the newest release tag vX.Y.Z at or below the checkout's version
+# (appVersion of helm/Chart.yaml) that is not HEAD itself: the release `main` carries, also in a
+# checkout without `main` (kind-suite.yml's tree-artifact bundle has the tested branch and the
+# tags). The tags are the checkout's own; a checkout without any (a shallow CI checkout) lists the
+# origin's and fetches the one chosen. Prints the tag; 1 (and a reason on stderr) when there is none.
+previous_release_tag() {
+  local root="$1" version head list tag commit
+  version="$(tr -d '\r' < "${root}/helm/Chart.yaml" 2>/dev/null \
+    | sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' | head -n 1)"
+  [ -n "$version" ] || { echo "no appVersion in ${root}/helm/Chart.yaml" >&2; return 1; }
+  head="$(git -C "$root" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)"
+  # "<tag> <commit>" of every release tag (an annotated tag: the commit it points at)
+  local remote=0
+  list="$(git -C "$root" for-each-ref \
+    --format='%(refname:short) %(if)%(*objectname)%(then)%(*objectname)%(else)%(objectname)%(end)' \
+    'refs/tags/v*' 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+ ' || true)"
+  if [ -z "$list" ]; then
+    remote=1
+    list="$(git -C "$root" ls-remote --tags origin 'refs/tags/v*' 2>/dev/null | awk '
+      { name = $2; sub(/^refs\/tags\//, "", name)
+        if (name ~ /\^\{\}$/) { sub(/\^\{\}$/, "", name); peeled[name] = $1 } else direct[name] = $1 }
+      END { for (n in direct) print n, (n in peeled ? peeled[n] : direct[n]) }' \
+      | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+ ' || true)"
+  fi
+  [ -n "$list" ] || { echo "no release tag v<X.Y.Z> in ${root} or its origin" >&2; return 1; }
+  tag=""
+  while read -r name commit; do
+    [ "$commit" = "$head" ] && continue
+    # at or below the checkout's version
+    [ "$(printf '%s\n%s\n' "${name#v}" "$version" | sort -V | head -n 1)" = "${name#v}" ] || continue
+    tag="$name"
+    break
+  done < <(printf '%s\n' "$list" | sort -V -r -k1,1)
+  [ -n "$tag" ] || { echo "no release tag at or below ${version} other than HEAD" >&2; return 1; }
+  if [ "$remote" = 1 ]; then
+    local depth=()
+    [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" = true ] && depth=(--depth=1)
+    git -C "$root" fetch -q --no-tags ${depth[@]+"${depth[@]}"} origin "+refs/tags/${tag}:refs/tags/${tag}" >&2 \
+      || { echo "git fetch origin ${tag} failed" >&2; return 1; }
+  fi
+  echo "$tag"
+}
+
 # ── Kind clusters ──
 
 # kind_etcd_patch — KIND_ETCD_IN_MEMORY=1: the lines of a control-plane's kubeadm

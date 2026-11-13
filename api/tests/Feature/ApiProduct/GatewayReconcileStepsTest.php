@@ -111,7 +111,7 @@ class GatewayReconcileStepsTest extends TestCase
         // a Deployment of an earlier release: the image of this one, no spec revision
         $this->k8sResponses['GET /namespaces/fn/deployments/runr-gateway-auth'] = [200, [
             'metadata' => ['name' => 'runr-gateway-auth', 'generation' => 1],
-            'spec' => ['template' => ['spec' => ['containers' => [['image' => 'ghcr.io/brf-tech/runr/gateway-auth:1.0.0']]]]],
+            'spec' => ['template' => ['spec' => ['containers' => [['image' => 'ghcr.io/brf-tech/runr/gateway-auth:1.1.0']]]]],
         ]];
 
         $lines = (new GatewayAuthStep)->run($this->cluster(), false);

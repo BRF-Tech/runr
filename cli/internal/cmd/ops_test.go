@@ -328,6 +328,11 @@ func TestRuntimePlugins(t *testing.T) {
 	h.mustRun("init", xdir, "--type", "xaas", "--runtime", "q")
 	b, _ := os.ReadFile(filepath.Join(xdir, "runr.yaml"))
 	contains(t, string(b), "file: main.q")
+	// with --runtime-version: that version's starter (a version may bring its own)
+	h.mustRun("init", filepath.Join(t.TempDir(), "qv"), "--runtime", "q", "--runtime-version", "2.0")
+	if calls := h.srv.CallsTo("GET /runtimes/{runtime}/template"); !strings.Contains(calls[len(calls)-1].Query, "version=2.0") {
+		t.Fatalf("init --runtime-version: template query %q", calls[len(calls)-1].Query)
+	}
 
 	// deploy: the API checks the handler file of plugins.
 	r = h.mustRun("deploy", "--dir", dir)

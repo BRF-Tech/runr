@@ -5,19 +5,21 @@
 #                      shim into the Kind nodes through the API (WasmInstallService: wasm-installer
 #                      DaemonSet, containerd config, RuntimeClass wasmtime-spin-v2, Knative features),
 #                      deploys the Rust and JavaScript examples of examples/wasm as wasm-rust / wasm-js
-#                      functions (build Job → Spin OCI artifact in the region registry), calls them,
-#                      prints the cold start after scale-to-zero (WASM_COLD_STARTS runs, default 3,
-#                      with the median), then deletes them and uninstalls WebAssembly support.
+#                      4.2 functions and wasm-rust 4.1's starter (build Job → Spin OCI artifact in the
+#                      region registry), calls them, prints the cold start after scale-to-zero
+#                      (WASM_COLD_STARTS runs, default 3, with the median), then deletes them and
+#                      uninstalls WebAssembly support.
 # prepare_wasm_e2e   — D-Bus in the Kind nodes and the image of RunR's Spin shim loaded into them
-#                      (kind_load_wasm_shim), pulls the wasm-rust and wasm-js build images
-#                      BRF-Tech/runr-runtimes publishes (the tag pinned in runtime-images.sh, the
-#                      version of the built-in catalog), loads them into the Kind cluster (the build
-#                      Job's image) and copies examples/wasm into the API container
-#                      (/tmp/runr-examples/wasm).
+#                      (kind_load_wasm_shim), pulls the build images the suite deploys with
+#                      (WASM_E2E_IMAGES) as BRF-Tech/runr-runtimes publishes them (the tags pinned in
+#                      runtime-images.sh, the versions of the built-in catalog), loads them into the
+#                      Kind cluster (the build Job's image) and copies examples/wasm into the API
+#                      container (/tmp/runr-examples/wasm).
 #
 # KIND_LOCK          — one Kind cluster at a time on a shared host: defaults to /tmp/runr-kind.lock here
 #                      (the lock test-runtimes uses; see acquire_kind_lock in test-runtimes.sh).
-# WASM_E2E_LANGS     — build images to prepare (default "rust js": the languages the suite deploys).
+# WASM_E2E_IMAGES    — build images to prepare, LANG:VERSION (default "rust:4.1 rust:4.2 js:4.2", with
+#                      the pins of runtime-images.sh: what the suite deploys).
 
 # kind_nodes_dbus CLUSTER — D-Bus in the Kind nodes. With the kubelet's systemd cgroup driver the
 # Spin shim creates its containers' cgroups through systemd, over D-Bus; Kind's node image runs
@@ -65,7 +67,7 @@ kind_load_wasm_shim() {
 
 prepare_wasm_e2e() {
   local cluster="$1"
-  local langs="${WASM_E2E_LANGS:-rust js}"
+  local images="${WASM_E2E_IMAGES:-rust:${WASM_RUNTIME_VERSION} rust:${WASM_NEXT_VERSION} js:${WASM_NEXT_VERSION}}"
 
   echo ""
   echo "Preparing the WebAssembly e2e..."
@@ -73,9 +75,9 @@ prepare_wasm_e2e() {
     kind_nodes_dbus "$cluster"
     kind_load_wasm_shim "$cluster"
   fi
-  local lang tag
-  for lang in $langs; do
-    tag="$(wasm_runtime_image "$lang")"
+  local spec tag
+  for spec in $images; do
+    tag="$(wasm_runtime_image "${spec%%:*}" "${spec#*:}")"
     echo "  build image:"
     runtime_image_ready "$tag" || return 1
     if [ -n "$cluster" ]; then

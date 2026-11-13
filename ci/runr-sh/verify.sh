@@ -28,11 +28,14 @@ live=false
 [ "$zip" = "--live" ] && live=true
 [ "${2:-}" = "--keep" ] && keep="${3:?--keep needs a port}"
 
-CADDY_IMAGE="${CADDY_IMAGE:-caddy:2.11.4}"
-CURL_IMAGE="${CURL_IMAGE:-curlimages/curl:8.11.1}"
-ALPINE_IMAGE="${ALPINE_IMAGE:-alpine:3.22}"
-PY_IMAGE="${PY_IMAGE:-python:3.12-slim}"
-TF_IMAGE="${TF_IMAGE:-hashicorp/terraform:1.16.5}"
+# The images: the reqs mirror's copies of caddy, curlimages/curl, alpine, python and
+# hashicorp/terraform (BRF-Tech/runr-runtimes' lib/mirror.sh, by their digests), OpenTofu's own
+# ghcr.io image: none from Docker Hub's anonymous pull limit (ci/check-reqs-mirror.sh)
+CADDY_IMAGE="${CADDY_IMAGE:-ghcr.io/brf-tech/runr/reqs/caddy:2.11.4}"
+CURL_IMAGE="${CURL_IMAGE:-ghcr.io/brf-tech/runr/reqs/curl:8.11.1}"
+ALPINE_IMAGE="${ALPINE_IMAGE:-ghcr.io/brf-tech/runr/reqs/alpine:3.22}"
+PY_IMAGE="${PY_IMAGE:-ghcr.io/brf-tech/runr/reqs/python:3.12-slim}"
+TF_IMAGE="${TF_IMAGE:-ghcr.io/brf-tech/runr/reqs/terraform:1.16.5}"
 TOFU_IMAGE="${TOFU_IMAGE:-ghcr.io/opentofu/opentofu:1.10.6}"
 
 net=runrsh-verify

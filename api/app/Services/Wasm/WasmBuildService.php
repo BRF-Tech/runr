@@ -99,8 +99,9 @@ class WasmBuildService
     }
 
     /**
-     * The files of the build: the manifest's build.files, the project's files over them. A WAGI
-     * runtime (`wagi`) gets the generated spin.toml unless the project brings its own.
+     * The files of the build: the manifest's build.files (the version's own when it has them), the
+     * project's files over them. A WAGI runtime (`wagi`) gets the generated spin.toml unless the
+     * project brings its own.
      *
      * @param  array<string, string>  $projectFiles
      * @return array<string, string>
@@ -108,7 +109,7 @@ class WasmBuildService
     public function files(RuntimeManifest $manifest, array $projectFiles, ?Project $project = null, ?ExecutorImage $executor = null): array
     {
         $files = [];
-        foreach ($manifest->build()['files'] ?? [] as $name => $content) {
+        foreach ($manifest->buildFiles($executor?->version) as $name => $content) {
             $files[$name] = is_array($content) ? $content['http'] : $content;
         }
 

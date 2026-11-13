@@ -16,7 +16,7 @@
 #                         RUNR_E2E_PRIVATE_REGISTRY_PASSWORD — the pod pulls it with RunR's pull Secret
 #                       - a sunset passing while a function runs: deploy and save refused, the
 #                         function answers on
-#                      The region pulls docker.io/library/bash:5.2 (loaded into Kind by
+#                      The region runs ghcr.io/brf-tech/runr/reqs/bash:5.2 (loaded into Kind by
 #                      prepare_runtime_e2e) and the git daemon pod installs git from Alpine's mirror:
 #                      the host needs a way out.
 #

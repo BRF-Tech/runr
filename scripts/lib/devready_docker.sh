@@ -15,6 +15,15 @@ ensure_docker() {
         fail "Docker Compose not found"
         exit 1
     fi
+
+    # The API services also join the external `kind` network (docker-compose.yml), which only a
+    # Kind cluster creates: without it Compose stops ("network kind declared as external")
+    if docker network inspect kind &>/dev/null || docker network create kind &>/dev/null; then
+        ok "Docker network kind"
+    else
+        fail "Docker network kind could not be created (docker network create kind)"
+        exit 1
+    fi
 }
 
 setup_root_env() {

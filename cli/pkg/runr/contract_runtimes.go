@@ -49,7 +49,7 @@ func init() {
 		Endpoint{Method: "GET", Path: "/runtimes/{runtime}", Status: 200,
 			Response: prefix("data.", runtimeDetailFields), Sources: runtimeSources,
 			Capabilities: append([]string{"data.wasm"}, prefix("data.", runtimeLifecycleFields)...)},
-		Endpoint{Method: "GET", Path: "/runtimes/{runtime}/template", Query: []string{"service_type", "handler"}, Status: 200,
+		Endpoint{Method: "GET", Path: "/runtimes/{runtime}/template", Query: []string{"service_type", "handler", "version"}, Status: 200,
 			Optional: true, Response: []string{"files"}},
 		Endpoint{Method: "POST", Path: "/runtimes/validate", Status: 200, Permission: runtimeAdmin,
 			Request: []string{"manifest", "files"}, FreeForm: []string{"files"},

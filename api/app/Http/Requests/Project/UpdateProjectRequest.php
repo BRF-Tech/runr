@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Project;
 
+use App\Models\ExecutorImage;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Rules\ConfigMapKey;
@@ -49,6 +50,22 @@ class UpdateProjectRequest extends FormRequest
 
         return [
             'description' => 'nullable|string',
+            // Another version of the project's runtime (an active one; null: the runtime's default),
+            // e.g. wasm-rust 4.2 once the code is ported to its SDK (docs/wasm.md#versions). The
+            // next build and deploy use it.
+            'runtime_version' => [
+                'sometimes', 'nullable', 'string', 'max:32',
+                function ($attribute, $value, $fail) use ($project) {
+                    if (! $project instanceof Project || $value === null || $value === '' || $value === $project->runtime_version) {
+                        return;
+                    }
+                    $active = $project->runtime && ExecutorImage::where('runtime', $project->runtime)
+                        ->where('version', $value)->where('is_active', true)->exists();
+                    if (! $active) {
+                        $fail(__('api.project.version_not_available', ['version' => $value, 'runtime' => (string) $project->runtime]));
+                    }
+                },
+            ],
             'knative_region_id' => [
                 'sometimes', 'ulid', 'exists:knative_regions,id',
                 function ($attribute, $value, $fail) {

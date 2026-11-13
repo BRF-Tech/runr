@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Version;
 use App\Services\Helpers\RegionDomains;
 use App\Services\KubernetesClient;
+use App\Services\Projects\WarmScaleService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -251,8 +252,10 @@ class RolloutTraffic
 
     /**
      * Keeps a revision warm: its PodAutoscaler gets at least $minScale pods (the min-scale
-     * annotation, which the revision's own template cannot change any more). A revision that
-     * leaves the routes scales to zero again whatever this says. Best effort.
+     * annotation, which the revision's own template cannot change any more), set where the
+     * region's Knative Serving takes it (WarmScaleService::holder(): the Revision from Knative 1.21
+     * on, which puts its own value back on the PodAutoscaler; the PodAutoscaler before). A
+     * revision that leaves the routes scales to zero again whatever this says. Best effort.
      */
     public function warm(DeploymentRollout $rollout, Project $project, string $revision, int $minScale = 1): bool
     {
@@ -262,12 +265,14 @@ class RolloutTraffic
         }
 
         try {
+            [$apiVersion, $kind] = WarmScaleService::holder($region);
+
             return (new KubernetesClient($region->kubeconfig))->mergePatch(
-                'autoscaling.internal.knative.dev/v1alpha1',
-                'PodAutoscaler',
+                $apiVersion,
+                $kind,
                 $revision,
                 self::namespace($region),
-                ['metadata' => ['annotations' => ['autoscaling.knative.dev/min-scale' => (string) max(1, $minScale)]]],
+                ['metadata' => ['annotations' => [WarmScaleService::ANNOTATION => (string) max(1, $minScale)]]],
             );
         } catch (\Throwable $e) {
             Log::info('Rollout: the previous revision could not be kept warm', ['project' => $project->slug, 'revision' => $revision, 'error' => $e->getMessage()]);

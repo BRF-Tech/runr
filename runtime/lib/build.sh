@@ -197,8 +197,8 @@ release_version() {
 
 # The pinned versions of the images that have their own (config/api_product.php, config/images.php,
 # config/org_transfer.php; the Dockerfiles' ARG VERSION)
-gateway_auth_version() { echo "${GATEWAY_AUTH_VERSION:-1.0.0}"; }
-image_upload_version() { echo "${IMAGE_UPLOAD_VERSION:-1.1.2}"; }
+gateway_auth_version() { echo "${GATEWAY_AUTH_VERSION:-1.1.0}"; }
+image_upload_version() { echo "${IMAGE_UPLOAD_VERSION:-1.2.0}"; }
 
 # cmd_build_queue_consumer — Build the event gateway / queue consumer image: <release version> and latest
 cmd_build_queue_consumer() {

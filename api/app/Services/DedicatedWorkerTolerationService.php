@@ -359,6 +359,13 @@ class DedicatedWorkerTolerationService
      * scheduled, the scheduler's message naming the taint (with the volume's node affinity it
      * reads "1 node(s) had untolerated taint {runr.dev/dedicated: projects}, 1 node(s) had
      * volume node affinity conflict").
+     *
+     * Newer schedulers do not name the taint any more: "1 node(s) didn't match PersistentVolume's
+     * node affinity, 2 node(s) had untolerated taint(s)" (Kubernetes 1.35 and 1.37 on Kind). Such
+     * a pod counts too: it is asked about only on a cluster with dedicated workers and when it does
+     * not tolerate their taint, and should another taint hold it, the toleration this release
+     * installs anyway is added once — the pod created from the patched template tolerates it, so
+     * it is not replaced again.
      */
     public static function pendingOnTaint(array $pod): bool
     {
@@ -368,7 +375,9 @@ class DedicatedWorkerTolerationService
 
         foreach ($pod['status']['conditions'] ?? [] as $condition) {
             if (($condition['type'] ?? '') === 'PodScheduled' && ($condition['status'] ?? '') === 'False') {
-                return str_contains((string) ($condition['message'] ?? ''), DedicatedWorkers::KEY);
+                $message = (string) ($condition['message'] ?? '');
+
+                return str_contains($message, DedicatedWorkers::KEY) || str_contains($message, 'untolerated taint(s)');
             }
         }
 

@@ -12,6 +12,8 @@ use App\Services\SupplyChain\AdmissionManifests;
 use App\Services\SupplyChain\AdmissionPolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Mockery;
 use Tests\Concerns\FakesSupplyChainCluster;
 use Tests\TestCase;
@@ -24,6 +26,9 @@ use Tests\TestCase;
 class AdmissionPolicyTest extends TestCase
 {
     use FakesSupplyChainCluster, RefreshDatabase;
+
+    /** The API server's answer while policy-controller's webhook does not serve yet (the 0.7.0 test on Kind) */
+    private const WEBHOOK_DOWN = 'Internal error occurred: failed calling webhook "defaulting.clusterimagepolicy.sigstore.dev": failed to call webhook: Post "https://webhook.cosign-system.svc:443/defaulting?timeout=10s": dial tcp 10.96.1.2:443: connect: connection refused';
 
     protected function setUp(): void
     {
@@ -182,6 +187,70 @@ class AdmissionPolicyTest extends TestCase
 
         $this->assertSame('ready', RegionSupplyChainSetting::forRegion($region)->admission_status);
         Event::assertDispatched(SupplyChainAuditEvent::class, fn ($e) => $e->action === 'region.admission.installed');
+    }
+
+    public function test_the_policies_wait_for_the_webhook_of_a_fresh_install(): void
+    {
+        Sleep::fake();
+        $region = $this->scRegion();
+        $this->scSigningReady($region, ['admission_mode' => 'enforce', 'admission_status' => 'installing']);
+        $this->fakeHelmInstall();
+
+        // the webhook's Service has no ready endpoint for two looks, then one
+        $looks = 0;
+        $this->k8sGet['/apis/discovery.k8s.io/v1/namespaces/cosign-system/endpointslices'] = function () use (&$looks) {
+            $ready = ++$looks > 2;
+
+            return ['items' => [['endpoints' => [['addresses' => ['10.244.1.7'], 'conditions' => ['ready' => $ready]]]]]];
+        };
+        // and the API server still cannot call it for the first two writes of the signed policy
+        $refused = 0;
+        $this->k8sFail['/clusterimagepolicies/runr-signed-images'] = function () use (&$refused) {
+            return ++$refused <= 2 ? Http::response(['kind' => 'Status', 'status' => 'Failure', 'code' => 500, 'message' => self::WEBHOOK_DOWN], 500) : null;
+        };
+
+        app(AdmissionPolicyService::class)->install($region);
+
+        $this->assertSame(3, $looks, 'waited for a ready endpoint');
+        $this->assertCount(3, $this->scCalls('PATCH', '/apis/policy.sigstore.dev/v1beta1/clusterimagepolicies/runr-signed-images'), 'tried again until the webhook answered');
+        $this->assertSame('ready', RegionSupplyChainSetting::forRegion($region)->admission_status);
+        $this->assertNotEmpty($this->scCalls('PATCH', '/api/v1/namespaces/fn'), 'the namespace is labelled once the policies are in');
+        Sleep::assertSleptTimes(4);
+    }
+
+    public function test_a_refusal_of_the_webhook_fails_the_install_at_once(): void
+    {
+        Sleep::fake();
+        $region = $this->scRegion();
+        $this->scSigningReady($region, ['admission_mode' => 'enforce', 'admission_status' => 'installing']);
+        $this->fakeHelmInstall();
+        $this->k8sFail['/configmaps/config-policy-controller'] = fn () => Http::response(['kind' => 'Status', 'code' => 400, 'message' => 'admission webhook "config.webhook.policy.sigstore.dev" denied the request: no-match-policy'], 400);
+
+        try {
+            app(AdmissionPolicyService::class)->install($region);
+            $this->fail('expected the install to fail');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('ConfigMap config-policy-controller was not applied: HTTP 400: admission webhook', $e->getMessage());
+        }
+        $this->assertCount(1, $this->scCalls('PATCH', '/configmaps/config-policy-controller'));
+        $this->assertEmpty($this->scCalls('PATCH', '/api/v1/namespaces/fn'), 'no label without the policies');
+        Sleep::assertNeverSlept();
+    }
+
+    public function test_an_endpoint_without_a_ready_condition_takes_calls(): void
+    {
+        $this->assertTrue(AdmissionPolicyService::hasReadyEndpoint(['items' => [['endpoints' => [['addresses' => ['10.244.1.7']]]]]]));
+        $this->assertFalse(AdmissionPolicyService::hasReadyEndpoint(['items' => [['endpoints' => [['addresses' => ['10.244.1.7'], 'conditions' => ['ready' => false]]]]]]));
+        $this->assertFalse(AdmissionPolicyService::hasReadyEndpoint(['items' => [['endpoints' => null]]]), 'a Service whose pods are not there yet');
+        $this->assertFalse(AdmissionPolicyService::hasReadyEndpoint(['items' => []]));
+    }
+
+    private function fakeHelmInstall(): void
+    {
+        $helm = Mockery::mock(HelmService::class);
+        $helm->shouldReceive('repoAdd', 'repoUpdate')->andReturn(new HelmResult(true, '', '', 0));
+        $helm->shouldReceive('install')->once()->andReturn(new HelmResult(true, '', '', 0));
+        $this->app->instance(HelmService::class, $helm);
     }
 
     public function test_a_failed_helm_install_is_reported(): void

@@ -14,7 +14,9 @@
 # cleanup_git_deploy_e2e  — removes that container and its volume (called by cmd_test's cleanup).
 #
 # KIND_LOCK               — one Kind cluster at a time on a shared host (default /tmp/runr-kind.lock).
-# FORGEJO_IMAGE           — Forgejo image (default codeberg.org/forgejo/forgejo:9).
+# FORGEJO_IMAGE           — Forgejo image (default ghcr.io/brf-tech/runr/reqs/forgejo:9.0.3: Forgejo
+#                           9.0.3 on the reqs mirror, copied by BRF-Tech/runr-runtimes' lib/mirror.sh
+#                           by its digest, never pulled from Codeberg's registry at test time).
 
 _git_e2e_forgejo=""
 
@@ -24,7 +26,7 @@ cmd_test_git_deploy() {
 }
 
 prepare_git_deploy_e2e() {
-  local image="${FORGEJO_IMAGE:-codeberg.org/forgejo/forgejo:9}"
+  local image="${FORGEJO_IMAGE:-ghcr.io/brf-tech/runr/reqs/forgejo:9.0.3}"
   local name="runr-e2e-forgejo-$$"
   local alias="forgejo.e2e.internal"
   local user="runr"

@@ -169,8 +169,8 @@ jobs:
       any: ${{ steps.bumps.outputs.any }}
     env:
       # the helm of the API image (api/Dockerfile.prod)
-      HELM_VERSION: v3.16.0
-      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
+      HELM_VERSION: v4.3.1
+      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -209,13 +209,13 @@ jobs:
       # lockfiles, go for the modules, as ci.yml has them
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           package-manager-cache: false
       # npm 10's lockfile-only update fails on the console's tree (vite: "reading 'edgesOut'")
       - run: npm install -g npm@11 --no-audit --no-fund
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.27.4'
           cache: false
       - name: Composer install (api)
         working-directory: ${{ runner.temp }}/origin/api
@@ -344,15 +344,15 @@ jobs:
       - if: startsWith(matrix.command, 'npm-test:')
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           package-manager-cache: false
-      # npm 10 fails to resolve Vitest 4 without a lockfile (ci.yml's sdk-node job)
+      # the npm 11 the Workflow SDK requires without a lockfile (devEngines; ci.yml's sdk-node job)
       - if: startsWith(matrix.command, 'npm-test:')
         run: npm install -g npm@11 --no-audit --no-fund
       - if: startsWith(matrix.command, 'go:')
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.27.4'
           cache: false
       - if: matrix.command == 'go:terraform-provider-runr'
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -458,8 +458,8 @@ jobs:
       any: ${{ steps.batch.outputs.any }}
     env:
       # the helm of the API image (api/Dockerfile.prod)
-      HELM_VERSION: v3.16.0
-      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
+      HELM_VERSION: v4.3.1
+      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -508,7 +508,7 @@ jobs:
       - if: steps.clone.outputs.remake == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           package-manager-cache: false
       # npm 10's lockfile-only update fails on the console's tree (vite: "reading 'edgesOut'")
       - if: steps.clone.outputs.remake == 'true'
@@ -516,7 +516,7 @@ jobs:
       - if: steps.clone.outputs.remake == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.27.4'
           cache: false
       - name: Composer install (api)
         if: steps.clone.outputs.remake == 'true'
@@ -636,14 +636,14 @@ jobs:
       - if: startsWith(matrix.command, 'npm-test:')
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           package-manager-cache: false
       - if: startsWith(matrix.command, 'npm-test:')
         run: npm install -g npm@11 --no-audit --no-fund
       - if: startsWith(matrix.command, 'go:')
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.27.4'
           cache: false
       - if: matrix.command == 'go:terraform-provider-runr'
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -769,10 +769,10 @@ jobs:
       # the artifacts of release-images.yml's run, and the run of the bumps the release moved under
       actions: write
     env:
-      HELM_VERSION: v3.16.0
-      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
-      CRANE_VERSION: v0.21.2
-      CRANE_SHA256: 897e7c342db072ba76531246fc18fbf3e8e298688b6ecf98916770984b263866
+      HELM_VERSION: v4.3.1
+      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+      CRANE_VERSION: v0.22.1
+      CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -846,14 +846,14 @@ jobs:
       - if: steps.pick.outputs.release == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           package-manager-cache: false
       - if: steps.pick.outputs.release == 'true'
         run: npm install -g npm@11 --no-audit --no-fund
       - if: steps.pick.outputs.release == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.27.4'
           cache: false
       # the files of the release's tree, as ci.yml scans every commit (its allowlist .gitleaks.toml),
       # before anything is pushed: findings stop the release

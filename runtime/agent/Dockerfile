@@ -1,4 +1,4 @@
-FROM ghcr.io/brf-tech/runr/reqs/golang:1.26-alpine AS builder
+FROM ghcr.io/brf-tech/runr/reqs/golang:1.27-alpine AS builder
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download

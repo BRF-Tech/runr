@@ -23,6 +23,14 @@ set -euo pipefail
 # registry). References with a variable tag (${VERSION}, {version}) are not checked, except a
 # Dockerfile FROM whose ARGs have defaults (resolved with them); a Helm
 # `repository: ghcr.io/brf-tech/runr/reqs/<image>` takes the `tag:` of its block.
+#
+# Test images: an image the e2e harness pulls and runs itself — a *IMAGE variable's default in
+# runtime/ci.sh and runtime/lib/*.sh, a *IMAGE constant of the e2e commands
+# (api/app/Console/Commands/**/E2e*.php) — must be on the reqs mirror (or another RunR image, or a
+# runr-… image the harness builds): one straight from Docker Hub, Codeberg, quay.io … fails the
+# check (a suite would depend on that registry's load and pull limits). The tool images of the CI
+# scripts (a *IMAGE default in ci/**/*.sh: pandoc, Caddy, curl, Terraform, kubeconform, gitleaks …)
+# may also be their upstream's own ghcr.io image, never one from Docker Hub or another registry.
 # Needs bash, git, GNU grep and curl.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -118,6 +126,58 @@ if [ "${1:-}" = "--list" ]; then
   exit 0
 fi
 
+# ── Test images never come straight from a third-party registry ──
+# The images the e2e harness itself pulls and runs: the default of a *IMAGE variable in
+# runtime/ci.sh and runtime/lib/*.sh (${FORGEJO_IMAGE:-…}) and a *IMAGE constant of the e2e
+# commands (api/app/Console/Commands/**/E2e*.php). Each is on the reqs mirror, another RunR image
+# (ghcr.io/brf-tech/runr/…) or one the harness builds itself (runr-…, no registry); pulled from
+# Docker Hub, Codeberg, quay.io … at test time, a suite fails with that registry's load or pull
+# limit. The tool images of the CI scripts (ci/**/*.sh) may also be their upstream's own ghcr.io
+# image (ghcr.io/gitleaks/gitleaks), as the workflows' (runtime/test/ci_workflows_test.sh); never
+# Docker Hub's, whose anonymous pull limit a shared runner runs out of, or another registry's.
+# Values that name no image (a flag, a count, a path) and variable values are left out.
+harness_images() {
+  # file:line:NAME=VALUE
+  files | grep -z -E '^(runtime/(ci\.sh|lib/[^/]+\.sh)|ci/.+\.sh)$' \
+    | xargs -0 grep -I -H -n -o -E '\$\{[A-Z0-9_]*IMAGE:-[^}$[:space:]]+\}' 2>/dev/null \
+    | sed -E 's/\$\{([A-Z0-9_]+):-([^}]*)\}$/\1=\2/' || true
+  files | grep -z -E '^api/app/Console/Commands/(.*/)?E2e[^/]*\.php$' \
+    | xargs -0 grep -I -H -n -o -E "const [A-Z0-9_]*IMAGE = '[^']+'" 2>/dev/null \
+    | sed -E "s/const ([A-Z0-9_]+) = '([^']*)'$/\1=\2/" || true
+}
+third_party=0
+while IFS= read -r hit; do
+  [ -n "$hit" ] || continue
+  file="${hit%%:*}"
+  rest="${hit#*:}"
+  line="${rest%%:*}"
+  pair="${rest#*:}"
+  name="${pair%%=*}"
+  ref="${pair#*=}"
+  case "$ref" in /*|.*) continue ;; */*|*:*) ;; *) continue ;; esac
+  case "$ref" in ghcr.io/brf-tech/runr|ghcr.io/brf-tech/runr/*) continue ;; esac
+  registry=""
+  if [[ "$ref" == */* ]]; then
+    first="${ref%%/*}"
+    [[ "$first" == *.* || "$first" == *:* || "$first" == localhost ]] && registry="$first"
+  fi
+  [ -z "$registry" ] && [[ "$ref" == runr-* ]] && continue
+  [[ "$file" == ci/* && "$registry" == ghcr.io ]] && continue
+  if [[ "$file" == ci/* ]]; then
+    echo "✗ ${file}:${line}: ${name} = ${ref}, a CI tool image from ${registry:-Docker Hub}"
+  else
+    echo "✗ ${file}:${line}: ${name} = ${ref}, a test image straight from ${registry:-Docker Hub}"
+  fi
+  third_party=$((third_party + 1))
+done < <(harness_images)
+if [ "$third_party" -gt 0 ]; then
+  echo ""
+  echo "${third_party} test or CI tool image(s) from a third-party registry. Add each to REQS_IMAGES in lib/mirror.sh of"
+  echo "${RUNTIMES_REPO} (\"<image>:<tag>|<source>@sha256:<digest>\"), run its mirror workflow and"
+  echo "reference ${MIRROR}/<image>:<tag>."
+  echo ""
+fi
+
 # ghcr_token IMAGE — an anonymous pull token for ${MIRROR}/IMAGE (one per image and run)
 declare -A tokens=()
 ghcr_token() {
@@ -198,6 +258,6 @@ if [ "$unreachable" -gt 0 ]; then
   echo ""
   echo "${unreachable} reference(s) could not be checked: ghcr.io did not answer (network, rate limit). Run the check again."
 fi
-[ "$missing" -eq 0 ] && [ "$unreachable" -eq 0 ] || exit 1
+[ "$missing" -eq 0 ] && [ "$unreachable" -eq 0 ] && [ "$third_party" -eq 0 ] || exit 1
 
-echo "✓ ${#seen[@]} reqs images referenced, all resolve anonymously on ghcr.io (${checked} checked, ${from_cache} from the cache ${CACHE})"
+echo "✓ ${#seen[@]} reqs images referenced, all resolve anonymously on ghcr.io (${checked} checked, ${from_cache} from the cache ${CACHE}); no test or CI tool image from a third-party registry"

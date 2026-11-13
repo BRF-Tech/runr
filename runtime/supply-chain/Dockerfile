@@ -6,12 +6,12 @@
 #   mirror-db  Trivy vulnerability DBs copied into the region registry (offline scanning)
 #
 # Release binaries are verified against the checksums file of their release.
-ARG TRIVY_VERSION=0.58.1
+ARG TRIVY_VERSION=0.76.2
 
 FROM --platform=$BUILDPLATFORM ghcr.io/brf-tech/runr/reqs/alpine:3.21 AS tools
 ARG TARGETARCH
 ARG SYFT_VERSION=1.18.1
-ARG COSIGN_VERSION=2.4.1
+ARG COSIGN_VERSION=3.1.4
 ARG ORAS_VERSION=1.2.2
 WORKDIR /dl
 RUN set -eux; \

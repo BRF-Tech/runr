@@ -266,21 +266,29 @@ class GitSourceReader
 
         $data = $this->validator->decode(str_replace("\r\n", "\n", (string) file_get_contents($file)));
 
-        // "@file" build files: next to the manifest, inside the runtime's directory
-        foreach ((array) ($data['build']['files'] ?? []) as $name => $content) {
-            $inline = function ($value) use ($runtimeDir, $name) {
-                if (! is_string($value) || ! str_starts_with($value, '@')) {
-                    return $value;
-                }
-                $target = $runtimeDir.DIRECTORY_SEPARATOR.substr($value, 1);
-                $real = realpath($target);
-                if ($real === false || is_link($target) || ! is_file($real) || ! self::inside($real, $runtimeDir)) {
-                    throw new InvalidManifestException([['path' => "/build/files/{$name}", 'message' => "references {$value}, which is not a file next to the manifest"]]);
-                }
+        // "@file" build files (the runtime's and its versions'): next to the manifest, inside the
+        // runtime's directory
+        $inliner = fn (string $path) => function ($value) use ($runtimeDir, $path) {
+            if (! is_string($value) || ! str_starts_with($value, '@')) {
+                return $value;
+            }
+            $target = $runtimeDir.DIRECTORY_SEPARATOR.substr($value, 1);
+            $real = realpath($target);
+            if ($real === false || is_link($target) || ! is_file($real) || ! self::inside($real, $runtimeDir)) {
+                throw new InvalidManifestException([['path' => $path, 'message' => "references {$value}, which is not a file next to the manifest"]]);
+            }
 
-                return str_replace("\r\n", "\n", (string) file_get_contents($real));
-            };
+            return str_replace("\r\n", "\n", (string) file_get_contents($real));
+        };
+        foreach ((array) ($data['build']['files'] ?? []) as $name => $content) {
+            $inline = $inliner("/build/files/{$name}");
             $data['build']['files'][$name] = is_array($content) ? array_map($inline, $content) : $inline($content);
+        }
+        foreach ((array) ($data['versions'] ?? []) as $i => $version) {
+            foreach ((array) (is_array($version) ? ($version['build']['files'] ?? []) : []) as $name => $content) {
+                $inline = $inliner("/versions/{$i}/build/files/{$name}");
+                $data['versions'][$i]['build']['files'][$name] = is_array($content) ? array_map($inline, $content) : $inline($content);
+            }
         }
 
         $files = [];

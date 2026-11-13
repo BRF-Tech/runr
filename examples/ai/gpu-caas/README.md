@@ -17,8 +17,8 @@ docker build -t registry.example.com/acme/gpu-caas:1 examples/ai/gpu-caas
 docker push registry.example.com/acme/gpu-caas:1
 ```
 
-The base image is `ghcr.io/brf-tech/runr/reqs/python:3.12-slim`, RunR's mirror of
-`docker.io/library/python:3.12-slim`; either one works. On a host with an NVIDIA GPU and the
+The base image is `ghcr.io/brf-tech/runr/reqs/python:3.15-slim`, RunR's mirror of
+`docker.io/library/python:3.15-slim`; either one works. On a host with an NVIDIA GPU and the
 NVIDIA Container Toolkit, try it before you push:
 
 ```bash

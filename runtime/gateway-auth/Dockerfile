@@ -2,11 +2,11 @@
 # it (forwardAuth) before every call of a gateway route that needs an API key or a JWT; it limits
 # and counts the calls and reports them to RunR.
 #
-#   docker build -t ghcr.io/brf-tech/runr/gateway-auth:1.0.0 runtime/gateway-auth   (or: runtime/ci.sh gateway-auth)
-FROM --platform=$BUILDPLATFORM ghcr.io/brf-tech/runr/reqs/golang:1.26-alpine AS builder
+#   docker build -t ghcr.io/brf-tech/runr/gateway-auth:1.1.0 runtime/gateway-auth   (or: runtime/ci.sh gateway-auth)
+FROM --platform=$BUILDPLATFORM ghcr.io/brf-tech/runr/reqs/golang:1.27-alpine AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH
-ARG VERSION=1.0.0
+ARG VERSION=1.1.0
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

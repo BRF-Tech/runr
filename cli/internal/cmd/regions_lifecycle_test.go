@@ -374,9 +374,13 @@ func TestRegionSetKeysMatchTheAPI(t *testing.T) {
 	sameSet("settings keys (UpdateRegionSettingsRequest)", regionSettingKeys, fields("UpdateRegionSettingsRequest"))
 	sameSet("monitoring keys (UpdateRegionMonitoringRequest)", regionMonitoringKeys, fields("UpdateRegionMonitoringRequest"))
 	settings := spec.Components.Schemas["UpdateRegionSettingsRequest"].Properties
-	sameSet("internal_auth values", runr.InternalAuthModes, settings["internal_auth"].Enum)
-	sameSet("cert_manager_issuer_mode values", runr.CertManagerIssuerModes, settings["cert_manager_issuer_mode"].Enum)
-	sameSet("region_status values", runr.RegionStatuses, spec.Components.Schemas["UpdateKnativeRegionRequest"].Properties["region_status"].Enum)
+	// OpenAPI 3.1 writes a nullable field's null into its enum (Scramble 0.13); it reaches []string as ""
+	values := func(enum []string) []string {
+		return slices.DeleteFunc(slices.Clone(enum), func(v string) bool { return v == "" })
+	}
+	sameSet("internal_auth values", runr.InternalAuthModes, values(settings["internal_auth"].Enum))
+	sameSet("cert_manager_issuer_mode values", runr.CertManagerIssuerModes, values(settings["cert_manager_issuer_mode"].Enum))
+	sameSet("region_status values", runr.RegionStatuses, values(spec.Components.Schemas["UpdateKnativeRegionRequest"].Properties["region_status"].Enum))
 
 	// every key reaches its request
 	h := newHarness(t).login()

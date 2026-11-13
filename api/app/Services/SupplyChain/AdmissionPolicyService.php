@@ -7,8 +7,10 @@ use App\Models\AuditEvent;
 use App\Models\KnativeRegion;
 use App\Models\RegionSupplyChainSetting;
 use App\Services\HelmService;
+use App\Services\Helpers\WebhookRetry;
 use App\Services\KubernetesClient;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 
 /**
  * Optional admission control of a region: sigstore policy-controller (Helm release
@@ -20,9 +22,20 @@ use Illuminate\Support\Facades\Log;
  * Kyverno's admission, background, cleanup and reports controllers; purpose-built for cosign
  * keys and attestations; opt-in per namespace by label, so system namespaces are never touched;
  * no general policy engine to keep in step with RunR.
+ *
+ * The ClusterImagePolicies (and its ConfigMap) pass through policy-controller's own webhook
+ * (defaulting / validating .clusterimagepolicy.sigstore.dev). Right after the install Helm's wait
+ * sees its Deployment available a moment before its Service has a ready endpoint, and the API
+ * server then refuses the writes with "failed calling webhook … connection refused": the writes
+ * wait for a ready endpoint of the webhook's Service (WEBHOOK_WAIT_SECONDS) and are tried again
+ * while the webhook cannot be called (WebhookRetry) — at the install, on a settings change and in
+ * region:reconcile alike.
  */
 class AdmissionPolicyService
 {
+    /** Seconds the policy writes wait for a ready endpoint of the webhook's Service */
+    public const WEBHOOK_WAIT_SECONDS = 120;
+
     /** Queues the install (or an update of the policies). */
     public function requestInstall(KnativeRegion $region): RegionSupplyChainSetting
     {
@@ -93,17 +106,27 @@ class AdmissionPolicyService
         ], $region->getKey());
     }
 
-    /** Applies the ConfigMap and the ClusterImagePolicies of the current settings, removes stale ones. */
+    /**
+     * Applies the ConfigMap and the ClusterImagePolicies of the current settings, removes stale
+     * ones — once the webhook that admits them answers (waitForWebhook(), WebhookRetry).
+     */
     public function syncPolicies(KnativeRegion $region): void
     {
         $settings = RegionSupplyChainSetting::forRegion($region);
         $k8s = $this->client($region);
+        $this->waitForWebhook($k8s);
+        $retried = fn (\RuntimeException $e, int $wait) => Log::info('Admission policy: the webhook does not answer yet, trying again', ['region' => $region->name, 'in_seconds' => $wait, 'error' => mb_substr($e->getMessage(), 0, 300)]);
 
-        $k8s->applyResource(AdmissionManifests::configMap($settings), AdmissionManifests::namespace());
+        $config = AdmissionManifests::configMap($settings);
+        WebhookRetry::run(function () use ($k8s, $config) {
+            if (! $k8s->applyResource($config, AdmissionManifests::namespace())) {
+                throw new \RuntimeException("ConfigMap {$config['metadata']['name']} was not applied: ".($k8s->lastApplyError() ?? 'unknown error'));
+            }
+        }, onRetry: $retried);
 
         $wanted = [];
         foreach (AdmissionManifests::policies($region, $settings) as $policy) {
-            $k8s->applyClusterResource($policy);
+            WebhookRetry::run(fn () => $k8s->applyClusterResource($policy), onRetry: $retried);
             $wanted[] = $policy['metadata']['name'];
         }
 
@@ -171,6 +194,38 @@ class AdmissionPolicyService
             'no_match_policy' => AdmissionManifests::noMatchPolicy($settings),
             'policies' => AdmissionManifests::policies($region, $settings),
         ];
+    }
+
+    /**
+     * Until the webhook's Service (config supply_chain.admission.webhook_service in the release's
+     * namespace) has a ready endpoint, WEBHOOK_WAIT_SECONDS at most: a fresh install's webhook
+     * serves a moment after Helm's wait saw its Deployment. When its EndpointSlices cannot be read
+     * it goes on at once — the writes are tried again all the same.
+     */
+    private function waitForWebhook(KubernetesClient $k8s): void
+    {
+        $service = (string) config('supply_chain.admission.webhook_service', 'webhook');
+        for ($waited = 0; ; $waited += 3) {
+            $slices = $k8s->listResources('discovery.k8s.io/v1', 'EndpointSlice', AdmissionManifests::namespace(), ['kubernetes.io/service-name' => $service]);
+            if ($slices === null || self::hasReadyEndpoint($slices) || $waited >= self::WEBHOOK_WAIT_SECONDS) {
+                return;
+            }
+            Sleep::for(3)->seconds();
+        }
+    }
+
+    /** An endpoint of the EndpointSlices that takes calls (ready unset counts as ready, as for kube-proxy). */
+    public static function hasReadyEndpoint(array $slices): bool
+    {
+        foreach ((array) ($slices['items'] ?? []) as $slice) {
+            foreach ((array) ($slice['endpoints'] ?? []) as $endpoint) {
+                if (($endpoint['conditions']['ready'] ?? true) !== false && ! empty($endpoint['addresses'])) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function labelProjectNamespace(KnativeRegion $region, bool $on): void

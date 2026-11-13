@@ -260,7 +260,7 @@ grep -qF 'TRAEFIK_CHART_VERSION' "$report/commit-msg.txt" || fail "the body does
   || fail "the upgrade suite: $(cat "$report/suites.json")"
 [ "$(jq -r '.[] | select(.suite == "e2e") | .env' "$report/suites.json")" = "TEST_AFTER_E2E=ci/deps/after-e2e.sh DEPS_EXPECT=knative-serving/traefik=traefik-42.3.1" ] \
   || fail "the e2e's check: $(cat "$report/suites.json")"
-[ "$(jq -r '[.[] | .k8s] | unique | join(" ")' "$report/suites.json")" = 1.32.0 ] || fail "the e2e's Kubernetes: $(cat "$report/suites.json")"
+[ "$(jq -r '[.[] | .k8s] | unique | join(" ")' "$report/suites.json")" = 1.37.0 ] || fail "the e2e's Kubernetes: $(cat "$report/suites.json")"
 echo "ok - the report: subject without trailer, the suites with their commands, the last release tag"
 
 # a second bump before the release replaces the first's changelog line
@@ -357,7 +357,7 @@ attention "a value the new chart no longer reads" 42.3.1 "chart 42.3.1 ignores v
 diffs "$same" "$nocrds" "$nokeys" '{"values": 3, "dead": ["deployment.replicas"], "refused": []}' '{"values": 3, "dead": ["deployment.replicas"], "refused": []}'
 bump traefik 42.3.1
 [ "$rc" = 0 ] || fail "a value neither chart reads: exit ${rc}: $(cat "$report/summary.md" 2>/dev/null)"
-grep -qF 'values neither chart reads on Kubernetes 1.35.0 (a condition they wait for, or a key to look at): deployment.replicas' "$report/summary.md" || fail "the note: $(cat "$report/summary.md")"
+grep -qF 'values neither chart reads on Kubernetes 1.37.0 (a condition they wait for, or a key to look at): deployment.replicas' "$report/summary.md" || fail "the note: $(cat "$report/summary.md")"
 git -C "$repo" checkout -q -- .
 diffs "$same" "$nocrds" "$nokeys"
 touch "$FAKE/refuse-42.3.1"
@@ -383,18 +383,19 @@ echo "ok - a Zot bump moves its image with the chart, its upgrade suite runs reg
 # --- Knative ---------------------------------------------------------------------------------------
 new_repo
 printf '1.25.0\n1.24.0\n1.23.1\n' > "$FAKE/knative-versions"
-export DEPS_KIND_NODE_TAGS="1.32.0 1.34.3 1.35.0"
+# the e2e's Kind node (the newest Kubernetes, DEPS_DEFAULT_K8S) older than the minor needs
+export DEPS_DEFAULT_K8S=1.35.0
 bump knative 1.25
 [ "$rc" = 2 ] || fail "knative without a Kind node: exit ${rc}: $(cat "$out")"
-grep -qF 'no Kind node image of it' "$report/summary.md" || fail "knative's reason: $(cat "$report/summary.md")"
+grep -qF 'newer than the Kubernetes 1.35.0 of the e2e' "$report/summary.md" || fail "knative's reason: $(cat "$report/summary.md")"
 [ -z "$(changed)" ] || fail "knative left $(changed)"
-export DEPS_KIND_NODE_TAGS="1.32.0 1.35.0 1.36.2 1.36.0"
+unset DEPS_DEFAULT_K8S
 bump knative 1.25
 [ "$rc" = 0 ] || fail "knative 1.25: exit ${rc}: $(cat "$out") $(cat "$report/summary.md" 2>/dev/null)"
 grep -qE '^        25 => 36,$' "$repo/api/app/Services/Helpers/KnativeVersionHelper.php" || fail "the row: $(cat "$repo/api/app/Services/Helpers/KnativeVersionHelper.php")"
 grep -qF "'1.25' => '1.25.0'," "$repo/api/app/Services/Helpers/KnativeVersionHelper.php" || fail "the fallback chart"
 [ "$(sed -n '/^|---|---|$/{n;p;q}' "$repo/docs/regions.md")" = "| 1.25 | 1.36 |" ] || fail "the docs table: $(cat "$repo/docs/regions.md")"
-[ "$(jq -r '.[0].k8s' "$report/suites.json")" = 1.36.0 ] || fail "the e2e's Kind node: $(cat "$report/suites.json")"
+[ "$(jq -r '.[0].k8s' "$report/suites.json")" = 1.37.0 ] || fail "the e2e's Kind node (the newest): $(cat "$report/suites.json")"
 [ "$(jq -r '.[0].env' "$report/suites.json")" = "TEST_AFTER_E2E=ci/deps/after-e2e.sh DEPS_EXPECT_KNATIVE=1.25" ] || fail "knative's check: $(cat "$report/suites.json")"
 [ "$(head -n 1 "$report/commit-msg.txt")" = "fix(regions): Knative 1.25" ] || fail "knative's subject"
 grep -qF -- '- **Knative 1.25** is offered' "$repo/CHANGELOG.md" || fail "knative's changelog line"

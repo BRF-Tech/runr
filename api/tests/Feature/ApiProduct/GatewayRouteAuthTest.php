@@ -65,7 +65,7 @@ class GatewayRouteAuthTest extends TestCase
 
         $deployment = $this->k8sCall('PATCH', '/namespaces/fn/deployments/runr-gateway-auth');
         $this->assertSame(1, $deployment['body']['spec']['replicas'], 'one pod with in-memory counters');
-        $this->assertSame('ghcr.io/brf-tech/runr/gateway-auth:1.0.0', $deployment['body']['spec']['template']['spec']['containers'][0]['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/gateway-auth:1.1.0', $deployment['body']['spec']['template']['spec']['containers'][0]['image']);
         $this->assertNotNull($this->k8sCall('PATCH', '/namespaces/fn/services/runr-gateway-auth'));
 
         $middleware = $this->k8sCall('PATCH', "/namespaces/fn/middlewares/gw-auth-{$this->rt->id}");

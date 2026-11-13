@@ -77,7 +77,7 @@ final class RuntimeManifest
     }
 
     /**
-     * @return list<array{version: string, image: ?string, dockerfile: ?string, upload: ?string, git: ?array, buildArgs: array, default: bool, eol: ?string, gpu: bool, deprecated?: string|bool, sunset?: string}>
+     * @return list<array{version: string, image: ?string, dockerfile: ?string, upload: ?string, git: ?array, buildArgs: array, default: bool, eol: ?string, gpu: bool, deprecated?: string|bool, sunset?: string, template?: array{files: array<string, string>}, build?: array{files: array}}>
      */
     public function versions(): array
     {
@@ -89,6 +89,18 @@ final class RuntimeManifest
         foreach ($this->versions() as $v) {
             if ($v['version'] === $version) {
                 return $v;
+            }
+        }
+
+        return null;
+    }
+
+    /** The version the manifest marks as the default (null for discovered versions). */
+    public function defaultVersion(): ?string
+    {
+        foreach ($this->versions() as $v) {
+            if ($v['default']) {
+                return $v['version'];
             }
         }
 
@@ -129,16 +141,18 @@ final class RuntimeManifest
 
     /**
      * Starter files for a project: the template with placeholders resolved, "{file}" named after
-     * the handler file.
+     * the handler file. A version with a template of its own (versions[].template: an SDK whose
+     * code differs between versions) gives its files instead of the runtime's.
      *
      * @return array<string, string>
      */
-    public function templateFiles(string $filename, string $handler, bool $withDependencies): array
+    public function templateFiles(string $filename, string $handler, bool $withDependencies, ?string $version = null): array
     {
         $values = ['file' => $filename, 'handler' => $handler];
         $files = [];
+        $template = ($version !== null ? ($this->version($version)['template'] ?? null) : null) ?? $this->data['template'];
 
-        foreach ($this->data['template']['files'] as $name => $content) {
+        foreach ($template['files'] as $name => $content) {
             $files[Placeholders::render((string) $name, $values)] = Placeholders::render($content, $values);
         }
 
@@ -163,6 +177,19 @@ final class RuntimeManifest
     public function build(): ?array
     {
         return $this->data['build'] ?? null;
+    }
+
+    /**
+     * The files the build adds next to the code (build.files: a string, or {http, schedule} by
+     * trigger): a version's own (versions[].build.files) instead of the runtime's.
+     *
+     * @return array<string, string|array{http: string, schedule: string}>
+     */
+    public function buildFiles(?string $version = null): array
+    {
+        $own = $version !== null ? ($this->version($version)['build']['files'] ?? null) : null;
+
+        return $own ?? ($this->data['build']['files'] ?? []);
     }
 
     /** Every version of the function is compiled into an image (build step). */

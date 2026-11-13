@@ -538,14 +538,24 @@ func (c *Client) GetRuntime(ctx context.Context, id string) (*RuntimeDetail, err
 }
 
 // RuntimeTemplate returns the starter files of a runtime for a project type (faas or xaas)
-// and handler ("" = the runtime's default).
+// and handler ("" = the runtime's default), of the runtime's default version.
 func (c *Client) RuntimeTemplate(ctx context.Context, runtimeID, serviceType, handler string) (map[string]string, error) {
+	return c.RuntimeVersionTemplate(ctx, runtimeID, "", serviceType, handler)
+}
+
+// RuntimeVersionTemplate returns the starter files of a runtime version ("" = the runtime's
+// default): a version with a starter of its own (an SDK generation side by side, such as
+// wasm-rust 4.2) gives its own, every other version the runtime's.
+func (c *Client) RuntimeVersionTemplate(ctx context.Context, runtimeID, version, serviceType, handler string) (map[string]string, error) {
 	q := url.Values{}
 	if serviceType != "" {
 		q.Set("service_type", serviceType)
 	}
 	if handler != "" {
 		q.Set("handler", handler)
+	}
+	if version != "" {
+		q.Set("version", version)
 	}
 	var out struct {
 		Files json.RawMessage `json:"files"`

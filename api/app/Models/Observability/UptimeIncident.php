@@ -53,6 +53,7 @@ class UptimeIncident extends Model
         return $this->started_at ? (int) $this->started_at->diffInSeconds($end) : null;
     }
 
+    /** The incident for the API; the public status page's without its check, project, cause and failed checks */
     public function toApi(bool $public = false): array
     {
         $data = [
@@ -65,15 +66,12 @@ class UptimeIncident extends Model
             'duration_seconds' => $this->durationSeconds(),
         ];
 
-        if (! $public) {
-            $data += [
-                'uptime_check_id' => $this->uptime_check_id,
-                'project_id' => $this->project_id,
-                'cause' => $this->cause,
-                'failed_checks' => $this->failed_checks,
-            ];
-        }
-
-        return $data;
+        // one expression, so the API reference (Scramble) reads both shapes
+        return $public ? $data : $data + [
+            'uptime_check_id' => $this->uptime_check_id,
+            'project_id' => $this->project_id,
+            'cause' => $this->cause,
+            'failed_checks' => $this->failed_checks,
+        ];
     }
 }

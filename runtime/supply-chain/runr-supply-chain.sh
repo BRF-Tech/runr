@@ -34,6 +34,12 @@ cd "$WORK" || exit 1
 ORAS_FLAGS=""
 ORAS_TO_FLAGS=""
 COSIGN_FLAGS=""
+# cosign 3 signs into a Sigstore bundle (an OCI referrer) with the public instance's signing config
+# by default, which a transparency log is part of. RunR signs with the region key alone and keeps
+# the signature format policy-controller and the API (CosignVerifier) read: the sha256-<digest>.sig
+# and .att tags, no transparency log. cosign 3 still takes these flags (deprecated); cosign 4
+# removes them
+COSIGN_SIGN_FLAGS="--use-signing-config=false --new-bundle-format=false --tlog-upload=false"
 if [ "$PLAIN_HTTP" = "true" ]; then
   ORAS_FLAGS="--plain-http"
   ORAS_TO_FLAGS="--to-plain-http"
@@ -158,7 +164,7 @@ pipeline() {
       step sign failed "the digest of ${IMAGE} could not be resolved: $(tail -c 500 "$WORK/resolve.log" 2>/dev/null)"
     else
       # shellcheck disable=SC2086
-      if run sign cosign sign --key "$RUNR_COSIGN_KEY" --tlog-upload=false --yes $COSIGN_FLAGS "$REF" \
+      if run sign cosign sign --key "$RUNR_COSIGN_KEY" $COSIGN_SIGN_FLAGS --yes $COSIGN_FLAGS "$REF" \
           && run verify cosign verify --key "$RUNR_COSIGN_PUB" --insecure-ignore-tlog=true $COSIGN_FLAGS "$REF"; then
         step sign ok
       else
@@ -176,7 +182,7 @@ pipeline() {
       if [ -s "$WORK/sbom.spdx.json" ]; then
         # shellcheck disable=SC2086
         if run attest-sbom cosign attest --key "$RUNR_COSIGN_KEY" --type spdxjson --predicate "$WORK/sbom.spdx.json" \
-            --tlog-upload=false --yes $COSIGN_FLAGS "$REF"; then
+            $COSIGN_SIGN_FLAGS --yes $COSIGN_FLAGS "$REF"; then
           attested="sbom"
         else
           failed="sbom"
@@ -185,7 +191,7 @@ pipeline() {
       if [ -s "$WORK/vuln.json" ]; then
         # shellcheck disable=SC2086
         if run attest-vuln cosign attest --key "$RUNR_COSIGN_KEY" --type vuln --predicate "$WORK/vuln.json" \
-            --tlog-upload=false --yes $COSIGN_FLAGS "$REF"; then
+            $COSIGN_SIGN_FLAGS --yes $COSIGN_FLAGS "$REF"; then
           attested="${attested} vuln"
         else
           failed="${failed} vuln"

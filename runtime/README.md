@@ -85,11 +85,11 @@ bash runtime/ci.sh test-image --push
 #### Test — E2E test (Kind cluster + Knative)
 
 ```bash
-# With the default Kubernetes 1.32.0
+# With the default Kubernetes 1.37.0 (the newest: CI runs it only)
 bash runtime/ci.sh test
 
-# Another Kubernetes version
-bash runtime/ci.sh test --k8s=1.33.0
+# Another Kubernetes version (a kindest-node tag of the reqs mirror)
+bash runtime/ci.sh test --k8s=1.35.0
 
 # Keep the cluster afterwards
 bash runtime/ci.sh test --no-cleanup
@@ -156,7 +156,7 @@ suite here with `RUNTIME_IMAGES_LOCAL=1`, which uses an image this host has inst
 | `BUILDER_NAME` | The docker-container buildx builder of `--push` builds. It is created when missing, named on each build, never made the host's current builder, and removed after the push. | `runr-multiarch` |
 | `RUNTIME_IMAGES_REGISTRY` | Where the e2e suites pull the runtime images from | `ghcr.io/brf-tech/runr` |
 | `RUNTIME_IMAGES_LOCAL` | `1`: use a runtime image this host has (a local build of BRF-Tech/runr-runtimes) instead of pulling it | `0` |
-| `K8S_VERSION` | Kind Kubernetes version (for `test`) | `1.32.0` |
+| `K8S_VERSION` | Kind Kubernetes version (for `test`) | `1.37.0` |
 | `CLEANUP` | Delete the cluster after the test (for `test`) | `1` |
 
 ### Reqs mirror

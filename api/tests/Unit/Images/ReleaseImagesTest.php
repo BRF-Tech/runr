@@ -69,7 +69,7 @@ class ReleaseImagesTest extends TestCase
         $this->assertSame('ghcr.io/brf-tech/runr/agent:0.6.0', ReleaseImages::moved('ghcr.io/brf-tech/runr/agent:0.6.0'));
         $this->assertSame('ghcr.io/brf-tech/runr/agent:e2e-runr', ReleaseImages::moved('ghcr.io/brf-tech/runr/agent:e2e-runr'));
         // other images
-        foreach (['ghcr.io/brf-tech/runr/agent-proxy:1', 'ghcr.io/brf-tech/runr/exec-python:3.14', 'ghcr.io/brf-tech/runr/gateway-auth:1.0.0',
+        foreach (['ghcr.io/brf-tech/runr/agent-proxy:1', 'ghcr.io/brf-tech/runr/exec-python:3.14', 'ghcr.io/brf-tech/runr/gateway-auth:1.1.0',
             'registry.example.com/runr/agent:1', 'ghcr.io/runrsh/runr-agent:latest', 'ghcr.io/brf-tech/runr/reqs/curl:latest'] as $other) {
             $this->assertSame($other, ReleaseImages::moved($other));
         }

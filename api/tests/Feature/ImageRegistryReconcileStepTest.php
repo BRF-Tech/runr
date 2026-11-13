@@ -97,7 +97,7 @@ class ImageRegistryReconcileStepTest extends TestCase
                 ]),
             ],
             '/apis/apps/v1/daemonsets' => [
-                $this->workload('wasm-installer', 'runr-sandbox', ['initContainers' => [['image' => 'ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1']]]),
+                $this->workload('wasm-installer', 'runr-sandbox', ['initContainers' => [['image' => 'ghcr.io/runrsh/containerd-shim-spin:v0.27.2-runr.1']]]),
                 $this->workload('kata-installer', 'runr-sandbox', ['initContainers' => [['image' => 'ghcr.io/runrsh/reqs/busybox:latest']]]),
                 $this->workload('runr-registry-mirror', 'kube-system', ['containers' => [['name' => 'mirror-config', 'image' => 'ghcr.io/runrsh/reqs/busybox:latest']]]),
             ],

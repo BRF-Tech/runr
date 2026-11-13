@@ -513,6 +513,9 @@ data:
   {{- with $ap.syncSeconds }}
   RUNR_GATEWAY_AUTH_SYNC_SECONDS: {{ . | quote }}
   {{- end }}
+  {{- if and (hasKey $ap "onDemandSyncSeconds") (ne (toString $ap.onDemandSyncSeconds) "") }}
+  RUNR_GATEWAY_AUTH_ON_DEMAND_SYNC_SECONDS: {{ $ap.onDemandSyncSeconds | toString | quote }}
+  {{- end }}
   {{- with $ap.usageRetentionDays }}
   RUNR_API_USAGE_RETENTION_DAYS: {{ . | quote }}
   {{- end }}

@@ -8,6 +8,7 @@ use App\Services\KubernetesClient;
 use App\Services\RegionReconcile\ClusterGroup;
 use App\Services\RegionReconcile\ReconcileTarget;
 use App\Services\RegionReconcile\Steps\WasmSandboxStep;
+use App\Services\Runtimes\RuntimeRegistry;
 use App\Services\Wasm\WasmInstallService;
 use App\Services\Wasm\WasmManifests;
 use App\Services\Wasm\WasmShim;
@@ -20,8 +21,9 @@ use App\Services\Wasm\WasmShim;
  *     Spin shim back through the installer such a build applied, region:reconcile's WasmSandboxStep
  *     queues the install of this release and the installer replaces the binary with RunR's build;
  *  3. deploys the Rust and JavaScript examples (examples/wasm, copied into the API container at
- *     --examples/wasm) as XaaS projects of wasm-rust / wasm-js: build Job → Spin OCI artifact in
- *     the region registry → Knative Service under the spin shim (queue-proxy as a Linux container);
+ *     --examples/wasm) as XaaS projects of wasm-rust / wasm-js 4.2, and wasm-rust 4.1's starter
+ *     (the SDK generation next to 4.2): build Job → Spin OCI artifact in the region registry →
+ *     Knative Service under the spin shim (queue-proxy as a Linux container);
  *  4. calls them (?name=RunR) and checks the body and the pod spec (runtimeClassName, nodeSelector);
  *  5. waits until each scaled to zero and times the next call — WASM_COLD_STARTS times (default 3)
  *     — and prints every cold start with the median;
@@ -53,9 +55,13 @@ trait E2eTestWasmTrait
             return [$install, $upgrade];
         }
 
+        // the examples are the 4.2 versions (Spin Rust SDK 8 on WASIp3, esbuild 0.28); the Rust
+        // starter of 4.1 (Spin Rust SDK 5), the generation next to it, still builds and runs
+        $rust41 = app(RuntimeRegistry::class)->require('wasm-rust')->templateFiles('lib.rs', 'handle', false, '4.1')['lib.rs'];
         $tests = [
-            $this->runtimeEntry('wasm-rust-http', 'wasm-rust', 'http', (string) file_get_contents("{$dir}/rust/lib.rs"), $regionId, ['body' => 'Hello, RunR! (from Rust, Wasm)']),
-            $this->runtimeEntry('wasm-js-http', 'wasm-js', 'http', (string) file_get_contents("{$dir}/js/index.js"), $regionId, ['body' => 'Hello, RunR! (from JavaScript, Wasm)']),
+            $this->runtimeEntry('wasm-rust-http', 'wasm-rust', 'http', (string) file_get_contents("{$dir}/rust/lib.rs"), $regionId, ['body' => 'Hello, RunR! (from Rust, Wasm)'], '4.2'),
+            $this->runtimeEntry('wasm-rust-41-http', 'wasm-rust', 'http', $rust41, $regionId, ['body' => 'Hello, RunR! (from Rust, Wasm)'], '4.1'),
+            $this->runtimeEntry('wasm-js-http', 'wasm-js', 'http', (string) file_get_contents("{$dir}/js/index.js"), $regionId, ['body' => 'Hello, RunR! (from JavaScript, Wasm)'], '4.2'),
         ];
 
         $this->runTestsSequentially($tests);

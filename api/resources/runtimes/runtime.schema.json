@@ -136,25 +136,7 @@
         "command": { "$ref": "#/$defs/command" },
         "runImage": { "$ref": "#/$defs/imageTemplate" },
         "source": { "type": "boolean" },
-        "files": {
-          "type": "object",
-          "maxProperties": 20,
-          "propertyNames": { "$ref": "#/$defs/fileName" },
-          "additionalProperties": {
-            "oneOf": [
-              { "type": "string", "maxLength": 262144 },
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["http", "schedule"],
-                "properties": {
-                  "http": { "type": "string", "maxLength": 262144 },
-                  "schedule": { "type": "string", "maxLength": 262144 }
-                }
-              }
-            ]
-          }
-        }
+        "files": { "$ref": "#/$defs/buildFiles" }
       }
     },
     "run": {
@@ -252,7 +234,44 @@
         "eol": { "type": "string", "format": "date" },
         "deprecated": { "$ref": "#/$defs/deprecation" },
         "sunset": { "type": "string", "format": "date" },
-        "gpu": { "type": "boolean" }
+        "gpu": { "type": "boolean" },
+        "template": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["files"],
+          "properties": {
+            "files": { "$ref": "#/$defs/fileMap" }
+          },
+          "description": "The starter files of a new project on this version, instead of the runtime's template (an SDK whose code differs between versions)."
+        },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["files"],
+          "properties": {
+            "files": { "$ref": "#/$defs/buildFiles" }
+          },
+          "description": "The build files of this version, instead of the runtime's build.files (the build command stays the runtime's)."
+        }
+      }
+    },
+    "buildFiles": {
+      "type": "object",
+      "maxProperties": 20,
+      "propertyNames": { "$ref": "#/$defs/fileName" },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string", "maxLength": 262144 },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["http", "schedule"],
+            "properties": {
+              "http": { "type": "string", "maxLength": 262144 },
+              "schedule": { "type": "string", "maxLength": 262144 }
+            }
+          }
+        ]
       }
     },
     "deprecation": {

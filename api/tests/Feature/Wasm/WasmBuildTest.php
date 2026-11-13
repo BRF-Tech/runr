@@ -103,6 +103,42 @@ class WasmBuildTest extends TestCase
         }
     }
 
+    public function test_a_version_with_build_files_of_its_own_builds_with_them_in_its_image(): void
+    {
+        // 4.2 of wasm-rust and wasm-js: the SDK generation next to 4.1, its own image and build
+        // files (versions[].build.files); 4.1 keeps the runtime's
+        $cases = [
+            'wasm-rust' => ['lib.rs', ['Cargo.toml' => 'spin-sdk = "8.0.0"', 'spin.toml' => 'wasm32-wasip2'], ['Cargo.toml' => 'spin-sdk = "5.2.0"', 'spin.toml' => 'wasm32-wasip1']],
+            'wasm-js' => ['index.js', ['package.json' => '"esbuild": "^0.28.2"', 'build.mjs' => 'SpinEsbuildPlugin'], ['package.json' => '"esbuild": "^0.25.8"', 'build.mjs' => 'SpinEsbuildPlugin']],
+        ];
+        foreach (array_keys($cases) as $i => $runtime) {
+            ExecutorImage::create([
+                'runtime' => $runtime, 'version' => '4.2', 'docker_image' => "ghcr.io/brf-tech/runr/exec-{$runtime}:4.2",
+                'is_default' => false, 'is_active' => true, 'sort_order' => 110 + $i,
+            ]);
+        }
+
+        foreach ($cases as $runtime => [$file, $new, $old]) {
+            foreach (['4.2' => $new, '4.1' => $old] as $runtimeVersion => $expected) {
+                $this->submit($this->buildVersion($runtime, $runtimeVersion, 'internal', [$file => 'x']));
+
+                $this->assertSame("ghcr.io/brf-tech/runr/exec-{$runtime}:{$runtimeVersion}", $this->container()['image'], "{$runtime} {$runtimeVersion}");
+                $files = $this->sourceFiles();
+                foreach ($expected as $name => $needle) {
+                    $this->assertStringContainsString($needle, $files[$name] ?? '', "{$runtime} {$runtimeVersion}: {$name}");
+                }
+                // the runtime's build command, the same for every version
+                $this->assertStringContainsString('spin build', $this->script(), "{$runtime} {$runtimeVersion}");
+            }
+        }
+
+        // the project's own file still wins over the version's
+        $own = "[package]\nname = \"runr-function\"\n";
+        $this->submit($this->buildVersion('wasm-rust', '4.2', 'internal', ['lib.rs' => 'x', 'Cargo.toml' => $own]));
+        $this->assertSame($own, $this->sourceFiles()['Cargo.toml']);
+        $this->assertStringContainsString('wasm32-wasip2', $this->sourceFiles()['spin.toml']);
+    }
+
     public function test_a_projects_own_spin_toml_replaces_the_default(): void
     {
         $own = "spin_manifest_version = 2\n[application]\nname = \"mine\"\n";

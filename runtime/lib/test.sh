@@ -84,6 +84,37 @@ ensure_compose_app_key() {
   fi
 }
 
+# The API services also join the external `kind` network (docker-compose.yml), which only a Kind
+# cluster creates: without it `docker compose up` stops with "network kind declared as external,
+# but could not be found". A suite without a Kind cluster (test-tenancy, test-authprovider,
+# test-ticket, cmd_test with --kubeconfig) creates it first, as the UI stack suite does; a Kind
+# cluster created later on the host joins the network that is there. Another run creating it at
+# the same moment is no failure.
+ensure_kind_network() {
+  docker network inspect kind >/dev/null 2>&1 && return 0
+  if docker network create kind >/dev/null 2>&1; then
+    echo "  Docker network kind created (the API services join it)"
+    return 0
+  fi
+  docker network inspect kind >/dev/null 2>&1 || {
+    echo -e "${RED}The Docker network kind could not be created (docker network create kind)${NC}"
+    return 1
+  }
+}
+
+# e2e_runtime_catalog SUITE — the runtime catalog of the e2e stack (RUNR_RUNTIME_CATALOG_REF of
+# docker-compose.yml, config/runtime_sources.php): empty, so the API reads the checkout's
+# resources/runtimes/builtin.json — the runtimes and versions of this tree, which RunR's published
+# signed catalog has only once BRF-Tech/runr-runtimes publishes them with the release (wasm-rust
+# 4.2 before 0.7.0) — for every suite but runtime-sources, which reads the published catalog
+# itself (rs-default-catalog). A RUNR_RUNTIME_CATALOG_REF the caller set, also empty, is kept.
+e2e_runtime_catalog() {
+  [ -n "${RUNR_RUNTIME_CATALOG_REF+x}" ] && return 0
+  [ "$1" = runtime-sources ] && return 0
+  export RUNR_RUNTIME_CATALOG_REF=""
+  echo "  Runtime catalog: the checkout's built-in one (RUNR_RUNTIME_CATALOG_REF empty)"
+}
+
 # pull_image IMAGE — docker pull; an image this host already has counts (an offline host). The reqs
 # mirror (ghcr.io/brf-tech/runr/reqs/…) is published by BRF-Tech/runr-runtimes: an image this
 # checkout starts to use is mirrored there first, ci/check-reqs-mirror.sh fails until it resolves.
@@ -212,7 +243,7 @@ load_e2e_runr_images() {
 }
 
 cmd_test() {
-  local k8s_ver="${K8S_VERSION:-1.32.0}"
+  local k8s_ver="${K8S_VERSION:-1.37.0}"
   local cleanup="${CLEANUP:-1}"
   local cluster_name=""
   local external_kubeconfig=""
@@ -385,6 +416,8 @@ KINDEOF
   echo "Starting Docker Compose (api, horizon, scheduler, reverb, mailpit) [TENANCY_ENABLED=false]..."
   cd "${SCRIPT_DIR}/.."
   ensure_compose_app_key
+  ensure_kind_network
+  e2e_runtime_catalog "$suite"
   build_e2e_runr_images
   _test_compose_up="1"
   if ! docker compose up -d --build api horizon scheduler reverb mailpit; then

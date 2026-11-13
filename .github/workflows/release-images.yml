@@ -42,11 +42,11 @@ concurrency:
 env:
   REGISTRY: ghcr.io/brf-tech/runr
   SOURCE_URL: https://github.com/BRF-Tech/runr
-  CRANE_VERSION: v0.21.2
-  CRANE_SHA256: 897e7c342db072ba76531246fc18fbf3e8e298688b6ecf98916770984b263866
+  CRANE_VERSION: v0.22.1
+  CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
   # the helm of the API image (api/Dockerfile.prod), for the chart next to the image tars
-  HELM_VERSION: v3.16.0
-  HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
+  HELM_VERSION: v4.3.1
+  HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
 
 jobs:
   release:

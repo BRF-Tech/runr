@@ -188,6 +188,12 @@ class ProjectController extends Controller
             $project->update($projectFields);
         }
 
+        // Another runtime version (null: the runtime's default): a runtime patch pin belongs to the
+        // version it was made for, so it goes with the old one
+        if (array_key_exists('runtime_version', $data) && ($data['runtime_version'] ?: null) !== $project->runtime_version) {
+            $project->update(['runtime_version' => $data['runtime_version'] ?: null, 'runtime_patch_pin' => null, 'runtime_patch_pinned_by' => null]);
+        }
+
         // knative_region_id may be null (region reset) — handled separately
         if (array_key_exists('knative_region_id', $data)) {
             $project->update(['knative_region_id' => $data['knative_region_id']]);

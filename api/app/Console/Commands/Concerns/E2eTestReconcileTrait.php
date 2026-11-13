@@ -50,7 +50,9 @@ use Illuminate\Support\Facades\Artisan;
  *                         that node again, and a second run leaves it alone
  *  - rec-reconcile-run    `php artisan region:reconcile --region=…`: no step fails,
  *                         dedicated-worker-toleration runs first, tracing and registry-prewarm are
- *                         up to date and registry-prewarm runs last
+ *                         up to date and registry-prewarm runs last; the cluster's Kubernetes
+ *                         version needs no [kubernetes-version] record before the steps (the
+ *                         region's setup recorded it)
  */
 trait E2eTestReconcileTrait
 {
@@ -827,8 +829,16 @@ trait E2eTestReconcileTrait
 
         $tags = [];
         $lines = [];
+        $recorded = [];
         foreach (explode("\n", $out) as $line) {
             if (preg_match('/^\s+\[([a-z0-9-]+)\] (.*)$/', $line, $m)) {
+                // [kubernetes-version] is no step: the cluster's version, recorded before the steps
+                // run where a region's record differs
+                if ($m[1] === 'kubernetes-version') {
+                    $recorded[] = $m[2];
+
+                    continue;
+                }
                 $tags[] = $m[1];
                 $lines[$m[1]][] = $m[2];
             }
@@ -838,6 +848,8 @@ trait E2eTestReconcileTrait
 
         $problem = match (true) {
             $code !== 0 || $failed !== [] => "region:reconcile exited {$code}, failed step(s): ".($failed ? implode(', ', $failed) : '(see the output)'),
+            // the setup that created the region recorded its cluster's version already
+            $recorded !== [] => 'the region did not record its Kubernetes version at its creation: '.implode(' | ', $recorded),
             ($tags[0] ?? null) !== 'dedicated-worker-toleration' => 'the first step run: '.($tags[0] ?? 'none'),
             ($lines['dedicated-worker-toleration'] ?? []) !== ['up to date'] => 'dedicated-worker-toleration: '.implode(' | ', $lines['dedicated-worker-toleration'] ?? ['(no line)']),
             end($tags) !== 'registry-prewarm' => 'the last step run: '.(end($tags) ?: 'none'),

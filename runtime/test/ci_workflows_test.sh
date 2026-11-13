@@ -196,11 +196,15 @@ suite="$(job "$wfdir/kind-suite.yml" suite)"
 has "$suite" 'bash runtime/ci.sh "${args[@]}"' "kind-suite.yml does not run runtime/ci.sh"
 has "$suite" 'cloud-provider-kind' "kind-suite.yml does not install cloud-provider-kind"
 has "$(block "$wfdir/kind-suite.yml" on)" "default: '${default_k8s}'" "kind-suite.yml's Kubernetes version is not ci.sh test's default ${default_k8s}"
-# Kubernetes 1.35 node images come with Kind v0.31.0, and `kind load` needs a Kind that knows them
+# CI runs the newest Kubernetes only: Kubernetes 1.37 node images come with Kind v0.33.0 (`kind
+# load` needs a Kind that knows them), and the suites' kubectl is the Kind node's minor
 kind_version="$(sed -n 's/^ *KIND_VERSION: v//p' <<<"$suite")"
 [ -n "$kind_version" ] || fail "kind-suite.yml pins no Kind version"
-[ "$(printf '%s\n' 0.31.0 "$kind_version" | sort -V | head -n 1)" = 0.31.0 ] \
-  || fail "kind-suite.yml's Kind ${kind_version} cannot run the node images of Kubernetes 1.35: v0.31.0 or later"
+[ "$(printf '%s\n' 0.33.0 "$kind_version" | sort -V | head -n 1)" = 0.33.0 ] \
+  || fail "kind-suite.yml's Kind ${kind_version} cannot run the node images of Kubernetes 1.37: v0.33.0 or later"
+[[ "$default_k8s" == 1.37.* ]] || fail "the Kind suites' Kubernetes ${default_k8s} is not the newest Kind v0.33.0 runs (1.37)"
+kubectl_version="$(sed -n 's/^ *KUBECTL_VERSION: v//p' <<<"$suite")"
+[ "${kubectl_version%.*}" = "${default_k8s%.*}" ] || fail "kind-suite.yml's kubectl ${kubectl_version} is not the minor of its Kind node ${default_k8s}"
 # the bot's Kata suites ask for /dev/kvm and say plainly when the runner has none
 has "$suite" 'Kata cannot run' "kind-suite.yml does not report a runner without hardware virtualization"
 for f in kind-suite.yml api-tests.yml ui-tests.yml ui-stack-suite.yml; do reusable "$wfdir/$f" || fail "${f} is not a reusable workflow (on: workflow_call alone)"; done

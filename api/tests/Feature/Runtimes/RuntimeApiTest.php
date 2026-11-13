@@ -161,6 +161,19 @@ class RuntimeApiTest extends TestCase
         $go = $this->actingAs($user, 'sanctum')->getJson('/api/runtimes/go/template')->assertOk()->json('files');
         $this->assertSame(['main.go'], array_keys($go));
         $this->assertStringContainsString('func Handler(', $go['main.go']);
+
+        // a version with a starter of its own (versions[].template, an SDK generation such as
+        // wasm-rust 4.2): ?version= gives it; without one, the default version's
+        $this->actingAs($this->user(true), 'sanctum')->postJson('/api/runtimes', ['manifest' => $this->cManifest(['versions' => [
+            ['version' => '17', 'image' => 'ghcr.io/brf-tech/runr/reqs/alpine:3.21', 'default' => true],
+            ['version' => '23', 'image' => 'ghcr.io/brf-tech/runr/reqs/alpine:3.21', 'template' => ['files' => ['{file}' => "int main(void) { return 23; }\n"]]],
+        ]])])->assertCreated();
+        $c = fn (string $query) => $this->actingAs($user, 'sanctum')->getJson("/api/runtimes/c/template{$query}")->assertOk()->json('files')['main.c'];
+        $this->assertSame("int main(void) { return 23; }\n", $c('?version=23'));
+        $this->assertStringContainsString('puts("Hello")', $c(''), 'the default version (17): the runtime\'s starter');
+        $this->assertStringContainsString('puts("Hello")', $c('?version=17'));
+        $this->assertStringContainsString('puts("Hello")', $c('?version=99'), 'a version the runtime does not have');
+        $this->actingAs($user, 'sanctum')->getJson('/api/runtimes/c/template?version='.str_repeat('9', 40))->assertUnprocessable();
     }
 
     // ── Validation ──────────────────────────────────────────────────────────

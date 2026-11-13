@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 #
 # The Spin shim RunR installs on region nodes (WebAssembly support, App\Services\Wasm\WasmShim):
-# containerd-shim-spin v0.26.0 built with one change in its runwasi library (containerd-shim-wasm
-# 1.0.1), versioned v0.26.0-runr.1.
+# containerd-shim-spin v0.27.2 built with one change in its runwasi library (containerd-shim-wasm
+# 1.0.1), versioned v0.27.2-runr.1.
 #
-#   docker build -t ghcr.io/brf-tech/runr/containerd-shim-spin:v0.26.0-runr.1 runtime/wasm-shim-spin
+#   docker build -t ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1 runtime/wasm-shim-spin
 #   runtime/ci.sh wasm-shim [--push]          (--push: linux/amd64 + linux/arm64)
 #   docker build --target test runtime/wasm-shim-spin    the patched executor's unit tests
 #
@@ -18,7 +18,7 @@
 # (clear the shim's environment, set the spec's); Wasm containers are unchanged. Drop the patch and
 # this build once a containerd-shim-spin release depends on a containerd-shim-wasm with that fix.
 #
-# Pinned inputs, every download checked: the containerd-shim-spin commit of tag v0.26.0 (its
+# Pinned inputs, every download checked: the containerd-shim-spin commit of tag v0.27.2 (its
 # Cargo.lock, cargo build --locked), the containerd-shim-wasm 1.0.1 crate (the checksum of that
 # Cargo.lock), the Rust toolchain of its rust-toolchain.toml (official image by digest, from the
 # reqs mirror), the cross-rs musl images upstream builds its release binaries with (by digest),
@@ -31,9 +31,9 @@
 # its pod with an init container and installs the binary on the node (WasmManifests,
 # WasmNodeScripts).
 
-ARG RUST_IMAGE=ghcr.io/brf-tech/runr/reqs/rust:1.95.0-slim-bookworm@sha256:d7482085ff5b415f84dba5647ae71606650bdef00db7aeb69f4b3d170c3e4082
-ARG CROSS_IMAGE_AMD64=ghcr.io/cross-rs/x86_64-unknown-linux-musl:main@sha256:a5b346562935938c10d99d88adbcb809ec8c01e20f4bdef14584654b876c0c07
-ARG CROSS_IMAGE_ARM64=ghcr.io/cross-rs/aarch64-unknown-linux-musl:main@sha256:5ca8072c8ff326c2285221c22b8bf4959b2d85c9fe0a0ad3ed2ec4d023a3b18e
+ARG RUST_IMAGE=ghcr.io/brf-tech/runr/reqs/rust:1.97.0-slim-bookworm@sha256:6d220bf85c74e842a79da63997af8d2e74455c0b8847d8bb3a5888572334991d
+ARG CROSS_IMAGE_AMD64=ghcr.io/cross-rs/x86_64-unknown-linux-musl:main@sha256:c32c7d8c69916dbd4e436a27c928121bca683db64920e7fd3b6cd37c8ad39e33
+ARG CROSS_IMAGE_ARM64=ghcr.io/cross-rs/aarch64-unknown-linux-musl:main@sha256:3a01d8e2b3eb780d77843ffc6dc4bae48920dd075d16287984e5bd6ea777d743
 ARG BASE_IMAGE=ghcr.io/brf-tech/runr/reqs/alpine:3.21
 
 FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS rust
@@ -54,7 +54,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
-    RUSTUP_TOOLCHAIN=1.95.0 \
+    RUSTUP_TOOLCHAIN=1.97.0 \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
     CARGO_NET_RETRY=5 \
     GIT_HTTP_LOW_SPEED_LIMIT=1000 \
@@ -70,7 +70,9 @@ RUN set -eux; \
     echo "${target}" > /rust-target; \
     rustup target add "${target}"; \
     rustc --version
-# protoc (prost builds) and a static libseccomp for the target (libcontainer's seccomp support)
+# protoc (prost builds) and a static libseccomp for the target (libcontainer's seccomp support).
+# As upstream's cross/Dockerfile: the cross-rs image sets CROSS_TOOLCHAIN_PREFIX and CROSS_SYSROOT,
+# and the prefix without its dash as --host makes configure take the toolchain's ar and ranlib
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates curl gperf pkg-config unzip; \
@@ -83,7 +85,8 @@ RUN set -eux; \
     echo "${LIBSECCOMP_SHA256}  /tmp/libseccomp.tar.gz" | sha256sum -c -; \
     tar -xzf /tmp/libseccomp.tar.gz -C /tmp; \
     cd "/tmp/libseccomp-${LIBSECCOMP_VERSION}"; \
-    ./configure --host="${CROSS_CMAKE_SYSTEM_PROCESSOR}-linux-musl" CC="${CROSS_TOOLCHAIN_PREFIX}gcc" \
+    : "${CROSS_TOOLCHAIN_PREFIX:?}" "${CROSS_SYSROOT:?}"; \
+    ./configure --host="${CROSS_TOOLCHAIN_PREFIX%-}" CC="${CROSS_TOOLCHAIN_PREFIX}gcc" \
       --prefix="${CROSS_SYSROOT}" --disable-shared --enable-static >/dev/null; \
     make -j"$(nproc)" >/dev/null; \
     make install >/dev/null; \
@@ -94,13 +97,13 @@ ENV LIBSECCOMP_LINK_TYPE=static \
 # as upstream's cross/Dockerfile: keeps cross-rs' CMake toolchain file from using the musl sysroot
 ENV CROSS_SYSROOT=/
 
-# ── sources: containerd-shim-spin v0.26.0 + the patched containerd-shim-wasm 1.0.1 ──
+# ── sources: containerd-shim-spin v0.27.2 + the patched containerd-shim-wasm 1.0.1 ──
 FROM toolchain AS source
 ARG SHIM_SPIN_REPO=https://github.com/spinframework/containerd-shim-spin.git
-# tag v0.26.0
-ARG SHIM_SPIN_COMMIT=922760061d91bacd455c5824b8143dec2a372515
+# tag v0.27.2
+ARG SHIM_SPIN_COMMIT=1acd7c3a0126d16a1e7da609e06d6a45d005a9c5
 ARG SHIM_WASM_VERSION=1.0.1
-# checksum of containerd-shim-wasm 1.0.1 in containerd-shim-spin v0.26.0's Cargo.lock
+# checksum of containerd-shim-wasm 1.0.1 in containerd-shim-spin v0.27.2's Cargo.lock
 ARG SHIM_WASM_SHA256=38357d0c7fdb42eea29ad99f1da2488c2a93ad3ca5d0e684121b34ca815c75c0
 WORKDIR /src
 RUN set -eux; \
@@ -119,12 +122,12 @@ RUN set -eux; \
     cd /src/containerd-shim-wasm; \
     git apply --verbose /src/patches/containerd-shim-wasm-1.0.1-linux-container-env.patch; \
     cd /src/containerd-shim-spin; \
-    git apply --verbose /src/patches/containerd-shim-spin-v0.26.0-patched-shim-wasm.patch
+    git apply --verbose /src/patches/containerd-shim-spin-v0.27.2-patched-shim-wasm.patch
 
 # ── the shim ──
 FROM source AS build
 ARG TARGETARCH
-ARG VERSION=v0.26.0-runr.1
+ARG VERSION=v0.27.2-runr.1
 # the locked dependencies first, retried: crates.io and the git repositories of Cargo.lock
 RUN --mount=type=cache,id=runr-shim-spin-registry-${TARGETARCH},target=/usr/local/cargo/registry \
     --mount=type=cache,id=runr-shim-spin-git-${TARGETARCH},target=/usr/local/cargo/git \
@@ -184,13 +187,13 @@ RUN --mount=type=cache,id=runr-shim-spin-test-registry,target=/usr/local/cargo/r
 
 # ── the image ──
 FROM ${BASE_IMAGE}
-ARG VERSION=v0.26.0-runr.1
+ARG VERSION=v0.27.2-runr.1
 # source: this repository, which builds the image (it links the ghcr package); url: the upstream
-# project, whose commit 922760061d91 (tag v0.26.0) is built. revision and created: the release
+# project, whose commit 1acd7c3a0126 (tag v0.27.2) is built. revision and created: the release
 # build (ci.sh --push)
 LABEL org.opencontainers.image.title="containerd-shim-spin" \
       org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.description="containerd-shim-spin v0.26.0 (922760061d91) with a patched containerd-shim-wasm (NOTICE) as RunR installs it on region nodes" \
+      org.opencontainers.image.description="containerd-shim-spin v0.27.2 (1acd7c3a0126) with a patched containerd-shim-wasm (NOTICE) as RunR installs it on region nodes" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="BRF Teknoloji" \
       org.opencontainers.image.url="https://github.com/spinframework/containerd-shim-spin" \

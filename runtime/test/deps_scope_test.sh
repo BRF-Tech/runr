@@ -84,7 +84,7 @@ for row in "${DEPS_PINS[@]}"; do
   what="DEPS_PINS ${g} ${name}"
   [ "$(deps_field "$(deps_pkg_row "$g" || true)" 2)" = pins ] || fail "${what}: ${g} is no group of kind pins"
   [ "$(grep -c "^  \"${g}|${name}|" "$root/ci/deps/packages.sh")" = 1 ] || fail "${what}: not one row"
-  [[ "$(deps_field "$row" 4)" =~ ^(major|minor|person|toolchain-major|toolchain-minor)$ ]] || fail "${what}: no line $(deps_field "$row" 4)"
+  [[ "$(deps_field "$row" 4)" =~ ^(major|minor|patch|person|toolchain-major|toolchain-minor)$ ]] || fail "${what}: no line $(deps_field "$row" 4)"
   [[ "$spec" =~ ^(-|(sum|build|digest|npm|crate):[a-z0-9,-]*:.*)$ ]] || fail "${what}: no checksum kind ${spec}"
   case "$g:$path" in pins-ci:next|pins-images:release|pins-images:own) ;; *) fail "${what}: path ${path} in ${g}" ;; esac
   vers=""
@@ -122,6 +122,39 @@ for row in "${DEPS_PINS[@]}"; do
   done
 done
 echo "ok - every version pin of the Dockerfiles and workflows is a row of DEPS_PINS or untracked with a reason, each row one version at its places, its path agreeing with its files"
+
+# the API image's kubectl set (KubectlBinary): every second Kubernetes minor from the one above
+# RunR's oldest (knative.min_k8s_minor), so each cluster RunR accepts has a kubectl within one minor;
+# a row per kubectl, the same set in both API Dockerfiles, each pin of its directory's minor, and
+# only the newest row's line minor (it reports a newer Kubernetes minor), the others' patch
+min_k8s="$(sed -nE "s/.*'min_k8s_minor' => \(int\) env\('KNATIVE_MIN_K8S_MINOR', ([0-9]+)\).*/\1/p" "$root/api/config/knative.php")"
+[ -n "$min_k8s" ] || fail "no knative.min_k8s_minor in api/config/knative.php"
+set_prod="$(sed -nE 's/^ARG KUBECTL_1_([0-9]+)_VERSION=v1\.([0-9]+)\.[0-9]+$/\1 \2/p' "$root/api/Dockerfile.prod")"
+set_dev="$(sed -nE 's/^ARG KUBECTL_1_([0-9]+)_VERSION=v1\.([0-9]+)\.[0-9]+$/\1 \2/p' "$root/api/Dockerfile")"
+[ -n "$set_prod" ] && [ "$set_prod" = "$set_dev" ] || fail "the kubectl set of api/Dockerfile.prod (${set_prod//$'\n'/, }) and api/Dockerfile (${set_dev//$'\n'/, })"
+grep -qE '^ARG KUBECTL_VERSION=' "$root/api/Dockerfile.prod" "$root/api/Dockerfile" && fail "an API Dockerfile pins a single KUBECTL_VERSION besides the set"
+want=$((min_k8s + 1))
+newest=""
+while read -r dir pinned; do
+  [ "$dir" = "$pinned" ] || fail "KUBECTL_1_${dir}_VERSION pins kubectl 1.${pinned}"
+  [ "$dir" = "$want" ] || fail "the kubectl set: 1.${dir} where 1.${want} belongs (every second minor from 1.$((min_k8s + 1)))"
+  row="$(deps_pin_row pins-images "kubectl-1.${dir}")" || fail "no DEPS_PINS row kubectl-1.${dir}"
+  [ "$(deps_field "$row" 7)" = "api/Dockerfile.prod~ARG~KUBECTL_1_${dir}_VERSION api/Dockerfile~ARG~KUBECTL_1_${dir}_VERSION" ] || fail "kubectl-1.${dir}'s places: $(deps_field "$row" 7)"
+  grep -qF "  1.${dir} \"\$KUBECTL_1_${dir}_VERSION\" " "$root/api/Dockerfile.prod" || fail "api/Dockerfile.prod installs no kubectl 1.${dir}"
+  newest="$dir"
+  want=$((dir + 2))
+done <<<"$set_prod"
+for row in "${DEPS_PINS[@]}"; do
+  name="$(deps_field "$row" 2)"
+  [ "$(deps_field "$row" 1)" = pins-images ] && [[ "$name" == kubectl* ]] || continue
+  m="${name#kubectl-1.}"
+  grep -qx "${m} ${m}" <<<"$set_prod" || fail "DEPS_PINS ${name}: no kubectl of the API image"
+  if [ "$m" = "$newest" ]; then line=minor; else line=patch; fi
+  [ "$(deps_field "$row" 4)" = "$line" ] || fail "DEPS_PINS ${name}: line $(deps_field "$row" 4), not ${line}"
+done
+grep -qF "'kubectl_dir' => '/usr/local/lib/runr/kubectl'" "$root/api/config/sandbox.php" && grep -qF 'mkdir -p "/usr/local/lib/runr/kubectl/$1"' "$root/api/Dockerfile.prod" \
+  || fail "the API image's kubectl directory is not sandbox.exec.kubectl_dir"
+echo "ok - the API image's kubectl set: every second minor from 1.$((min_k8s + 1)) to 1.${newest}, one row each (the newest reports a new minor), the same in both API Dockerfiles"
 
 # --- the fixture repository ----------------------------------------------------------------------------
 mkdir -p "$tmp/bin"
@@ -263,7 +296,7 @@ echo '{"dependencies": {"@runr/workflows": "^0.1.0"}}' > "$repo/examples/workflo
 # this repository pins (.github/workflows/*.yml: tools.yml); its upstream's releases: that version
 # (more for the tests, below). Checksums of the tested pins: placeholders, the npm file's real ones
 sha() { printf '%s%063d' "$1" "$2"; }
-declare -A fixv=([pins-images/helm]=v3.16.0 [pins-ci/helm]=v3.16.0 [pins-images/kubectl]=v1.35.9 [pins-images/scalar]=1.75.1
+declare -A fixv=([pins-images/helm]=v3.16.0 [pins-ci/helm]=v3.16.0 [pins-images/kubectl-1.35]=v1.35.9 [pins-images/scalar]=1.75.1
   [pins-images/syft]=1.18.1 [pins-images/cosign]=2.4.1 [pins-images/containerd-shim-spin]=v0.26.0 [pins-ci/kind]=v0.31.0
   [pins-ci/cloud-provider-kind]=v0.10.0 [pins-ci/go]=1.26.9 [pins-ci/node]=22)
 gh="$tmp/gh"
@@ -308,6 +341,9 @@ for row in "${DEPS_PINS[@]}"; do
 done
 # shellcheck disable=SC2016 # the Dockerfile's shell, not this one's
 printf 'RUN case "$a" in amd64) HELM_SHA=%s ;; arm64) HELM_SHA=%s ;; esac\n' "$(sha a 1)" "$(sha a 2)" | tee -a "$repo/api/Dockerfile.prod" >> "$repo/api/Dockerfile"
+# shellcheck disable=SC2016 # the Dockerfile's shell: the kubectl set's checksums, as api/Dockerfile*
+printf 'RUN case "$a" in amd64) set -- 1.35 "$KUBECTL_1_35_VERSION" %s 1.37 "$KUBECTL_1_37_VERSION" %s ;; arm64) set -- 1.35 "$KUBECTL_1_35_VERSION" %s 1.37 "$KUBECTL_1_37_VERSION" %s ;; esac\n' \
+  "$(sha 7 1)" "$(sha 7 3)" "$(sha 7 2)" "$(sha 7 4)" | tee -a "$repo/api/Dockerfile.prod" >> "$repo/api/Dockerfile"
 printf '      %s\n' "HELM_SHA256: $(sha a 1)" "KIND_SHA256: $(sha c 1)" "CLOUD_PROVIDER_KIND_SHA256: $(sha e 1)" >> "$repo/.github/workflows/tools.yml"
 for v in 1.75.1 1.78.0; do mkdir -p "$tmp/npm/$v/package/dist/browser"; echo "Scalar ${v}" > "$tmp/npm/$v/package/dist/browser/standalone.js"; done
 echo "ARG SCALAR_SHA256=$(sha256sum < "$tmp/npm/1.75.1/package/dist/browser/standalone.js" | cut -d' ' -f1)" >> "$repo/api/Dockerfile.prod"
@@ -400,11 +436,12 @@ cat > "$tmp/bin/govulncheck" <<'EOF'
 printf '%s\n' '{"finding": {"osv": "GO-2026-1", "fixed_version": "v1.26.11", "trace": [{"module": "stdlib", "function": "Parse"}]}}'
 EOF
 chmod +x "$tmp/bin/govulncheck"
-# the pins' newer releases: a patch of helm's major and a new major, kubectl's next patch and minor,
-# syft's minor, a new Scalar, a new release of the patched Spin shim, kind's patch and next 0.x
-# line; Go's next line and its patch, Node's LTS lines
+# the pins' newer releases: a patch of helm's major and a new major, the next patch of a kubectl of
+# the set and a Kubernetes minor newer than the set's newest, syft's minor, a new Scalar, a new
+# release of the patched Spin shim, kind's patch and next 0.x line; Go's next line and its patch,
+# Node's LTS lines
 uptag helm/helm v3.16.4 v4.0.1
-uptag kubernetes/kubernetes v1.35.10 v1.36.2 v1.35.11-rc.0
+uptag kubernetes/kubernetes v1.35.10 v1.36.2 v1.35.11-rc.0 v1.38.1
 uptag anchore/syft v1.19.0
 uptag spinframework/containerd-shim-spin v0.27.0
 uptag kubernetes-sigs/kind v0.31.1 v0.32.0
@@ -470,10 +507,13 @@ echo "ok - detection: one finding per group with its marker, an urgent one with 
 # the pins: one finding per group, a newer line, every release of the patched shim and a
 # toolchain's newer line on their own; holds named
 p="$(marker 'deps: pins-images [')"
-[ "$(jq -c '[.updates[] | [.name, .from, .to]]' <<<"$p")" = '[["helm","v3.16.0","v3.16.4"],["kubectl","v1.35.9","v1.35.10"],["scalar","1.75.1","1.78.0"],["syft","1.18.1","1.19.0"]]' ] \
+[ "$(jq -c '[.updates[] | [.name, .from, .to]]' <<<"$p")" = '[["helm","v3.16.0","v3.16.4"],["kubectl-1.35","v1.35.9","v1.35.10"],["scalar","1.75.1","1.78.0"],["syft","1.18.1","1.19.0"]]' ] \
   && [ "$(jq -c '.updates[0].files' <<<"$p")" = '["api/Dockerfile","api/Dockerfile.prod"]' ] || fail "the images' pins: ${p}"
-grep -qxF 'deps: pins-images helm v4.x released (outside v3)' <<<"$titles" && grep -qxF 'deps: pins-images kubectl v1.36.x released (outside v1.35)' <<<"$titles" \
+grep -qxF 'deps: pins-images helm v4.x released (outside v3)' <<<"$titles" && grep -qxF 'deps: pins-images kubectl-1.37 v1.38.x released (outside v1.37)' <<<"$titles" \
   && grep -qxF 'deps: pins-images containerd-shim-spin v0.27.x released (outside v0.26.0)' <<<"$titles" || fail "the images' pins outside their line: ${titles}"
+# the older kubectls of the set: their patches only (Kubernetes 1.36 and 1.38 are no finding of theirs)
+! grep -qE '^deps: pins-images kubectl-1\.3[135] ' <<<"$titles" || fail "an older kubectl of the set reported a newer minor: ${titles}"
+grep -qF 'a person adds the next minor to its set' "$(grep -l -F 'deps: pins-images kubectl-1.37 v1.38.x' "$rd"/*.md)" || fail "the newest kubectl's finding does not say what to do"
 p="$(marker 'deps: pins-ci [')"
 [ "$(jq -c '[.updates[] | [.name, .from, .to]]' <<<"$p")" = '[["helm","v3.16.0","v3.16.4"],["kind","v0.31.0","v0.31.1"]]' ] \
   && [ "$(jq -c '.updates[1].files' <<<"$p")" = '[".github/workflows/tools.yml"]' ] || fail "the workflows' pins: ${p}"
@@ -643,6 +683,21 @@ grep -qx '      HELM_VERSION: v3.16.0' "$repo/.github/workflows/tools.yml" || fa
   && [ "$(cat "$tmp/r-pins-images/unit")" = 1 ] || fail "the images' pins' suites: $(cat "$tmp/r-pins-images/suites.json")"
 tr -s ' \n' ' ' < "$repo/CHANGELOG.md" | grep -qF -- '- **Image tool pins moved** (minor and patch updates): helm v3.16.0 → v3.16.4, scalar 1.75.1 → 1.78.0.' \
   || fail "the pins' changelog line: $(sed -n '3,9p' "$repo/CHANGELOG.md")"
+# one kubectl of the set: its version and its published checksums (dl.k8s.io's .sha256 per arch);
+# the others of the set stay
+for a in amd64:1 arm64:2; do
+  web "dl.k8s.io/release/v1.35.9/bin/linux/${a%:*}/kubectl.sha256" <<<"$(sha 7 "${a#*:}")"
+  web "dl.k8s.io/release/v1.35.10/bin/linux/${a%:*}/kubectl.sha256" <<<"$(sha 8 "${a#*:}")"
+done
+bump pins-images '[{"name": "kubectl-1.35", "from": "v1.35.9", "to": "v1.35.10", "files": ["api/Dockerfile", "api/Dockerfile.prod"]}]'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-pins-images/path")" = release ] || fail "a kubectl of the set: rc ${rc}, $(cat "$tmp/r-pins-images/summary.md" 2>/dev/null) $(tail -n 5 "$tmp/bump.log")"
+kv37="$(git -C "$repo" show main:api/Dockerfile.prod | sed -n 's/^ARG KUBECTL_1_37_VERSION=//p')"
+[ -n "$kv37" ] || fail "the fixture pins no kubectl 1.37"
+for f in api/Dockerfile.prod api/Dockerfile; do
+  grep -qx 'ARG KUBECTL_1_35_VERSION=v1.35.10' "$repo/$f" \
+    && grep -qF "amd64) set -- 1.35 \"\$KUBECTL_1_35_VERSION\" $(sha 8 1) 1.37 \"\$KUBECTL_1_37_VERSION\" $(sha 7 3) ;; arm64) set -- 1.35 \"\$KUBECTL_1_35_VERSION\" $(sha 8 2) 1.37" "$repo/$f" \
+    && grep -qx "ARG KUBECTL_1_37_VERSION=${kv37}" "$repo/$f" || fail "kubectl 1.35 in ${f}: $(git -C "$repo" diff -- "$f")"
+done
 # a pin the image's build checks against the release's checksums file: the file must be published;
 # supply-chain's own version moves a patch
 web github.com/anchore/syft/releases/download/v1.19.0/syft_1.19.0_checksums.txt <<<"$(sha f 1)  syft_1.19.0_linux_amd64.tar.gz

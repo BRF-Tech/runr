@@ -71,20 +71,29 @@ minute keep the larger count. A schedule none of whose rows has fired yet keeps 
 ### How it is applied
 
 Every minute the API's scheduler (`timed-warmer`, `php artisan projects:warm` runs it at once)
-computes each project's value for the minute and sets it on the Knative **PodAutoscaler** of the
-project's latest ready revision, as the annotation `autoscaling.knative.dev/min-scale`. It patches
-only when the value differs, reading the PodAutoscalers and Knative Services of a region with one
-list call each. Regions that are offline, inactive or demo regions are skipped until they are back.
+computes each project's value for the minute and sets it as the annotation
+`autoscaling.knative.dev/min-scale` of the project's latest ready revision, where the region's
+Knative Serving takes it:
 
-Setting the value on the PodAutoscaler takes effect without a new revision and without restarting
-the running containers. It survives Knative's reconciles and controller restarts, and a lower
-value releases the extra containers after Knative's scale-down window. The Revision is never
-annotated: its `min-scale` does not reach the existing PodAutoscaler, and changing it restarts the
-revision's pods. A new revision gets a fresh PodAutoscaler from the Knative Service template, so:
+- **Knative 1.21 and later:** on the **Revision**. Knative copies the Revision's autoscaling
+  annotations onto its PodAutoscaler and puts back any other value set there, so the Revision is
+  the place to change them. They no longer reach the revision's pods.
+- **Before Knative 1.21:** on the revision's **PodAutoscaler**. There a `min-scale` on the Revision
+  does not reach the existing PodAutoscaler, and changing it restarts the revision's pods.
+
+It patches only when the value differs, reading the Revisions (or PodAutoscalers) and Knative
+Services of a region with one list call each. Regions that are offline, inactive or demo regions
+are skipped until they are back.
+
+Either way the value takes effect without a new revision and without restarting the running
+containers. It survives Knative's reconciles and controller restarts, and a lower value releases
+the extra containers after Knative's scale-down window. A new revision gets a fresh PodAutoscaler
+from the Knative Service template, so:
 
 - every deploy renders the schedule's current value into the template (the new revision starts
   with the right number of containers), and
-- once the revision is ready, the value of that moment is applied again to its PodAutoscaler.
+- once the revision is ready, the value of that moment is applied again (to its Revision or its
+  PodAutoscaler, as above).
 
 While a [blue-green or canary rollout](deploy-strategies.md) splits the traffic, every revision
 that takes a share — the one that served and the new one — gets the value, and the new revision

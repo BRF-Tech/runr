@@ -102,6 +102,9 @@ class TenantLocalRegion extends KnativeRegion implements Syncable
         'function_tls_mode',
         'function_tls_secret_name',
         'function_tls_expires_at',
+        // The cluster's Kubernetes version (TenantMigrations/0112): the tenant's terminals and
+        // sandbox commands on the copy pick kubectl's minor from it
+        'kubernetes_version',
         // Sandbox install status + runtime per project type: tenant deploys read the RuntimeClass
         // from this copy (without them tenant projects never ran sandboxed)
         'sandbox_kata_status',

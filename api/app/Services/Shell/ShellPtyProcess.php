@@ -2,6 +2,7 @@
 
 namespace App\Services\Shell;
 
+use App\Services\Sandboxes\Exec\KubectlBinary;
 use React\EventLoop\LoopInterface;
 
 class ShellPtyProcess
@@ -25,16 +26,7 @@ class ShellPtyProcess
         file_put_contents($this->kubeconfigPath, $config['kubeconfig'], LOCK_EX);
         chmod($this->kubeconfigPath, 0600);
 
-        $args = ['kubectl', 'exec', '-it', $config['pod'], '-n', $config['namespace']];
-        if (! empty($config['container'])) {
-            $args[] = '-c';
-            $args[] = $config['container'];
-        }
-        $args[] = "--kubeconfig={$this->kubeconfigPath}";
-        $args[] = '--';
-        $args[] = '/bin/sh';
-
-        $cmd = implode(' ', array_map('escapeshellarg', $args));
+        $cmd = implode(' ', array_map('escapeshellarg', self::argv($config, $this->kubeconfigPath)));
 
         $env = ['TERM' => 'xterm-256color', 'PATH' => getenv('PATH')];
 
@@ -50,6 +42,27 @@ class ShellPtyProcess
         stream_set_blocking($this->pipes[2], false);
 
         return true;
+    }
+
+    /**
+     * `kubectl exec -it … -- /bin/sh` with the kubectl of the region's Kubernetes minor
+     * ($config['kubernetes_version'], the version the region recorded: KubectlBinary).
+     *
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    public static function argv(array $config, string $kubeconfigPath): array
+    {
+        $args = [KubectlBinary::for($config['kubernetes_version'] ?? null), 'exec', '-it', $config['pod'], '-n', $config['namespace']];
+        if (! empty($config['container'])) {
+            $args[] = '-c';
+            $args[] = $config['container'];
+        }
+        $args[] = "--kubeconfig={$kubeconfigPath}";
+        $args[] = '--';
+        $args[] = '/bin/sh';
+
+        return $args;
     }
 
     public function onOutput(callable $callback): void

@@ -80,6 +80,7 @@ use Modules\Tenancy\Models\Tenant;
  * @property string|null $domain_migration_status
  * @property Carbon|null $domain_migration_started_at
  * @property string|null $domain_migration_old_domain
+ * @property string|null $kubernetes_version the cluster's Kubernetes version as last read ("v1.34.2"): picks kubectl's minor
  * @property string|null $function_tls_mode
  * @property string|null $function_tls_secret_name
  * @property Carbon|null $function_tls_expires_at
@@ -318,6 +319,9 @@ class KnativeRegion extends Model
         'function_tls_mode',
         'function_tls_secret_name',
         'function_tls_expires_at',
+        // The cluster's Kubernetes version as last read (the kubeconfig check, region:reconcile):
+        // kubectl's minor for exec (App\Services\Sandboxes\Exec\KubectlBinary)
+        'kubernetes_version',
     ];
 
     // Secrets never appear in API responses (registry_storage_config holds S3 credentials)

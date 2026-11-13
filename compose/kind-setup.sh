@@ -6,9 +6,9 @@ set -euo pipefail
 # Usage: bash kind-setup.sh [cluster-name] [k8s-version]
 
 CLUSTER_NAME="${1:-runr}"
-K8S_VERSION="${2:-v1.32.2}"
+K8S_VERSION="${2:-v1.37.0}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CPK_VERSION="v0.10.0"
+CPK_VERSION="v0.12.0"
 
 echo "══════════════════════════════════════════════════════════"
 echo "  RunR Kind Cluster Setup"

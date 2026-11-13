@@ -112,7 +112,7 @@
       "title": "Uploaded images",
       "description": "Container images and WebAssembly modules uploaded into region registries (docs/images.md).",
       "properties": {
-        "uploadImage": {"type": "string", "title": "Receiver image", "description": "Image of the upload receiver Job in the regions. Empty: ghcr.io/brf-tech/runr/image-upload:1.1.2."},
+        "uploadImage": {"type": "string", "title": "Receiver image", "description": "Image of the upload receiver Job in the regions. Empty: ghcr.io/brf-tech/runr/image-upload:1.2.0."},
         "quotaGb": {"type": ["string", "number"], "title": "Storage per organization (GiB)", "description": "Uploaded images over every region. Empty: 50; 0: unlimited."},
         "maxUploadGb": {"type": ["string", "number"], "title": "Largest upload (GiB)", "description": "Empty: 20."},
         "uploadTtlHours": {"type": ["string", "number"], "title": "Upload time limit (hours)", "description": "Empty: 24."}
@@ -187,9 +187,10 @@
       "title": "API product",
       "description": "API keys, JWT routes, plans and usage of the gateways (docs/api-product.md).",
       "properties": {
-        "gatewayAuthImage": {"type": "string", "title": "gateway-auth image", "description": "Image of the gateway-auth service in the regions. Empty: ghcr.io/brf-tech/runr/gateway-auth:1.0.0."},
+        "gatewayAuthImage": {"type": "string", "title": "gateway-auth image", "description": "Image of the gateway-auth service in the regions. Empty: ghcr.io/brf-tech/runr/gateway-auth:1.1.0."},
         "callbackUrl": {"type": "string", "title": "Callback URL", "description": "RunR's base URL as the regions reach it. Empty: the region agent's URL."},
         "syncSeconds": {"type": ["string", "number"], "title": "Sync interval (seconds)", "description": "Empty: 10."},
+        "onDemandSyncSeconds": {"type": ["string", "number"], "title": "On-demand sync spacing (seconds)", "description": "Least time between two fetches of a gateway-auth pod for a key or route it does not know. Empty: 2; 0: none."},
         "usageRetentionDays": {"type": ["string", "number"], "title": "Usage retention (days)", "description": "Hourly usage rows kept. Empty: 400."}
       }
     },
@@ -198,7 +199,7 @@
       "title": "Organization export / import",
       "description": "Packages of an organization exported and imported again (docs/org-export.md).",
       "properties": {
-        "transferImage": {"type": "string", "title": "Transfer agent image", "description": "Image of the transfer pods in the regions (binding data, images). Empty: ghcr.io/brf-tech/runr/image-upload:1.1.2."},
+        "transferImage": {"type": "string", "title": "Transfer agent image", "description": "Image of the transfer pods in the regions (binding data, images). Empty: ghcr.io/brf-tech/runr/image-upload:1.2.0."},
         "maxPackageGb": {"type": ["string", "number"], "title": "Largest package (GiB)", "description": "Empty: 50."},
         "retentionHours": {"type": ["string", "number"], "title": "Package retention (hours)", "description": "Empty: 168."},
         "podDiskGb": {"type": ["string", "number"], "title": "Transfer pod disk (GiB)", "description": "One binding's dump or one image. Empty: 20."}
@@ -210,7 +211,7 @@
       "description": "SBOMs, vulnerability scans, image signatures and the admission policy per region (docs/supply-chain.md). Each region is configured in the UI (Region → Supply chain); these are the platform defaults.",
       "properties": {
         "enabled": {"type": ["boolean", "string"], "enum": [true, false, "true", "false"], "title": "Supply-chain runs after builds", "description": "Every image RunR builds gets an SBOM, a scan and a signature as its region's settings define."},
-        "toolsImage": {"type": "string", "title": "Tools image", "description": "Image of the supply-chain Jobs (syft, trivy, cosign, oras). Empty: ghcr.io/brf-tech/runr/supply-chain:1.0.0."},
+        "toolsImage": {"type": "string", "title": "Tools image", "description": "Image of the supply-chain Jobs (syft, trivy, cosign, oras). Empty: ghcr.io/brf-tech/runr/supply-chain:1.1.0."},
         "jobNamespace": {"type": "string", "title": "Job namespace", "description": "Namespace of the supply-chain Jobs and the signing key in each region. Empty: runr-supply-chain."},
         "rescanHours": {"type": ["string", "number"], "title": "Re-scan interval (hours)", "description": "Default for new regions. Empty: 24."},
         "trivyDbSource": {"type": "string", "title": "Vulnerability DB source", "description": "Copied into the region registry in mirror mode. Empty: mirror.gcr.io/aquasec/trivy-db:2."},

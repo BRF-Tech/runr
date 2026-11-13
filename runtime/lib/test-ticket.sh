@@ -14,13 +14,16 @@ cmd_test_ticket() {
   cd "${SCRIPT_DIR}/.."
 
   echo "Starting Docker Compose (api, horizon, scheduler, reverb, mailpit) [TICKET_ENABLED=true]..."
-  # An empty APP_KEY= stops the API container (test.sh)
+  # An empty APP_KEY= stops the API container, and the API services join the kind network no
+  # cluster of this suite creates (test.sh)
   ensure_compose_app_key
+  ensure_kind_network
   docker compose up -d --build api horizon scheduler reverb mailpit
 
+  # E2E_API_WAIT seconds, default 30
   echo "Waiting for the API to be ready..."
   local api_ready=0
-  for i in $(seq 1 30); do
+  for i in $(seq 1 "${E2E_API_WAIT:-30}"); do
     if curl -sf "${base_url}/up" >/dev/null 2>&1; then
       api_ready=1
       break

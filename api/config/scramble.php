@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\ApiActionReturnType;
+
 return [
     /*
      * Your API path. By default, all routes starting with this path will be added to the docs.
@@ -49,5 +51,7 @@ return [
 
     'servers' => null,
 
-    'extensions' => [],
+    // A controller action's responses are those of its returns (Scramble 0.13 would document an
+    // action that returns `$error` of `if ($error = $this->check())` by its declared type alone)
+    'extensions' => [ApiActionReturnType::class],
 ];

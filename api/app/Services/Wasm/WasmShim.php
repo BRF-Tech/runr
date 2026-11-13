@@ -37,7 +37,7 @@ final class WasmShim
     public const IDS = [self::SPIN, self::WASMTIME];
 
     /** Spin runtime version embedded in the pinned spin shim (its spin-trigger crates). */
-    public const SPIN_RUNTIME = '4.1.0';
+    public const SPIN_RUNTIME = '4.2.6';
 
     /** Node label of every node RunR prepared for WebAssembly (any shim). */
     public const NODE_LABEL = 'runr.dev/wasm';
@@ -51,14 +51,14 @@ final class WasmShim
     private const DEFINITIONS = [
         self::SPIN => [
             'name' => 'Spin',
-            // containerd-shim-spin v0.26.0 + runwasi PR #1183 (runtime/wasm-shim-spin)
-            'version' => 'v0.26.0-runr.1',
+            // containerd-shim-spin v0.27.2 + runwasi PR #1183 (runtime/wasm-shim-spin)
+            'version' => 'v0.27.2-runr.1',
             'binary' => 'containerd-shim-spin-v2',
             'runtime_type' => 'io.containerd.spin.v2',
             'handler' => 'spin-runr',
             // the name the Spin operator (SpinKube) uses for its shim executor
             'runtime_class' => 'wasmtime-spin-v2',
-            'image' => 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.26.0-runr.1',
+            'image' => 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1',
             // the platforms of the image (linux/amd64, linux/arm64) as uname -m
             'arches' => ['x86_64', 'aarch64'],
             'artifacts' => [],

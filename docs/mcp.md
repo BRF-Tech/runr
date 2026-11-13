@@ -467,7 +467,7 @@ from a template in one step.
 
 | Template | Project | Runtime | Starter |
 |---|---|---|---|
-| Python | FaaS | `mcp-python` | [`examples/mcp/python`](../examples/mcp/python): FastMCP (official MCP Python SDK), Streamable HTTP at `/mcp` |
+| Python | FaaS | `mcp-python` | [`examples/mcp/python`](../examples/mcp/python): `MCPServer` (official MCP Python SDK 2), Streamable HTTP at `/mcp` |
 | TypeScript | FaaS | `mcp-node` | [`examples/mcp/node`](../examples/mcp/node): official TypeScript SDK, Node runs `server.ts` with type stripping |
 | Container image | CaaS | — | your image and port ([Bring your own image](#bring-your-own-image)) |
 

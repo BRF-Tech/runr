@@ -90,7 +90,8 @@ class ApiDocsTest extends TestCase
                 '/projects/{project}' => [
                     'get' => $operation + [
                         'tags' => ['Project'],
-                        'responses' => ['200' => ['content' => ['application/json' => [
+                        // the descriptions of the two returns Scramble merged into this response
+                        'responses' => ['200' => ['description' => "The project\n\n\n\nThe project\n\nIts environments", 'content' => ['application/json' => [
                             'schema' => ['$ref' => '#/components/schemas/ProjectResource'],
                         ]]]],
                     ],
@@ -138,7 +139,7 @@ class ApiDocsTest extends TestCase
         $served = $response->json();
         $this->assertSame('3.1.0', $served['openapi']);
         // ApiDocument::finish(): grouped schema names and their references, the tag's group, an
-        // empty schema as a string, the server relative to the host
+        // empty schema as a string, the server relative to the host, a response's description once
         $this->assertSame(['Response.Project'], array_keys($served['components']['schemas']));
         $this->assertSame(
             '#/components/schemas/Response.Project',
@@ -148,6 +149,7 @@ class ApiDocsTest extends TestCase
         $this->assertSame([['name' => 'Projects']], $served['tags']);
         $this->assertSame(['type' => 'string'], $served['components']['schemas']['Response.Project']['properties']['meta']);
         $this->assertSame([['url' => '/api']], $served['servers']);
+        $this->assertSame("The project\n\nIts environments", $served['paths']['/projects/{project}']['get']['responses']['200']['description']);
         $this->assertFileDoesNotExist(ApiDocument::path());
     }
 
@@ -328,6 +330,27 @@ class ApiDocsTest extends TestCase
 
         $this->assertContains('POST api/auth/login', $public);
         $this->assertContains('POST api/git/webhooks/github/{provider}', $public);
+    }
+
+    /**
+     * An action that returns the refusal of a check (`if ($error = $this->check()) return $error;`)
+     * keeps its own responses (ApiActionReturnType); a route with a closure is not in the reference
+     */
+    public function test_an_action_keeps_its_responses_next_to_the_refusal_of_a_check(): void
+    {
+        $paths = $this->generatedDocument()['paths'];
+
+        $install = $paths['/knative-regions/{knativeRegion}/wasm']['post']['responses'];
+        $this->assertSame(['message', 'warning', 'region'], array_keys($install['202']['content']['application/json']['schema']['properties'] ?? []), 'the queued install');
+        $this->assertArrayHasKey('422', $install, 'the refusals');
+        $this->assertArrayNotHasKey('200', $install);
+
+        $check = $paths['/knative-regions/{knativeRegion}/check-namespace']['get']['responses'];
+        $this->assertSame(['type' => 'boolean'], $check['200']['content']['application/json']['schema']['properties']['exists'] ?? null);
+        $this->assertArrayHasKey('500', $check, 'the cluster did not answer');
+
+        $this->assertArrayNotHasKey('/version', $paths);
+        $this->assertArrayNotHasKey('/docs.json', $paths);
     }
 
     public function test_the_api_reference_page_reads_the_document_and_does_not_generate_it(): void

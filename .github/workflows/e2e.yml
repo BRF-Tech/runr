@@ -1,5 +1,5 @@
 # The long end-to-end suites, every week and by hand (Actions → E2E → Run workflow, or
-# `gh workflow run e2e.yml -f suite=kind -f k8s=1.35.0`), on standard GitHub-hosted runners with
+# `gh workflow run e2e.yml -f suite=kind`), on standard GitHub-hosted runners with
 # their own Docker:
 #   - kind: runtime/ci.sh test — a Kind cluster (1 control-plane + 2 workers), Knative and the API
 #     stack of docker-compose.yml, every runtime deployed through the API. It needs neither
@@ -24,8 +24,8 @@ on:
         options: [all, kind, ui-stack]
         default: all
       k8s:
-        description: 'kind: Kubernetes version of the cluster (a kindest-node tag of the reqs mirror)'
-        default: '1.32.0'
+        description: 'kind: Kubernetes version of the cluster (a kindest-node tag of the reqs mirror: CI runs the newest only)'
+        default: '1.37.0'
       workers:
         description: 'kind: worker nodes (1: a runner short of disk; the control-plane then runs the platform pods too)'
         type: choice
@@ -48,7 +48,7 @@ jobs:
     uses: ./.github/workflows/kind-suite.yml
     with:
       command: test
-      k8s: ${{ inputs.k8s || '1.32.0' }}
+      k8s: ${{ inputs.k8s || '1.37.0' }}
       workers: ${{ inputs.workers || '2' }}
 
   # the steps: ui-stack-suite.yml, which deps-test.yml runs too (a dependency bump of the console)

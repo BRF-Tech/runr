@@ -39,7 +39,7 @@ class ProjectChangeAuthorization
 
         $config = (array) $request->input('config', []);
         $other = array_diff(array_keys($config), self::NEUTRAL_KEYS);
-        if ($other || $request->hasAny(['description', 'knative_region_id'])) {
+        if ($other || $request->hasAny(['description', 'knative_region_id', 'runtime_version'])) {
             self::require($request, 'projects.update', $project);
         }
 

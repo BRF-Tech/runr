@@ -77,12 +77,13 @@ class RegionKubeconfigReplaceAndUninstallTest extends TestCase
     public function test_a_rotated_kubeconfig_of_the_same_cluster_is_taken(): void
     {
         $this->signedIn($this->userWithRole('owner'));
-        $this->clusters(['old.test' => ['uid-a', '32'], 'new.test' => ['uid-a', '32']]);
+        $this->clusters(['old.test' => ['uid-a', '32'], 'new.test' => ['uid-a', '33']]);
         $region = $this->region();
 
         $this->putJson("/api/knative-regions/{$region->id}", ['kubeconfig' => $this->kubeconfig('https://new.test:6443')])->assertOk();
 
         $this->assertStringContainsString('new.test', $region->fresh()->kubeconfig);
+        $this->assertSame('v1.33', $region->fresh()->kubernetes_version, "the version it answered (kubectl's minor for exec)");
     }
 
     public function test_a_kubeconfig_of_another_cluster_is_refused(): void

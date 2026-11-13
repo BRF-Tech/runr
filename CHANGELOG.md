@@ -8,6 +8,165 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-13
+
+### Upgrade notes
+
+- **Upgrading from 0.6.13 needs nothing set.** Two migrations, central and per organization:
+  `knative_regions.kubernetes_version` (a new column) and the WebAssembly pin below. The region Job
+  records each region's Kubernetes version and moves the region agent and the event gateway to
+  0.7.0, gateway-auth to 1.1.0 and, on a region with WebAssembly, the Spin shim to v0.27.2-runr.1
+  (one node at a time, no container runtime restart); a region that pulls through a mirror of its
+  own needs these images there first ([0.6.13 → 0.7.0 in upgrade.md](docs/upgrade.md#0613--070)).
+- **WebAssembly:** the migration pins the existing `wasm-rust` and `wasm-js` projects without a
+  runtime version to 4.1, so the new default 4.2 does not move them to an SDK their code was not
+  written for; nothing has to be done ([docs/upgrade.md](docs/upgrade.md#webassembly-42-for-new-rust-and-javascript-projects)).
+- **Helm 4:** RunR's region releases stay client-side and upgrade as before. With your own Helm 4,
+  do not pass `--server-side=true` to the upgrade of an existing release
+  ([Helm 4 in upgrade.md](docs/upgrade.md#helm-4)).
+- **kubectl:** a `SANDBOX_KUBECTL` set through `extraEnv` still names one kubectl for every region;
+  take it out to let RunR run the kubectl of each region's Kubernetes minor
+  ([kubectl per region](docs/upgrade.md#kubectl-per-region)).
+- **A patch feed of your own** signed with cosign 3 needs
+  `--use-signing-config=false --new-bundle-format=false --tlog-upload=false`
+  ([docs/security.md](docs/security.md#runtime-patch-feed)).
+- **Back to 0.6.13 is a `helm rollback`**; the column and the 4.1 pins stay. Set a project moved to
+  4.2 back to 4.1 first: 0.6.13 has no 4.2 ([Back to 0.6.13](docs/upgrade.md#back-to-0613)).
+
+### Added
+
+- **WebAssembly runtimes 4.2, next to 4.1, the default of new projects.** `wasm-rust` and
+  `wasm-js` have a second version with the next SDK generation: Rust on the Spin Rust SDK 8
+  (`#[http_service] async fn`, `wasm32-wasip2`, WASIp3), JavaScript bundled with esbuild 0.28. New
+  projects get 4.2 unless they pick 4.1 (the runtime picker, `runtime_version`); the starter code is
+  the picked version's. 4.1 is unchanged, and the upgrade pins the existing projects without a
+  version to it (see the upgrade notes). Code of one generation does not build on the other: a
+  project moves to 4.2 with its code ported, by `PUT /projects/{id}` `{"runtime_version": "4.2"}`
+  ([docs/wasm.md](docs/wasm.md#versions)); [`examples/wasm`](examples/wasm) is 4.2's code. Both
+  versions run on the same Spin shim (Spin 4.2.6); the images are
+  `ghcr.io/brf-tech/runr/exec-wasm-{rust,js}:4.2` of BRF-Tech/runr-runtimes. `wasm-go` stays on
+  4.1 (TinyGo, Spin Go SDK v2): the Spin Go SDK v4 needs WASIp3 support in a Go release.
+- **A runtime version can bring its own starter and build files** (`versions[].template`,
+  `versions[].build.files` in the runtime manifest: [docs/runtimes.md](docs/runtimes.md#versions)),
+  for an SDK generation side by side with the one before it. `GET /runtimes/{id}/template` takes
+  `?version=`, the console's starter preview shows the picked version's, and
+  `runr runtimes template --runtime-version` / `runr init --runtime-version` fetch it. A project
+  moves to another version of its runtime with `runtime_version` in `PUT /projects/{id}`.
+- **A new API key works at once on every gateway-auth pod.** A pod that meets a key or a route it
+  does not know asks RunR again before it answers (the on-demand sync) instead of answering 401 (or
+  503 `route_unknown`) until its next fetch, up to `SYNC_SECONDS` later: a key used right after its
+  creation no longer gets 401 from one pod and 200 from another. One such fetch runs at a time per
+  pod, at most one every 2 seconds (`apiProduct.onDemandSyncSeconds`, `0` turns it off), so a
+  flood of invalid keys costs RunR little; a revoked key still stops within `SYNC_SECONDS`
+  ([docs/api-product.md](docs/api-product.md)). It comes with gateway-auth `1.1.0`, which a
+  region gets from the upgrade's `region:reconcile`.
+
+### Changed
+
+- **The API runs the kubectl of each region's Kubernetes minor.** kubectl is supported within one
+  minor of the API server it talks to, and RunR accepts clusters from Kubernetes 1.30 on: the API
+  image carries kubectl 1.31.14, 1.33.13, 1.35.10 and 1.37.2 (`/usr/local/lib/runr/kubectl/<minor>/`;
+  `kubectl` on the PATH is 1.37), and the console's terminal and the sandbox commands that go
+  through `kubectl exec` run the one of the region's minor, else the one below it, else the one
+  above. A region records its cluster's version (`knative_regions.kubernetes_version`, a new
+  column) when its kubeconfig is checked and when it moves to another cluster; the `region:reconcile`
+  of the upgrade records it for the existing regions and every run reads it again. A cluster newer
+  than 1.38 takes kubectl 1.37 and the API logs a warning once; `SANDBOX_KUBECTL` (now unset by
+  default) still names one binary for every cluster
+  ([docs/regions.md](docs/regions.md#kubernetes-version)). The chart's bootstrap Job reads and
+  patches `runr-admin` with `runr-kubectl`, which picks the same way by the install cluster's
+  version (`GET /version`). The dependency bot moves each kubectl within its minor and reports a
+  Kubernetes minor newer than the newest one's.
+- **Helm 4.** The API image runs Helm 4.3.1 (0.6.x: 3.16.0) for the releases RunR installs on the
+  region clusters, and CI checks the chart with it. RunR applies and waits for those releases as
+  Helm 3 did (`--server-side=false`, `--wait=legacy`, `--rollback-on-failure` for `--atomic`): an
+  existing region's releases upgrade as before, a region added now gets them the same way, and
+  nothing has to be done. The chart installs and upgrades with Helm 3 or Helm 4; with Helm 4 an
+  upgrade of a release installed with Helm 3 stays client-side, and a new install is server-side
+  ([docs/upgrade.md](docs/upgrade.md#helm-4)).
+- **The API reference** (`/api/docs`, `/api/docs.json`) is built with Scramble 0.13: the same 687
+  operations, now in an OpenAPI 3.1.2 document. The success responses of 304 operations say more
+  (the items of their lists, the fields of their objects, constant values; 50 of them read only
+  `string` or `object` before), the GitHub, GitLab and SAML callbacks answer 302, and the traces'
+  endpoints have their success responses. The API takes Laravel Tinker 3 and laravel-modules 12 (the modules'
+  configuration has the new generator keys; the modules are unchanged).
+- **The Python MCP starter runs on the MCP Python SDK 2.** `server.py` of a new Python MCP server
+  (Projects → New MCP server → Python, `mcp_server_create`) uses `MCPServer`, FastMCP's name in
+  SDK 2, and its `requirements.txt` asks for `mcp>=2.3,<3`; the tools, the gateway signature check
+  and the caller's identity work as before, and 2025-era MCP clients are still served. A server
+  made from the earlier starter keeps its own files and SDK 1; to move it, compare it with
+  [`examples/mcp/python`](examples/mcp/python). The TypeScript starter takes Zod 4 (`zod ^4.6.7`
+  with `@modelcontextprotocol/sdk ^1.23.0`); `server.ts` is unchanged.
+- **The console's dependencies:** Vite 8, Vitest 5, jsdom 31, vue-router 5, Pinia 4, Sentry 11,
+  xterm.js 6 and the Lucide icons from `@lucide/vue` 1 (`lucide-vue-next` ended deprecated at
+  1.0.0), with the minor and patch updates of its other packages. The console works as before:
+  Alt+arrow in the project and sandbox shell still moves by word, a dev stack with
+  `VITE_SENTRY_DSN` sends Sentry what it sent before, and seven icons have Lucide's redrawn
+  shapes (the clock calendar, the check and help circles, the credit card, the key, the bolt).
+  Building the console needs Node.js 22.12 or newer, its unit tests 22.22.2, 24.15 or 26.
+- **The SDKs' development dependencies:** the Sandbox SDK (Node) builds with TypeScript 7 and
+  `@types/node` 26, the Workflow SDK (Node) also tests on Vitest 5 (development needs Node.js
+  22.12 or newer); the published packages still run on Node.js 18 and their output is the same.
+  The Python SDKs accept websockets up to 17 (Sandbox), test on pytest up to 9 and build with
+  setuptools up to 84 (Workflow, whose license is now the SPDX expression `MIT`).
+- **The Python SDKs require Python 3.11 or newer** (`runr-sandbox` and `runr-workflows`:
+  `requires-python >=3.11`; Python 3.9 and 3.10 are past their end of life); their classifiers
+  name 3.11 to 3.15. Both pass their tests on Python 3.11, 3.13, 3.14 and 3.15, and on CI's 3.12.
+- **The PyTorch weights example** (`examples/ai/hf-python/weights`) pins transformers 5.22.2.
+- **CI:** Node.js 26 (the current LTS line) in every workflow, Kind v0.33.0, cloud-provider-kind
+  v0.12.0, kubeconform v0.8.0 and crane v0.22.1, each with its checksum. The Kind suites (the weekly
+  e2e and the dependency bot's) run the newest Kubernetes only: Kind v0.33.0's node image of
+  Kubernetes 1.37.0, from the reqs mirror, with kubectl 1.37.2; the chart is checked with
+  kubeconform against Kubernetes 1.30, the oldest RunR supports, and 1.37.
+- **Go 1.27.** Every module (the region agent, the queue consumer, gateway-auth, image-upload, the
+  CLI, the Terraform provider, the dev stack's Sentry tunnel and the Q interpreter example) declares
+  `go 1.27.4`, CI runs Go 1.27.4 and the images build on `reqs/golang:1.27-alpine`: go1.27.4 also
+  carries the standard library's security fixes of go1.26.11 (cgo, the go command, the compiler,
+  the linker, `net/http`). gateway-auth is `1.1.0` and image-upload `1.2.0` now, so the release
+  builds both again.
+- **The examples' images build on Node 24 and Python 3.15**: the MCP starters' Dockerfiles
+  (`reqs/node:24-slim`, `reqs/python:3.15-slim`) and the GPU CaaS example (`reqs/python:3.15-slim`).
+  The `mcp-node` and `mcp-python` runtime templates take them too (`reqs/node:24-slim`,
+  `reqs/python:3.15-slim`; the Python starter's `mcp` and `uvicorn` install on 3.15 from wheels). A
+  runtime registered from a template earlier keeps its manifest: `PUT /api/runtimes/{id}` with the
+  template's `runtime_manifest` (`GET /api/mcp-servers/templates`) moves it.
+- **The supply-chain image runs Trivy 0.76 and cosign 3** (`supply-chain:1.1.0`; Trivy 0.76.2,
+  cosign 3.1.4). Scans, SBOMs and the scanner DB mirror work as before (the same report schema,
+  `trivy-db:2` and `trivy-java-db:1`). cosign 3 signs into a Sigstore bundle with the public
+  instance's transparency log by default; RunR signs with
+  `--use-signing-config=false --new-bundle-format=false --tlog-upload=false`, so signatures and
+  attestations stay the `.sig` and `.att` tags that policy-controller, the API and
+  `cosign verify --key … --insecure-ignore-tlog=true` read. A patch feed of your own signed with
+  cosign 3 needs the same flags ([docs/security.md](docs/security.md#runtime-patch-feed)).
+- **The Spin shim is containerd-shim-spin v0.27.2** (`containerd-shim-spin:v0.27.2-runr.1`, Spin
+  runtime 4.2.6), built as before with the runwasi fix that gives a Wasm pod's Linux containers
+  their own environment. A region with WebAssembly gets it from the region Job of the upgrade
+  (`region:reconcile`): the wasm-installer replaces the binary on its nodes one at a time, without
+  a container runtime restart ([docs/wasm.md](docs/wasm.md#the-spin-shim-runr-installs)).
+
+### Fixed
+
+- **The timed warmer and the kept-warm previous revision on Knative 1.21 and later.** Since
+  Knative Serving 1.21 the Revision's autoscaling annotations are copied onto its PodAutoscaler,
+  and a value set on the PodAutoscaler alone is put back at once: the warmer's count and the
+  blue-green `previous` revision's `min-scale: 1` did not hold there. On a region with Knative 1.21
+  or later RunR now sets them on the Revision (no new revision, no restart); before 1.21 it sets
+  them on the PodAutoscaler as before ([docs/scaling.md](docs/scaling.md#how-it-is-applied)).
+- **`region:reconcile` heals a registry Pending on a dedicated worker on newer Kubernetes.** The
+  scheduler of newer Kubernetes (1.35 and 1.37 tested) does not name the taint any more ("had
+  untolerated taint(s)"), and the `dedicated-worker-toleration` step did not find the Pending pod
+  of a component installed before its node became a dedicated worker. It reads both messages now.
+- **A region created with the setup wizard records its Kubernetes version** (`POST
+  /registry-setup/start`), as `POST /knative-regions` does, so `kubectl exec` takes the region's
+  minor from the start rather than after the first `region:reconcile`.
+- **The admission policy's install no longer fails while policy-controller's webhook starts.**
+  Right after the install, its Deployment can be available before its Service has a ready
+  endpoint, and the API server refused the ClusterImagePolicies with "failed calling webhook …:
+  connection refused" (the region's admission status `failed`). RunR now waits for a ready endpoint
+  of the webhook (up to 2 minutes) and tries a write the webhook could not be called for again,
+  for up to 2 minutes; a settings change and `region:reconcile` do the same
+  ([docs/supply-chain.md](docs/supply-chain.md#admission-policy)).
+
 ## [0.6.13] - 2026-11-12
 
 ### Upgrade notes
@@ -4490,7 +4649,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.13...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.0...main
+[0.7.0]: https://github.com/brf-tech/runr/releases/tag/v0.7.0
 [0.6.13]: https://github.com/brf-tech/runr/releases/tag/v0.6.13
 [0.6.12]: https://github.com/brf-tech/runr/releases/tag/v0.6.12
 [0.6.11]: https://github.com/brf-tech/runr/releases/tag/v0.6.11

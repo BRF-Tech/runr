@@ -136,7 +136,10 @@ DEPS_NPM_BUILD_ROOTS="vite @vitejs/plugin-vue @tailwindcss/postcss tailwindcss p
 #              nodejs.org (its LTS lines), php.net (its active branches)
 #   LINE       major     the bot moves it within its major (a 0.x version: its minor); a newer
 #                        line is a finding a person decides
-#              minor     within its minor (kubectl: one minor of the Kubernetes it talks to)
+#              minor     within its minor; a newer minor is a finding a person decides (the newest
+#                        kubectl of the API image: a Kubernetes minor newer than the set's)
+#              patch     within its minor, and a newer minor is no finding of its own (an older
+#                        kubectl of the API image's set: the newest one's row reports a new minor)
 #              person    every newer release is a person's: RunR builds a patched upstream
 #              toolchain-major, toolchain-minor   a toolchain the code is written for (go-version
 #                        is every go.mod's go line): only a newer line is a finding, never a bump
@@ -166,7 +169,14 @@ DEPS_NPM_BUILD_ROOTS="vite @vitejs/plugin-vue @tailwindcss/postcss tailwindcss p
 # shellcheck disable=SC2034 # read by ci/check-package-releases.sh and ci/deps/bump-packages.sh
 DEPS_PINS=(
   "pins-images|helm|github:helm/helm|major|release|sum:amd64,arm64:https://get.helm.sh/helm-{v}-linux-{arch}.tar.gz.sha256sum|api/Dockerfile.prod~ARG~HELM_VERSION api/Dockerfile~ARG~HELM_VERSION|"
-  "pins-images|kubectl|github:kubernetes/kubernetes|minor|release|sum:amd64,arm64:https://dl.k8s.io/release/{v}/bin/linux/{arch}/kubectl.sha256|api/Dockerfile.prod~ARG~KUBECTL_VERSION api/Dockerfile~ARG~KUBECTL_VERSION|"
+  # kubectl, one for every second Kubernetes minor (each within one minor of the clusters of the
+  # minor below and the one above it: App\Services\Sandboxes\Exec\KubectlBinary picks a region's),
+  # each moved within its minor; a Kubernetes minor newer than the newest one's is a finding of the
+  # newest row (line minor): a person adds the next kubectl to the set (docs/development.md)
+  "pins-images|kubectl-1.31|github:kubernetes/kubernetes|patch|release|sum:amd64,arm64:https://dl.k8s.io/release/{v}/bin/linux/{arch}/kubectl.sha256|api/Dockerfile.prod~ARG~KUBECTL_1_31_VERSION api/Dockerfile~ARG~KUBECTL_1_31_VERSION|"
+  "pins-images|kubectl-1.33|github:kubernetes/kubernetes|patch|release|sum:amd64,arm64:https://dl.k8s.io/release/{v}/bin/linux/{arch}/kubectl.sha256|api/Dockerfile.prod~ARG~KUBECTL_1_33_VERSION api/Dockerfile~ARG~KUBECTL_1_33_VERSION|"
+  "pins-images|kubectl-1.35|github:kubernetes/kubernetes|patch|release|sum:amd64,arm64:https://dl.k8s.io/release/{v}/bin/linux/{arch}/kubectl.sha256|api/Dockerfile.prod~ARG~KUBECTL_1_35_VERSION api/Dockerfile~ARG~KUBECTL_1_35_VERSION|"
+  "pins-images|kubectl-1.37|github:kubernetes/kubernetes|minor|release|sum:amd64,arm64:https://dl.k8s.io/release/{v}/bin/linux/{arch}/kubectl.sha256|api/Dockerfile.prod~ARG~KUBECTL_1_37_VERSION api/Dockerfile~ARG~KUBECTL_1_37_VERSION|"
   "pins-images|scalar|npm:@scalar/api-reference|major|release|npm:-:dist/browser/standalone.js|api/Dockerfile.prod~ARG~SCALAR_VERSION api/resources/views/vendor/scramble/docs.blade.php~AT~@scalar/api-reference@|"
   "pins-images|syft|github:anchore/syft|major|own|build:amd64,arm64:https://github.com/anchore/syft/releases/download/v{V}/syft_{V}_checksums.txt#syft_{V}_linux_{arch}.tar.gz|runtime/supply-chain/Dockerfile~ARG~SYFT_VERSION|"
   "pins-images|cosign|github:sigstore/cosign|major|own|build:amd64,arm64:https://github.com/sigstore/cosign/releases/download/v{V}/cosign_checksums.txt#cosign-linux-{arch}|runtime/supply-chain/Dockerfile~ARG~COSIGN_VERSION|"

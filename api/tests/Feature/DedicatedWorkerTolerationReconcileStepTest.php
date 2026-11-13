@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\KnativeRegion;
+use App\Services\DedicatedWorkerTolerationService;
 use App\Services\KnativeNodeService;
 use App\Services\KubernetesClient;
 use App\Services\RegionReconcile\ClusterGroup;
@@ -203,15 +204,21 @@ class DedicatedWorkerTolerationReconcileStepTest extends TestCase
         ];
     }
 
+    /** The scheduler's message for a pod whose volume is bound to the dedicated worker w1, naming the taint */
+    private const PENDING_ON_TAINT = '0/2 nodes are available: 1 node(s) had untolerated taint {runr.dev/dedicated: projects}, 1 node(s) had volume node affinity conflict. preemption: 0/2 nodes are available: 2 Preemption is not helpful for scheduling.';
+
+    /** The same from a newer scheduler, which does not name the taint (Kubernetes 1.35 and 1.37 on Kind) */
+    private const PENDING_ON_TAINTS = "0/3 nodes are available: 1 node(s) didn't match PersistentVolume's node affinity, 2 node(s) had untolerated taint(s). preemption: 0/3 nodes are available: 3 Preemption is not helpful for scheduling.";
+
     /** A pod the scheduler cannot place: its volume is bound to the dedicated worker w1 */
-    private function pendingPod(string $ns, string $name, array $labels, array $tolerations = []): void
+    private function pendingPod(string $ns, string $name, array $labels, array $tolerations = [], string $message = self::PENDING_ON_TAINT): void
     {
         $this->pods[$ns][] = [
             'metadata' => ['name' => $name, 'labels' => $labels],
             'spec' => array_filter(['tolerations' => $tolerations]),
             'status' => ['phase' => 'Pending', 'conditions' => [[
                 'type' => 'PodScheduled', 'status' => 'False', 'reason' => 'Unschedulable',
-                'message' => '0/2 nodes are available: 1 node(s) had untolerated taint {runr.dev/dedicated: projects}, 1 node(s) had volume node affinity conflict. preemption: 0/2 nodes are available: 2 Preemption is not helpful for scheduling.',
+                'message' => $message,
             ]]],
         ];
     }
@@ -307,6 +314,35 @@ class DedicatedWorkerTolerationReconcileStepTest extends TestCase
         // the pod goes once the StatefulSet controller has the new template: it starts again from it
         $this->assertSame(['PATCH '.self::ZOT, 'DELETE /api/v1/namespaces/runr-registry/pods/runr-zot-0'], $this->writes());
         Sleep::assertSleptTimes(2);
+    }
+
+    public function test_a_registry_pending_on_taints_the_scheduler_does_not_name_is_healed(): void
+    {
+        $this->zot();
+        $this->pendingPod('runr-registry', 'runr-zot-0', ['app.kubernetes.io/instance' => 'runr-zot'], [], self::PENDING_ON_TAINTS);
+        $this->fakeCluster();
+        $region = $this->region();
+
+        $this->assertSame(['would add the toleration of runr.dev/dedicated=projects:NoSchedule to StatefulSet runr-registry/runr-zot (pod runr-zot-0 waits Pending on the taint and would be replaced)'], $this->reconcile($region, true));
+        $this->assertSame([], $this->writes);
+
+        $this->assertSame(['added the toleration of runr.dev/dedicated=projects:NoSchedule to StatefulSet runr-registry/runr-zot (pod runr-zot-0 waits Pending on the taint and is replaced)'], $this->reconcile($region));
+        $this->assertSame([self::TOLERATION], $this->tolerations(self::ZOT));
+        $this->assertSame(['PATCH '.self::ZOT, 'DELETE /api/v1/namespaces/runr-registry/pods/runr-zot-0'], $this->writes());
+    }
+
+    public function test_the_scheduler_message_tells_a_pod_pending_on_the_taint(): void
+    {
+        $pending = fn (string $message) => [
+            'spec' => [],
+            'status' => ['phase' => 'Pending', 'conditions' => [['type' => 'PodScheduled', 'status' => 'False', 'message' => $message]]],
+        ];
+
+        $this->assertTrue(DedicatedWorkerTolerationService::pendingOnTaint($pending(self::PENDING_ON_TAINT)), 'the taint named');
+        $this->assertTrue(DedicatedWorkerTolerationService::pendingOnTaint($pending(self::PENDING_ON_TAINTS)), 'taints not named');
+        $this->assertFalse(DedicatedWorkerTolerationService::pendingOnTaint($pending('0/2 nodes are available: 2 node(s) had untolerated taint {node-role.kubernetes.io/control-plane: }.')), 'another taint named');
+        $this->assertFalse(DedicatedWorkerTolerationService::pendingOnTaint($pending('0/2 nodes are available: 2 Insufficient memory.')));
+        $this->assertFalse(DedicatedWorkerTolerationService::pendingOnTaint(['spec' => ['nodeName' => 'w1']] + $pending(self::PENDING_ON_TAINTS)), 'scheduled');
     }
 
     public function test_a_pod_created_before_the_toleration_is_replaced(): void

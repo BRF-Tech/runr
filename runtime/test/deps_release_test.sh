@@ -193,7 +193,7 @@ else
   echo 1 > "$report/unit"
   upgrade="test-helm-upgrade --from=v1.2.3"
   [ "${FAKE_MODE:-}" != batch ] || upgrade="${upgrade} --expect-release=ns/${dep}=${dep}-${version}"
-  printf '[{"suite":"e2e","command":"test","k8s":"1.32.0","kvm":false,"env":""},{"suite":"upgrade","command":"%s","k8s":"1.32.0","kvm":false,"env":""}]\n' "$upgrade" > "$report/suites.json"
+  printf '[{"suite":"e2e","command":"test","k8s":"1.37.0","kvm":false,"env":""},{"suite":"upgrade","command":"%s","k8s":"1.37.0","kvm":false,"env":""}]\n' "$upgrade" > "$report/suites.json"
 fi
 echo bumped > "$report/result"
 EOF

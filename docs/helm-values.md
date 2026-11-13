@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.6.13 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.7.0 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.6.13` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.7.0` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -61,7 +61,7 @@ Helm checks the values against the chart's `values.schema.json` on `install`, `u
 | `images.*` | `uploadImage` a string; `quotaGb`, `maxUploadGb`, `uploadTtlHours` strings or numbers |
 | `runtimePatches.*` | `feed`, `publicKey`, `viaRegion` strings; `autoMigrate` a boolean (or `"true"` / `"false"`) |
 | `runtimeCatalog.*` | `reference`, `publicKey`, `viaRegion`, `builtinRuntimes` strings; `intervalMinutes`, `timeout` strings or numbers; `offline` a boolean (or `"true"` / `"false"`) |
-| `apiProduct.*` | `gatewayAuthImage`, `callbackUrl` strings; `syncSeconds`, `usageRetentionDays` strings or numbers |
+| `apiProduct.*` | `gatewayAuthImage`, `callbackUrl` strings; `syncSeconds`, `onDemandSyncSeconds`, `usageRetentionDays` strings or numbers |
 | `orgTransfer.*` | `transferImage` a string; `maxPackageGb`, `retentionHours`, `podDiskGb` strings or numbers |
 | `placement.*` | `tolerateDedicatedWorkers` a boolean, `tolerations` a list, `affinity` an object, `nodeSelector` string values |
 | `networkPolicy.*` | `enabled` a boolean; `gatewayFrom`, `egress.to` and `extraEgress` lists of objects; `egress.ports` port numbers |
@@ -646,7 +646,7 @@ chain); these are the platform-wide defaults. Empty values keep the application 
 | Key | Default | What it does |
 | --- | --- | --- |
 | `supplyChain.enabled` | `true` | Every image RunR builds gets its supply-chain run |
-| `supplyChain.toolsImage` | `""` | Tools image; empty: `ghcr.io/brf-tech/runr/supply-chain:1.0.0` |
+| `supplyChain.toolsImage` | `""` | Tools image; empty: `ghcr.io/brf-tech/runr/supply-chain:1.1.0` |
 | `supplyChain.jobNamespace` | `""` | Namespace of the Jobs and the region signing key; empty: `runr-supply-chain` |
 | `supplyChain.rescanHours` | `""` | Re-scan interval of deployed images for new regions; empty: 24 |
 | `supplyChain.trivyDbSource` | `""` | Mirror source of the vulnerability database; empty: `mirror.gcr.io/aquasec/trivy-db:2` |
@@ -695,7 +695,7 @@ Empty values keep the application defaults.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `images.uploadImage` | `""` | Image of the upload receiver the regions pull; empty: `ghcr.io/brf-tech/runr/image-upload:1.1.2` (the image of the transfer agent too) |
+| `images.uploadImage` | `""` | Image of the upload receiver the regions pull; empty: `ghcr.io/brf-tech/runr/image-upload:1.2.0` (the image of the transfer agent too) |
 | `images.quotaGb` | `""` | Storage of uploaded images per organization over every region; empty: 50, `0` = unlimited |
 | `images.maxUploadGb` | `""` | Largest file of one upload; empty: 20 |
 | `images.uploadTtlHours` | `""` | An upload not completed within this time is aborted; empty: 24 |
@@ -745,9 +745,10 @@ Empty values keep the application defaults.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `apiProduct.gatewayAuthImage` | `""` | Image of gateway-auth the regions pull; empty: `ghcr.io/brf-tech/runr/gateway-auth:1.0.0` |
+| `apiProduct.gatewayAuthImage` | `""` | Image of gateway-auth the regions pull; empty: `ghcr.io/brf-tech/runr/gateway-auth:1.1.0` |
 | `apiProduct.callbackUrl` | `""` | RunR's base URL as the regions reach it (config sync, usage reports); empty: the URL the region agent connects to |
 | `apiProduct.syncSeconds` | `""` | How often gateway-auth fetches changed keys and plans — the longest a revoked key keeps working; empty: 10 |
+| `apiProduct.onDemandSyncSeconds` | `""` | Least time between two fetches of a gateway-auth pod for a key or route it does not know, so a new key works at once ([api-product.md](api-product.md)); empty: 2, `0`: none (a new key waits for each pod's next fetch) |
 | `apiProduct.usageRetentionDays` | `""` | Hourly usage rows kept; empty: 400 |
 
 Settings without a value of their own, set through [`extraEnv`](#extraenv):
@@ -765,7 +766,7 @@ settings (`RUNR_ORG_TRANSFER_*`) are in [org-export.md](org-export.md).
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `orgTransfer.transferImage` | `""` | Image of the transfer pods the regions pull (binding data, images); empty: `ghcr.io/brf-tech/runr/image-upload:1.1.2` |
+| `orgTransfer.transferImage` | `""` | Image of the transfer pods the regions pull (binding data, images); empty: `ghcr.io/brf-tech/runr/image-upload:1.2.0` |
 | `orgTransfer.maxPackageGb` | `""` | Largest package an import takes; empty: 50 |
 | `orgTransfer.retentionHours` | `""` | Packages are removed after this many hours; empty: 168 |
 | `orgTransfer.podDiskGb` | `""` | emptyDir of a transfer pod (one binding's dump or one image); empty: 20 |

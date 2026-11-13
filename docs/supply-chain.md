@@ -215,7 +215,10 @@ Security tab and audited. A running scan is waited for, not overridden.
 ## Signing
 
 Each region has its own cosign key pair; keyless signing is off (no Fulcio certificate, no
-transparency log upload — `--tlog-upload=false`).
+transparency log upload). The tools image runs cosign 3, which signs into a Sigstore bundle with the
+public instance's signing config by default; RunR passes `--use-signing-config=false
+--new-bundle-format=false --tlog-upload=false`, so the signature and the attestations stay the
+`sha256-<digest>.sig` and `.att` tags policy-controller and the API read.
 
 - **Generation** runs in the region: a Job of the tools image calls
   `cosign generate-key-pair k8s://runr-supply-chain/runr-cosign-key` with a random password RunR
@@ -260,6 +263,14 @@ Before any policy, the webhook resolves every image tag to a digest on the image
 Images no policy matches: admitted while CaaS images are unrestricted (*Any registry*), refused
 otherwise. Custom runtime images run code-mounted are not exempt — build them from a Dockerfile
 or git source (signed in the region) or list them as exemptions.
+
+The policies go through policy-controller's own webhook. RunR writes them once the webhook's
+Service (`webhook` in the release namespace) has a ready endpoint, waiting up to 2 minutes after
+the install. While the API server cannot call the webhook ("failed calling webhook …: connection
+refused", a starting or restarting pod), each write is tried again after 2, 4, 8, then every 15
+seconds, for up to 2 minutes. A refusal of the webhook itself fails the install at once. Only
+then is the project namespace labelled. This holds for the install, for a settings change and
+for `region:reconcile`.
 
 Mode *Warn* admits every resolvable image and reports violations as admission warnings — useful before
 enforcing. Changed settings (mode, exemptions, CaaS policy, keys) update an installed policy;
@@ -423,7 +434,7 @@ gate blocks then is deployed with an override once it is built.
 | Variable (Helm `supplyChain.*`) | Default |
 |---|---|
 | `RUNR_SUPPLY_CHAIN_ENABLED` (`enabled`) | `true` — supply-chain runs after builds |
-| `RUNR_SUPPLY_CHAIN_IMAGE` (`toolsImage`) | `ghcr.io/brf-tech/runr/supply-chain:1.0.0` |
+| `RUNR_SUPPLY_CHAIN_IMAGE` (`toolsImage`) | `ghcr.io/brf-tech/runr/supply-chain:1.1.0` |
 | `RUNR_SUPPLY_CHAIN_NAMESPACE` (`jobNamespace`) | `runr-supply-chain` |
 | `RUNR_SUPPLY_CHAIN_RESCAN_HOURS` (`rescanHours`) | `24` |
 | `RUNR_TRIVY_DB_SOURCE` / `RUNR_TRIVY_JAVA_DB_SOURCE` (`trivyDbSource` / `trivyJavaDbSource`) | `mirror.gcr.io/aquasec/trivy-db:2` / `…/trivy-java-db:1` |

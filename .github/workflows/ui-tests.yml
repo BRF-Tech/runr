@@ -58,7 +58,7 @@ jobs:
       # the npm cache of this repository's lockfile (a bump's tree saves none)
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: ${{ inputs.tree-artifact == '' && 'npm' || '' }}
           cache-dependency-path: vue/package-lock.json
       # each step's output also goes to a log of its own, for the result's tail
@@ -73,7 +73,7 @@ jobs:
           set -o pipefail
           npm run lint 2>&1 | tee "$RUNNER_TEMP/ui-logs/lint.log"
       # coverage.thresholds of vitest.config.js: fails below the floor. The JSON report is the
-      # result's (the github-actions reporter: the annotations Vitest makes by default on Actions)
+      # result's (the github-actions reporter: the annotations Vitest makes by default on Actions).
       - id: vitest
         if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
         run: |

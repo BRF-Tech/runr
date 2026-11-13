@@ -144,13 +144,14 @@ spec:
               # secret.create=false and no ADMIN_PASSWORD in {{ .Values.secretName }}: the password is generated here and
               # stored only in the Secret runr-admin (key password) — never written to this log. A password an
               # earlier attempt stored there is used again, so the account and the Secret always agree.
+              # runr-kubectl: the API image's kubectl of this cluster's Kubernetes minor (docker/runr-kubectl)
               if [ -z "${ADMIN_PASSWORD:-}" ]; then
-                ADMIN_PASSWORD=$(kubectl -n {{ include "runr.namespace" . }} get secret runr-admin -o jsonpath='{.data.password}' | base64 -d)
+                ADMIN_PASSWORD=$(runr-kubectl -n {{ include "runr.namespace" . }} get secret runr-admin -o jsonpath='{.data.password}' | base64 -d)
                 if [ -z "$ADMIN_PASSWORD" ]; then
                   ADMIN_PASSWORD=$(php -r 'echo bin2hex(random_bytes(16));')
                   patch_file=$(mktemp)
                   printf '{"data":{"password":"%s"}}' "$(printf '%s' "$ADMIN_PASSWORD" | base64 | tr -d '\n')" > "$patch_file"
-                  kubectl -n {{ include "runr.namespace" . }} patch secret runr-admin --type merge --patch-file "$patch_file" >/dev/null
+                  runr-kubectl -n {{ include "runr.namespace" . }} patch secret runr-admin --type merge --patch-file "$patch_file" >/dev/null
                   rm -f "$patch_file"
                 fi
                 export ADMIN_PASSWORD

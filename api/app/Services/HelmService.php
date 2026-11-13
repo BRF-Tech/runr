@@ -10,13 +10,35 @@ use RuntimeException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
+/**
+ * The helm CLI (Helm 4) on the region clusters' releases.
+ *
+ * Every install, upgrade and rollback applies client-side (CLIENT_SIDE_APPLY), as Helm 3 did.
+ * Helm 4 installs a new release with server-side apply and upgrades one with the method of its last
+ * revision: without the flag a region set up under RunR 0.7 would get server-side releases and an
+ * older region client-side ones, and a server-side apply fails on a field another manager (a
+ * controller, a patch of RunR's) set unless it forces it. A wait is Helm 3's (WAIT): Helm 4's
+ * --wait alone is kstatus, which also waits for custom resources with a status of their own and
+ * not for a LoadBalancer Service's address. --rollback-on-failure is Helm 3's --atomic (Helm 4
+ * still takes --atomic, with a deprecation warning).
+ */
 class HelmService
 {
+    /** Helm 3's apply on every install, upgrade and rollback (the class's comment) */
+    public const CLIENT_SIDE_APPLY = '--server-side=false';
+
+    /**
+     * Helm 3's wait for the release's workloads (Deployments, StatefulSets, DaemonSets, Pods, PVCs,
+     * a LoadBalancer Service's address). One argument: in `--wait legacy` helm would take legacy
+     * for the chart.
+     */
+    public const WAIT = '--wait=legacy';
+
     /**
      * Age after which a pending revision belongs to no running helm process (recoverInterrupted):
      * helm's own --timeout 10m of a waiting upgrade, the 660 s RunR gives a helm process, and two
-     * minutes. A longer process (CHART_UPGRADE_SECONDS) changes nothing: --atomic's wait and its
-     * rollback are two revisions, each pending for --timeout at most.
+     * minutes. A longer process (CHART_UPGRADE_SECONDS) changes nothing: --rollback-on-failure's
+     * wait and its rollback are two revisions, each pending for --timeout at most.
      */
     public const INTERRUPTED_AFTER_SECONDS = 780;
 
@@ -24,9 +46,9 @@ class HelmService
     private const PROCESS_TIMEOUT = 660;
 
     /**
-     * What upgradeToChartVersion() may take: --atomic's wait for the release's workloads and, when
-     * they fail, its rollback, each up to --timeout 10m. helm/templates/region-reconcile-job.yaml
-     * counts it among the waits of region:reconcile.
+     * What upgradeToChartVersion() may take: --rollback-on-failure's wait for the release's
+     * workloads and, when they fail, its rollback, each up to --timeout 10m.
+     * helm/templates/region-reconcile-job.yaml counts it among the waits of region:reconcile.
      */
     public const CHART_UPGRADE_SECONDS = 1260;
 
@@ -241,10 +263,11 @@ class HelmService
             '-n', $namespace,
             '--create-namespace',
             '--kubeconfig', $this->writeKubeconfig($kubeconfigYaml),
+            self::CLIENT_SIDE_APPLY,
         ];
 
         if ($wait) {
-            $args[] = '--wait';
+            $args[] = self::WAIT;
             $args[] = '--timeout';
             $args[] = '10m';
         }
@@ -327,10 +350,11 @@ class HelmService
                 '--kubeconfig', $kubeconfig,
                 '--reuse-values',
                 '--version', $version,
+                self::CLIENT_SIDE_APPLY,
             ];
 
             if ($wait) {
-                $args[] = '--wait';
+                $args[] = self::WAIT;
                 $args[] = '--timeout';
                 $args[] = '10m';
             }
@@ -349,7 +373,7 @@ class HelmService
      * (--reset-then-reuse-values: the new chart's defaults, then the release's own values, then
      * $valuesArray). Not --reuse-values: that keeps the old chart's defaults too, so a chart whose
      * values.yaml names its image would keep running the old one. Returns once the workloads are
-     * ready; a failed upgrade rolls back (--atomic), so the helm process gets
+     * ready; a failed upgrade rolls back (--rollback-on-failure), so the helm process gets
      * CHART_UPGRADE_SECONDS, as in upgradeToChartVersion().
      *
      * @param  array<string, mixed>  $valuesArray
@@ -371,7 +395,8 @@ class HelmService
                 '--kubeconfig', $kubeconfig,
                 '--reset-then-reuse-values',
                 '--version', $version,
-                '--atomic',
+                self::CLIENT_SIDE_APPLY,
+                '--rollback-on-failure', self::WAIT,
                 '--timeout', '10m',
             ], $valuesArray));
         } finally {
@@ -398,11 +423,11 @@ class HelmService
     /**
      * Upgrade a release to another chart version with exactly $valuesJson over the new chart's
      * defaults: unlike upgradeReusingValues(), nothing of the release's values that the new chart
-     * may refuse comes along. --atomic waits for the release's workloads and rolls the release back
-     * when they do not become ready: it never stays on a chart whose pods do not run, and the next
-     * reconcile sees the version it started from. The wait and the rollback each get --timeout, so
-     * the helm process gets CHART_UPGRADE_SECONDS: killed in its rollback it would leave the
-     * release pending-rollback.
+     * may refuse comes along. --rollback-on-failure waits for the release's workloads (WAIT) and
+     * rolls the release back when they do not become ready: it never stays on a chart whose pods do
+     * not run, and the next reconcile sees the version it started from. The wait and the rollback
+     * each get --timeout, so the helm process gets CHART_UPGRADE_SECONDS: killed in its rollback it
+     * would leave the release pending-rollback.
      */
     public function upgradeToChartVersion(
         string $release,
@@ -424,7 +449,8 @@ class HelmService
                 '--kubeconfig', $kubeconfig,
                 '--version', $version,
                 '--values', $values,
-                '--atomic',
+                self::CLIENT_SIDE_APPLY,
+                '--rollback-on-failure', self::WAIT,
                 '--timeout', '10m',
             ]));
         } finally {
@@ -632,6 +658,7 @@ class HelmService
             'helm', 'rollback', $release, (string) $revision,
             '-n', $namespace,
             '--kubeconfig', $this->writeKubeconfig($kubeconfigYaml),
+            self::CLIENT_SIDE_APPLY,
         ]);
     }
 

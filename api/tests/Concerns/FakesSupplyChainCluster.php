@@ -39,7 +39,10 @@ trait FakesSupplyChainCluster
 
     protected ?string $podLog = null;
 
-    /** path fragment → HTTP status for write calls that should fail */
+    /**
+     * path fragment → HTTP status for write calls that should fail, or a Closure(Request) answering
+     * one (null: the call goes through)
+     */
     protected array $k8sFail = [];
 
     private int $scProjects = 0;
@@ -55,7 +58,10 @@ trait FakesSupplyChainCluster
 
             foreach ($this->k8sFail as $fragment => $status) {
                 if ($method !== 'GET' && str_contains($path, $fragment)) {
-                    return Http::response(['kind' => 'Status', 'message' => 'denied'], $status);
+                    $answer = $status instanceof \Closure ? $status($request) : $status;
+                    if ($answer !== null) {
+                        return is_int($answer) ? Http::response(['kind' => 'Status', 'message' => 'denied'], $answer) : $answer;
+                    }
                 }
             }
 

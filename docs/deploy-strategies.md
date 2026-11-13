@@ -250,8 +250,9 @@ itself is recorded with the actor `system`: `deployment.rollout.auto_promoted`,
   [registry retention](images.md) keeps the images of every revision the service's traffic names
   (both `spec.traffic` and `status.traffic`), with or without a share.
 - **Keeping the previous revision warm**: its PodAutoscaler gets `autoscaling.knative.dev/min-scale:
-  1` for the keep window; a revision that leaves the routes scales to zero again whatever the
-  annotation says. A scheduler that keeps functions warm should warm the revisions that **receive
+  1` for the keep window — through the Revision's annotation on Knative 1.21 and later, which
+  Knative copies onto the PodAutoscaler ([timed warmer](scaling.md#how-it-is-applied)); a revision
+  that leaves the routes scales to zero again whatever the annotation says. A scheduler that keeps functions warm should warm the revisions that **receive
   traffic** — during a canary both, during a blue-green wait the one that serves, not the latest
   ready one (`App\Services\Rollouts\RolloutTraffic::revisionsWithTraffic()` reads them from the
   service's `status.traffic`).

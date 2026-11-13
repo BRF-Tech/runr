@@ -23,8 +23,10 @@ use App\Services\RegionReconcile\Steps\GatewayRoutesStep;
  *  - api-rate-limit      the consumer's plan allows 3 requests a minute: of 6 calls at least one
  *                        answers 429 with RateLimit-Limit 3 and Retry-After
  *  - api-metering        the key route goes through gateway-auth's metering proxy (its rule names
- *                        runr-gateway-auth-proxy, its forwardAuth asks for a ticket); three calls
- *                        with a key of an unlimited plan reach GET /api/api-usage per key as three
+ *                        runr-gateway-auth-proxy, its forwardAuth asks for a ticket); a key of an
+ *                        unlimited plan answers 200 from its creation on (the pods' on-demand
+ *                        sync, no waiting for their next sync); its three calls reach
+ *                        GET /api/api-usage per key as three
  *                        2xx answers with latency percentiles and answer bytes; the proxy called
  *                        directly, without the check's ticket, answers 403 not_through_gateway
  *  - api-routes-reconcile the gateway's IngressRoute without its routing revision (as an earlier
@@ -229,13 +231,12 @@ PY;
             return 'key of the unlimited plan answered '.$key->status().': '.mb_substr($key->body(), 0, 300);
         }
         $keyId = (string) $key->json('data.id');
-        $ok = $this->apiWaitGateway(['X-Api-Key: '.$key->json('data.key')], ['200'], 60, '"consumer"');
-        if ($ok !== true) {
-            return 'with the new key: '.$ok;
-        }
-        $calls = $this->apiCurl(['X-Api-Key: '.$key->json('data.key')], 2);
-        if (array_filter($calls, fn ($r) => ! is_array($r) || $r['status'] !== '200') !== []) {
-            return 'calls with the new key: '.json_encode(array_map(fn ($r) => is_array($r) ? $r['status'] : $r, $calls));
+        // A new key works at once on every gateway-auth pod: a pod that does not know it yet asks
+        // RunR again before it answers (the on-demand sync, docs/api-product.md), no waiting for
+        // its next scheduled sync
+        $calls = $this->apiCurl(['X-Api-Key: '.$key->json('data.key')], 3);
+        if (array_filter($calls, fn ($r) => ! is_array($r) || $r['status'] !== '200' || ! str_contains($r['body'], '"consumer"')) !== []) {
+            return 'calls with the new key, right after its creation: '.json_encode(array_map(fn ($r) => is_array($r) ? $r['status'] : $r, $calls));
         }
 
         // what the function answered reaches the usage per key

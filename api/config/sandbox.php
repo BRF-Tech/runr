@@ -78,7 +78,11 @@ return [
         'max_output' => (int) env('SANDBOX_EXEC_MAX_OUTPUT', 10 * 1024 * 1024),
         'max_stdin' => (int) env('SANDBOX_EXEC_MAX_STDIN', 10 * 1024 * 1024),
         'ws_token_ttl' => 60,
-        'kubectl' => env('SANDBOX_KUBECTL', 'kubectl'),
+        // The kubectl of `kubectl exec` (sandbox commands, terminals): unset, the one of the
+        // region's Kubernetes minor among those the image carries in kubectl_dir/<minor>/kubectl
+        // (App\Services\Sandboxes\Exec\KubectlBinary); set, this binary for every cluster
+        'kubectl' => env('SANDBOX_KUBECTL'),
+        'kubectl_dir' => '/usr/local/lib/runr/kubectl',
         // How the API runs a command in a sandbox: "native" (default) on the API server's WebSocket
         // exec stream from inside the API, "kubectl" a kubectl process per command. Terminal
         // sessions and kubeconfigs / API servers the native client cannot use take kubectl anyway

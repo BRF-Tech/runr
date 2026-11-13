@@ -4,12 +4,14 @@ namespace Tests\Feature\Projects;
 
 use App\Jobs\ApplyWarmScalesJob;
 use App\Models\Deployment;
+use App\Models\DeploymentRollout;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Setting;
 use App\Models\Version;
 use App\Models\XaasConfig;
 use App\Services\Projects\WarmScaleService;
+use App\Services\Rollouts\RolloutTraffic;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
@@ -21,7 +23,9 @@ use Tests\TestCase;
  * The timed warmer on the cluster (docs/scaling.md#timed-warmer, WarmScaleService): the schedule's
  * value of the minute, in the organization's zone, goes onto the PodAutoscaler of the live
  * revision as autoscaling.knative.dev/min-scale — a merge patch of the PodAutoscaler only (never
- * the Revision or the Knative Service), and only when its value differs. The project records what
+ * the Revision or the Knative Service) before Knative 1.21 or without a recorded Serving version,
+ * of the Revision only from Knative 1.21 on (its reconciler copies the Revision's value onto the
+ * PodAutoscaler and undoes any other), and only when the value differs. The project records what
  * was applied, the live deployment's warm_log what it ran with (metering).
  *
  * Wednesday 2026-10-21 10:00 UTC = 13:00 in Istanbul (the default zone) = 06:00 in New York.
@@ -31,6 +35,8 @@ class WarmScaleServiceTest extends TestCase
     use RefreshDatabase;
 
     private const PA_PATH = '/apis/autoscaling.internal.knative.dev/v1alpha1/namespaces/fn/podautoscalers';
+
+    private const REVISION_PATH = '/apis/serving.knative.dev/v1/namespaces/fn/revisions';
 
     private const REVISION = 'shop-00001';
 
@@ -86,13 +92,16 @@ class WarmScaleServiceTest extends TestCase
                     ])],
                 ]]);
             }
+            // the PodAutoscalers and the Revisions alike carry the min-scale $current
             $autoscaler = fn (string $name) => ['metadata' => ['name' => $name, 'annotations' => array_filter([WarmScaleService::ANNOTATION => $this->current])]];
-            if ($request->method() === 'GET' && str_ends_with($path, self::PA_PATH)) {
-                return Http::response(['items' => array_map($autoscaler, $this->autoscaled)]);
-            }
-            foreach ($this->autoscaled as $name) {
-                if ($request->method() === 'GET' && str_ends_with($path, self::PA_PATH.'/'.$name)) {
-                    return Http::response($autoscaler($name));
+            foreach ([self::PA_PATH, self::REVISION_PATH] as $collection) {
+                if ($request->method() === 'GET' && str_ends_with($path, $collection)) {
+                    return Http::response(['items' => array_map($autoscaler, $this->autoscaled)]);
+                }
+                foreach ($this->autoscaled as $name) {
+                    if ($request->method() === 'GET' && str_ends_with($path, $collection.'/'.$name)) {
+                        return Http::response($autoscaler($name));
+                    }
                 }
             }
             if ($request->method() === 'PATCH') {
@@ -174,6 +183,73 @@ class WarmScaleServiceTest extends TestCase
         $this->assertSame(2, $project->warm_scale_applied);
         $this->assertEquals(now(), $project->warm_scale_applied_at);
         $this->assertSame([[now()->getTimestamp(), 2]], $deployment->fresh()->sizing['warm_log']);
+    }
+
+    public function test_from_knative_1_21_on_the_value_goes_onto_the_revision(): void
+    {
+        $this->region->update(['knative_serving_version' => '1.24.0']);
+        [$project, $deployment] = $this->project([['cron' => '* * * * *', 'min_scale' => 2]]);
+
+        $this->assertSame(1, app(WarmScaleService::class)->run());
+
+        $patches = $this->patches();
+        $this->assertCount(1, $patches, 'one write: the Revision, the PodAutoscaler follows it');
+        $this->assertStringEndsWith(self::REVISION_PATH.'/'.self::REVISION, $patches[0]['path']);
+        $this->assertStringContainsString('application/merge-patch+json', $patches[0]['type']);
+        $this->assertSame(['metadata' => ['annotations' => [WarmScaleService::ANNOTATION => '2']]], $patches[0]['body']);
+        $this->assertFalse(collect($this->calls)->contains(fn (array $c) => str_contains($c['path'], '/podautoscalers')), 'the PodAutoscalers are not read either');
+        $this->assertSame(2, $project->fresh()->warm_scale_applied);
+        $this->assertSame([[now()->getTimestamp(), 2]], $deployment->fresh()->sizing['warm_log']);
+
+        // the Revision has the value: nothing to patch
+        $this->current = '2';
+        $this->calls = [];
+        $this->assertSame(0, app(WarmScaleService::class)->run());
+        $this->assertSame([], $this->patches());
+    }
+
+    public function test_from_knative_1_21_on_a_deploy_and_a_schedule_turned_off_annotate_the_revision(): void
+    {
+        $this->region->update(['knative_serving_version' => 'v1.21.3']);
+        [$project, $deployment] = $this->project([['cron' => '* * * * *', 'min_scale' => 3]]);
+
+        app(WarmScaleService::class)->afterReady($project, $deployment, ['status' => ['latestReadyRevisionName' => self::REVISION]]);
+        $this->assertStringEndsWith(self::REVISION_PATH.'/'.self::REVISION, $this->patches()[0]['path']);
+        $this->assertSame('3', $this->patches()[0]['body']['metadata']['annotations'][WarmScaleService::ANNOTATION]);
+
+        $this->current = '3';
+        $this->calls = [];
+        XaasConfig::query()->update(['scale_schedule' => null]);
+        app(WarmScaleService::class)->run();
+        $this->assertStringEndsWith(self::REVISION_PATH.'/'.self::REVISION, $this->patches()[0]['path']);
+        $this->assertSame('0', $this->patches()[0]['body']['metadata']['annotations'][WarmScaleService::ANNOTATION], 'min_scale back');
+        $this->assertNull($project->fresh()->warm_scale_applied);
+    }
+
+    public function test_the_holder_of_the_min_scale_follows_the_serving_version(): void
+    {
+        $revision = [WarmScaleService::REVISION_API, WarmScaleService::REVISION_KIND];
+        $autoscaler = [WarmScaleService::PA_API, WarmScaleService::PA_KIND];
+        foreach ([null => $autoscaler, '1.20.3' => $autoscaler, '1.3.0' => $autoscaler, '1.21.0' => $revision, 'v1.24.1' => $revision, '2.0' => $revision] as $version => $want) {
+            $region = new KnativeRegion(['knative_serving_version' => $version === '' ? null : $version]);
+            $this->assertSame($want, WarmScaleService::holder($region), "Knative {$version}");
+        }
+        $this->assertSame($autoscaler, WarmScaleService::holder(null));
+    }
+
+    public function test_a_rollout_keeps_the_previous_revision_warm_where_the_serving_version_takes_it(): void
+    {
+        [$project] = $this->project(null);
+        $traffic = app(RolloutTraffic::class);
+
+        $this->assertTrue($traffic->warm(new DeploymentRollout, $project->fresh('knativeRegion'), self::REVISION));
+        $this->assertStringEndsWith(self::PA_PATH.'/'.self::REVISION, $this->patches()[0]['path'], 'before Knative 1.21');
+
+        $this->region->update(['knative_serving_version' => '1.24.0']);
+        $this->calls = [];
+        $this->assertTrue($traffic->warm(new DeploymentRollout, $project->fresh('knativeRegion'), self::REVISION));
+        $this->assertStringEndsWith(self::REVISION_PATH.'/'.self::REVISION, $this->patches()[0]['path'], 'from Knative 1.21 on');
+        $this->assertSame(['metadata' => ['annotations' => [WarmScaleService::ANNOTATION => '1']]], $this->patches()[0]['body']);
     }
 
     public function test_nothing_is_patched_while_the_podautoscaler_has_the_value(): void

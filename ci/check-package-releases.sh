@@ -424,13 +424,13 @@ pin_versions() {
 }
 
 # pin_line LINE VERSION — the release line of a pin's version (DEPS_PINS' LINE): its major (a 0.x
-# version: its minor), or its major.minor
+# version: its minor), or its major.minor (minor, patch, toolchain-minor)
 pin_line() {
   local v="${2#v}" maj min
   maj="${v%%.*}"
   min="$(cut -d. -f2 <<<"${v}.0")"
   case "$1" in
-    minor|toolchain-minor) echo "${maj}.${min}" ;;
+    minor|patch|toolchain-minor) echo "${maj}.${min}" ;;
     toolchain-major) echo "$maj" ;;
     *) if [ "$maj" = 0 ]; then echo "0.${min}"; else echo "$maj"; fi ;;
   esac
@@ -450,7 +450,7 @@ pin_current() {
 }
 
 detect_pins() {
-  local group="$1" name row source line cur from where prefix n vers best newest label label_place updates='[]'
+  local group="$1" name row source line cur from where prefix n vers best newest label label_place why updates='[]'
   declare -A vcache=()
   for name in $(deps_pin_names "$group"); do
     row="$(deps_pin_row "$group" "$name")"
@@ -500,11 +500,16 @@ detect_pins() {
           updates="$(jq -c --arg n "$name" --arg f "$from" --arg t "${prefix}${best}" --arg files "$where" \
             '. + [{name: $n, from: $f, to: $t, files: ($files | split(" "))}]' <<<"$updates")"
         fi
-        if [ -n "$newest" ] && deps_is_newer "$newest" "${from#v}" && [ "$(pin_line "$line" "$newest")" != "$(pin_line "$line" "$from")" ] \
+        # a newer line: a person's (patch: the newest row of its set reports it)
+        if [ "$line" != patch ] && [ -n "$newest" ] && deps_is_newer "$newest" "${from#v}" && [ "$(pin_line "$line" "$newest")" != "$(pin_line "$line" "$from")" ] \
           && ! held "$group" "$name" "${prefix}${newest}"; then
           label="$(series "${prefix}${newest}")"
-          [ "$line" != minor ] || label="${prefix}$(pin_line minor "$newest").x"
-          outside "$group" "$name" "$from" "${prefix}${newest}" "${prefix}$(pin_line "$line" "$from")" "$where" "$label"
+          why=""
+          if [ "$line" = minor ]; then
+            label="${prefix}$(pin_line minor "$newest").x"
+            why="a new minor of a pin the bot moves within its minor only: for the API image's newest kubectl a person adds the next minor to its set (one kubectl for every second Kubernetes minor, docs/development.md); the workflows' kubectl moves to the newest stable minor"
+          fi
+          outside "$group" "$name" "$from" "${prefix}${newest}" "${prefix}$(pin_line "$line" "$from")" "$where" "$label" "$why"
         fi ;;
     esac
   done

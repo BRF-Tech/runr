@@ -94,12 +94,15 @@ class GatewayAuthManifests
     /**
      * @param  string  $revision  changes with the Secret's data: the pods restart and read it again
      * @param  string|null  $upstreamUrl  where the metering proxy hands calls on (upstreamUrl())
+     * @param  int  $onDemandSyncSeconds  least seconds between two on-demand syncs of a pod, which a
+     *                                    check runs for a key or route it does not know (0: none)
      */
-    public static function deployment(string $namespace, string $image, int $replicas, string $revision, int $syncSeconds, int $flushSeconds, ?string $upstreamUrl = null): array
+    public static function deployment(string $namespace, string $image, int $replicas, string $revision, int $syncSeconds, int $flushSeconds, ?string $upstreamUrl = null, int $onDemandSyncSeconds = 2): array
     {
         $env = [
             ['name' => 'LISTEN', 'value' => ':'.self::PORT],
             ['name' => 'SYNC_SECONDS', 'value' => (string) $syncSeconds],
+            ['name' => 'ON_DEMAND_SYNC_SECONDS', 'value' => (string) max(0, $onDemandSyncSeconds)],
             ['name' => 'FLUSH_SECONDS', 'value' => (string) $flushSeconds],
             ['name' => 'POD_NAME', 'valueFrom' => ['fieldRef' => ['fieldPath' => 'metadata.name']]],
         ];

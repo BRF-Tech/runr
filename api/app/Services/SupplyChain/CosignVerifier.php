@@ -16,7 +16,8 @@ use App\Support\Images\OciRegistryClient;
  * matches its layer digest, the signature verifies with the public key (ECDSA P-256 / SHA-256,
  * cosign's default, or RSA) and the payload names the artifact's manifest digest.
  *
- * Only this tag-based format is read (cosign 2.x; cosign 3 needs --new-bundle-format=false);
+ * Only this tag-based format is read (cosign 2.x; cosign 3 with --use-signing-config=false
+ * --new-bundle-format=false, as the supply-chain image signs);
  * transparency-log entries are not required — the key is the trust anchor.
  */
 final class CosignVerifier

@@ -51,7 +51,7 @@ class HostedServerApiTest extends TestCase
         $this->assertTrue($python['can_register_runtime'], 'the owner holds runtimes.manage');
         $this->assertArrayHasKey('server.py', $python['files']);
         $this->assertArrayHasKey('requirements.txt', $python['files']);
-        $this->assertStringContainsString('FastMCP', $python['files']['server.py']);
+        $this->assertStringContainsString('MCPServer', $python['files']['server.py']);
         $this->assertSame('mcp-python', json_decode($python['runtime_manifest'], true)['id']);
 
         $this->assertSame('mcp-node', $data[1]['runtime']);

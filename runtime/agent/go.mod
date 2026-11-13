@@ -1,6 +1,6 @@
 module github.com/brf-tech/runr/runtime/agent
 
-go 1.26.9
+go 1.27.4
 
 require (
 	github.com/gorilla/websocket v1.5.3

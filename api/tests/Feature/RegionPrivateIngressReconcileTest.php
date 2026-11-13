@@ -303,7 +303,8 @@ class RegionPrivateIngressReconcileTest extends TestCase
         ], $this->events);
         $this->assertCount(2, $this->upgrades);
         foreach ($this->upgrades as $argv) {
-            $this->assertContains('--wait', $argv, 'the next part waits for the Traefik pods');
+            $this->assertContains(HelmService::WAIT, $argv, 'the next part waits for the Traefik pods');
+            $this->assertContains(HelmService::CLIENT_SIDE_APPLY, $argv);
             $this->assertContains('--reuse-values', $argv);
             $this->assertContains('40.3.0', $argv, 'at the chart version it runs');
         }

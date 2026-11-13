@@ -36,15 +36,20 @@ grep -qE "^    hfServeCuda: ${hf}-cuda$" "$root/helm/values.yaml" || fail "helm/
 grep -qF "default \"${hf}\")" "$root/helm/templates/configmap.yaml" || fail "helm/templates/configmap.yaml does not default to ${hf}"
 grep -qF "'${hf}'" "$root/api/app/Console/Commands/Concerns/E2eTestAiTrait.php" || fail "the AI suite does not default to ${hf}"
 
-# every WebAssembly runtime of the bundled catalog: version and image = the pin
-wasm=$(jq -r '.runtimes[] | select(.id | startswith("wasm-")) | .id as $id | .versions[] | "\($id) \(.version) \(.image)"' \
+# every WebAssembly runtime of the bundled catalog: its versions and images = the pins (all five at
+# WASM_RUNTIME_VERSION; WASM_NEXT_LANGS at WASM_NEXT_VERSION too, their default)
+wasm=$(jq -r '.runtimes[] | select(.id | startswith("wasm-")) | .id as $id | .versions[] | "\($id) \(.version) \(.image) \(.default // false)"' \
   "$root/api/resources/runtimes/builtin.json")
-[ "$(echo "$wasm" | wc -l)" = 5 ] || fail "the catalog's WebAssembly runtimes: ${wasm}"
-while read -r id version image; do
-  [ "$version" = "$WASM_RUNTIME_VERSION" ] || fail "${id}: the catalog's version ${version} is not the pin ${WASM_RUNTIME_VERSION}"
-  [ "$image" = "$(wasm_runtime_image "${id#wasm-}")" ] || fail "${id}: the catalog's image ${image} is not $(wasm_runtime_image "${id#wasm-}")"
+[ "$(echo "$wasm" | wc -l)" = 7 ] || fail "the catalog's WebAssembly runtime versions: ${wasm}"
+for id in wasm-rust wasm-go wasm-js wasm-python wasm-exec; do
+  [ "$(awk -v id="$id" '$1 == id { print $2 }' <<< "$wasm" | xargs)" = "$(wasm_runtime_versions "${id#wasm-}" | xargs)" ] \
+    || fail "${id}: the catalog's versions $(awk -v id="$id" '$1 == id { print $2 }' <<< "$wasm" | xargs) are not the pins $(wasm_runtime_versions "${id#wasm-}" | xargs)"
+done
+while read -r id version image default; do
+  [ "$image" = "$(wasm_runtime_image "${id#wasm-}" "$version")" ] || fail "${id} ${version}: the catalog's image ${image} is not $(wasm_runtime_image "${id#wasm-}" "$version")"
+  [ "$default" = "$([ "$version" = "$(wasm_runtime_default "${id#wasm-}")" ] && echo true || echo false)" ] || fail "${id} ${version}: default ${default}"
 done <<< "$wasm"
-echo "ok - the pins (wrapper ${WRAPPER_VERSION}, hf-serve ${HF_SERVE_VERSION}, WebAssembly ${WASM_RUNTIME_VERSION}) are the product's defaults"
+echo "ok - the pins (wrapper ${WRAPPER_VERSION}, hf-serve ${HF_SERVE_VERSION}, WebAssembly ${WASM_RUNTIME_VERSION} and ${WASM_NEXT_VERSION}) are the product's defaults"
 
 # --- the harness pulls the runtime images and builds none ---------------------------------------------
 built=$(grep -nE '(docker build|do_build).*\$\{?SCRIPT_DIR\}?/(python|nodejs|go|php|pytorch|tensorflow|hf-serve|wrapper|wasm-(rust|go|js|python|exec))\b' \

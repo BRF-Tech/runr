@@ -323,7 +323,8 @@ trait E2eTestSupplyChainTrait
                 'error' => 'WebAssembly support: '.($install['steps']['ready'] !== true ? $install['steps']['ready'] : $install['steps']['verify'])];
         }
 
-        $test = $this->runtimeEntry('sc-wasm', 'wasm-rust', 'http', (string) file_get_contents("{$dir}/rust/lib.rs"), $regionId, ['body' => 'Hello, RunR! (from Rust, Wasm)']);
+        // the Rust example is wasm-rust 4.2's (Spin Rust SDK 8)
+        $test = $this->runtimeEntry('sc-wasm', 'wasm-rust', 'http', (string) file_get_contents("{$dir}/rust/lib.rs"), $regionId, ['body' => 'Hello, RunR! (from Rust, Wasm)'], '4.2');
         $this->setupSingleTest($test);
         if ($test['steps']['version'] !== true) {
             return ['installed' => true, 'test' => $test, 'error' => 'project: '.$test['steps']['version']];

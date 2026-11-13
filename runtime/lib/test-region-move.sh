@@ -48,7 +48,7 @@ _rm_target_cluster=""
 # held). cmd_test's locals (k8s_ver, kind_api_addr, kube_server_addr) are visible here.
 region_move_create_target() {
   local cluster="${1}-to" config status=0
-  local version="${k8s_ver:-${K8S_VERSION:-1.32.0}}"
+  local version="${k8s_ver:-${K8S_VERSION:-1.37.0}}"
   local etcd_patch
   etcd_patch=$(kind_etcd_patch)
 

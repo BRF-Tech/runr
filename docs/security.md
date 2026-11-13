@@ -949,12 +949,14 @@ in `runtimePatches.publicKey`):
 cosign generate-key-pair                      # cosign.key (keep it secret), cosign.pub → publicKey
 oras push registry.example.com/runr/runtime-patches:feed \
   feed.json:application/vnd.runr.patch-feed.v1+json
-cosign sign --key cosign.key --tlog-upload=false \
+cosign sign --key cosign.key --use-signing-config=false --new-bundle-format=false --tlog-upload=false \
   registry.example.com/runr/runtime-patches@sha256:<digest printed by oras>
 ```
 
-cosign 3 stores signatures as OCI referrers in its new bundle format by default; sign with
-`--new-bundle-format=false` so the signature is the `.sig` tag RunR reads.
+cosign 3 stores signatures as OCI referrers in its new bundle format, with the public instance's
+signing config (a transparency log), by default, and refuses `--tlog-upload=false` alone: the three
+flags above keep the signature the `.sig` tag RunR reads, without a transparency log. cosign 2
+takes `--tlog-upload=false` alone.
 
 ## Runtime sources
 

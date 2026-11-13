@@ -375,7 +375,10 @@ class RegistryUpgradeZotCommandTest extends TestCase
         $this->assertContains('--reset-then-reuse-values', $helm->command);
         $this->assertNotContains('--reuse-values', $helm->command);
         $this->assertNotContains('--install', $helm->command);
-        $this->assertContains('--atomic', $helm->command);
+        $this->assertContains('--rollback-on-failure', $helm->command);
+        $this->assertContains(HelmService::WAIT, $helm->command, "Helm 3's wait, not kstatus");
+        $this->assertContains(HelmService::CLIENT_SIDE_APPLY, $helm->command);
+        $this->assertNotContains('--atomic', $helm->command);
         $this->assertSame('0.1.130', $helm->command[array_search('--version', $helm->command, true) + 1]);
         $this->assertStringContainsString('config.json', $helm->valuesFile, 'in a file, not on the command line');
     }

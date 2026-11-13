@@ -1,0 +1,85 @@
+#!/bin/sh
+# runr-kubectl — kubectl of the server's Kubernetes minor, for the chart's Jobs and anything else
+# in the API image that runs kubectl against a cluster (the install cluster's ServiceAccount, a
+# --kubeconfig, --context or --server of the call).
+#
+# kubectl is supported within one minor of its API server. The image carries one kubectl for every
+# second minor (/usr/local/lib/runr/kubectl/<minor>/kubectl; `kubectl` on the PATH is the newest):
+# this asks the server its version once (GET /version with the newest kubectl and the call's
+# connection flags) and runs the call with the bundled kubectl of the server's minor, else the one
+# below it, else the one above — the rule of App\Services\Sandboxes\Exec\KubectlBinary. A server
+# further from every bundled minor takes the nearest (the newest for a newer one) with a warning on
+# stderr; a server that does not answer takes the newest. SANDBOX_KUBECTL set names the binary
+# for every server, as for the API's own kubectl exec.
+#
+#   runr-kubectl -n runr get secret runr-admin -o jsonpath='{.data.password}'
+#
+# RUNR_KUBECTL_DIR: the directory of the bundled kubectls (tests).
+set -u
+
+if [ -n "${SANDBOX_KUBECTL:-}" ] && [ "${SANDBOX_KUBECTL##*/}" != runr-kubectl ]; then
+  exec "$SANDBOX_KUBECTL" "$@"
+fi
+
+dir="${RUNR_KUBECTL_DIR:-/usr/local/lib/runr/kubectl}"
+minors=""
+for f in "$dir"/1.*/kubectl; do
+  [ -x "$f" ] || continue
+  m="${f%/kubectl}"
+  m="${m##*/1.}"
+  case "$m" in ''|*[!0-9]*) continue ;; esac
+  minors="$minors $m"
+done
+# shellcheck disable=SC2086 # one minor per word
+minors="$(printf '%s\n' $minors | sed '/^$/d' | sort -n)"
+if [ -z "$minors" ]; then
+  exec kubectl "$@"
+fi
+newest="$(printf '%s\n' "$minors" | tail -n 1)"
+
+# quote ARG — ARG as one word of a shell command line
+quote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+# the call's arguments (kept for the exec), and the ones that say which server it talks to
+args=""
+conn=""
+take=""
+rest=""
+for a in "$@"; do
+  args="$args $(quote "$a")"
+  [ -z "$rest" ] || continue
+  if [ -n "$take" ]; then
+    conn="$conn $(quote "$a")"
+    take=""
+    continue
+  fi
+  case "$a" in
+    --kubeconfig=*|--context=*|--cluster=*|--user=*|--server=*|-s=*|--token=*|--certificate-authority=*|--client-certificate=*|--client-key=*|--insecure-skip-tls-verify|--insecure-skip-tls-verify=*|--tls-server-name=*|--as=*|--as-group=*|--as-uid=*|--username=*|--password=*)
+      conn="$conn $(quote "$a")" ;;
+    --kubeconfig|--context|--cluster|--user|--server|-s|--token|--certificate-authority|--client-certificate|--client-key|--tls-server-name|--as|--as-group|--as-uid|--username|--password)
+      conn="$conn $(quote "$a")"
+      take=1 ;;
+    --) rest=1 ;;
+  esac
+done
+
+version="$(eval "\"\$dir/1.\$newest/kubectl\" get --raw /version --request-timeout=10s $conn" 2>/dev/null)" || version=""
+server="$(printf '%s' "$version" | tr -d '\n' | sed -n 's/.*"minor"[[:space:]]*:[[:space:]]*"\([0-9][0-9]*\).*/\1/p')"
+
+pick="$newest"
+if [ -n "$server" ]; then
+  best=""
+  for m in $minors; do
+    d=$((m - server)); [ "$d" -ge 0 ] || d=$((-d))
+    if [ -z "$best" ] || [ "$d" -lt "$bestd" ]; then best="$m"; bestd="$d"; fi
+  done
+  pick="$best"
+  if [ "$bestd" -gt 1 ]; then
+    echo "runr-kubectl: no kubectl of the API image is within one minor of Kubernetes 1.${server}: kubectl 1.${pick} runs" >&2
+  fi
+fi
+
+eval "set -- $args"
+exec "$dir/1.$pick/kubectl" "$@"

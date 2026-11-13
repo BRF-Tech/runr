@@ -165,7 +165,8 @@ class BuiltinCatalog
 
     /**
      * The catalog as raw manifests read from <dir>/<id>/runtime.yaml, "@file" references of
-     * build.files inlined (paths relative to the manifest's directory).
+     * build.files and of the versions' build.files inlined (paths relative to the manifest's
+     * directory).
      *
      * @return list<array>
      */
@@ -184,10 +185,16 @@ class BuiltinCatalog
         foreach ($files as $file) {
             $data = $this->validator->decode(self::normalizeNewlines(file_get_contents($file)));
 
+            $inline = fn ($content) => is_array($content)
+                ? array_map(fn ($c) => $this->inline($c, dirname($file)), $content)
+                : $this->inline($content, dirname($file));
             foreach ($data['build']['files'] ?? [] as $name => $content) {
-                $data['build']['files'][$name] = is_array($content)
-                    ? array_map(fn ($c) => $this->inline($c, dirname($file)), $content)
-                    : $this->inline($content, dirname($file));
+                $data['build']['files'][$name] = $inline($content);
+            }
+            foreach ($data['versions'] ?? [] as $i => $version) {
+                foreach ($version['build']['files'] ?? [] as $name => $content) {
+                    $data['versions'][$i]['build']['files'][$name] = $inline($content);
+                }
             }
 
             $this->validator->validate($data, [], true);

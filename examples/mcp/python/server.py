@@ -1,6 +1,6 @@
 """RunR MCP server starter (Python).
 
-A Model Context Protocol server on the official MCP Python SDK (FastMCP), served over
+A Model Context Protocol server on the official MCP Python SDK 2 (MCPServer), served over
 Streamable HTTP at /mcp on $PORT. RunR runs it as a project and puts its gateway in front:
 clients connect to https://<console>/mcp/servers/<handle>, the gateway checks their access
 (public, RunR token or OAuth) and forwards every request here with two headers:
@@ -28,17 +28,16 @@ import time
 from contextvars import ContextVar
 
 import uvicorn
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
 
 GATEWAY_KEY = os.environ.get("RUNR_MCP_GATEWAY_KEY", "")
 SIGNATURE_TOLERANCE = 300  # seconds between the gateway's timestamp and this clock
+MCP_PATH = "/mcp"
 
 # The caller of the current request, as the gateway identified it (None outside the gateway)
 current_identity: ContextVar[dict | None] = ContextVar("runr_identity", default=None)
 
-# host="0.0.0.0": listen for the gateway, not only on localhost. stateless_http: every request
-# stands on its own, so any replica can answer it when Knative scales the server out.
-mcp = FastMCP("RunR MCP starter", host="0.0.0.0", stateless_http=True)
+mcp = MCPServer("RunR MCP starter")
 
 
 # ── Tools ────────────────────────────────────────────────────────────────────
@@ -95,8 +94,7 @@ def decode_identity(header: str) -> dict | None:
 
 def identity_of(ctx: Context) -> dict | None:
     """The identity of the request a tool runs for (request headers, else the context variable)."""
-    request = getattr(getattr(ctx, "request_context", None), "request", None)
-    headers = getattr(request, "headers", None)
+    headers = ctx.headers
     if headers is not None:
         return decode_identity(headers.get("x-runr-identity", ""))
     return current_identity.get()
@@ -132,7 +130,7 @@ class GatewaySignature:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
-            await self.app(scope, receive, send)  # lifespan: starts FastMCP's session manager
+            await self.app(scope, receive, send)  # lifespan: starts the MCP session manager
             return
 
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
@@ -179,8 +177,12 @@ def main() -> None:
     port = int(os.environ.get("PORT", "8080"))
     if not GATEWAY_KEY:
         print("RUNR_MCP_GATEWAY_KEY is not set: requests are not checked for the gateway signature")
-    print(f"RunR MCP starter: Streamable HTTP on :{port}{mcp.settings.streamable_http_path}")
-    uvicorn.run(GatewaySignature(mcp.streamable_http_app()), host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")
+    print(f"RunR MCP starter: Streamable HTTP on :{port}{MCP_PATH}")
+    # host="0.0.0.0": requests come from the gateway, not only from localhost (the SDK guards a
+    # localhost server against DNS rebinding). stateless_http: every request stands on its own, so
+    # any replica can answer it when Knative scales the server out.
+    app = mcp.streamable_http_app(streamable_http_path=MCP_PATH, stateless_http=True, host="0.0.0.0")
+    uvicorn.run(GatewaySignature(app), host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")
 
 
 if __name__ == "__main__":

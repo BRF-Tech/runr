@@ -141,6 +141,9 @@ class InstallRegistryAndCreateRegionJob implements ShouldBeEncrypted, ShouldQueu
             'name' => $this->config['name'],
             'kubeconfig' => $this->config['kubeconfig'],
             'project_namespace' => $projectNs,
+            // the cluster's version as the setup's kubeconfig check read it: kubectl's minor for exec
+            // (KubectlBinary); region:reconcile follows an upgrade
+            'kubernetes_version' => $this->config['kubernetes_version'] ?? null,
         ] + array_filter(RegionRegistrySetup::regionAttributes($this->config, $registryAddress), fn ($value) => $value !== null);
 
         // Optional operator-supplied Prometheus/Loki (validated by RegistrySetupRequest): stored

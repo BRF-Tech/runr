@@ -31,6 +31,7 @@ use App\Services\RegionReconcile\Steps\TraefikChartStep;
 use App\Services\RegionReconcile\Steps\TraefikImageStep;
 use App\Services\RegionReconcile\Steps\WasmSandboxStep;
 use App\Services\RegionStatusService;
+use App\Services\Sandboxes\Exec\KubectlBinary;
 use Closure;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -334,7 +335,8 @@ class RegionReconciler
 
             $out('info', "Cluster {$cluster->key}: {$cluster->label()}");
 
-            if (! $this->reachable($cluster)) {
+            $version = $this->serverVersion($cluster);
+            if ($version === null) {
                 $outcome->unreachable[] = "cluster {$cluster->key} ({$cluster->label()})";
                 $outcome->region($members, 'unreachable');
                 $this->reachability[$this->reachabilityKey($members[0]->region)] = false;
@@ -342,6 +344,8 @@ class RegionReconciler
 
                 continue;
             }
+
+            $this->recordKubernetesVersion($cluster, $version, $dryRun, $out);
 
             foreach ($steps as $i => $step) {
                 if ($past()) {
@@ -387,12 +391,58 @@ class RegionReconciler
         }
     }
 
-    private function reachable(ClusterGroup $cluster): bool
+    /**
+     * The cluster's /version answer; null when it does not answer.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function serverVersion(ClusterGroup $cluster): ?array
     {
         try {
-            return $cluster->k8s->getServerVersion() !== null;
+            return $cluster->k8s->getServerVersion();
         } catch (Throwable) {
-            return false;
+            return null;
+        }
+    }
+
+    /**
+     * The cluster's Kubernetes version on every region of the group whose record differs (an
+     * upgraded cluster, a region of an earlier release): it picks kubectl's minor for exec
+     * (KubectlBinary). Each row is written in its own database context; a dry run only says so.
+     *
+     * @param  array<string, mixed>  $info  the cluster's /version answer
+     * @param  Closure(string $level, string $message): void  $out
+     */
+    private function recordKubernetesVersion(ClusterGroup $cluster, array $info, bool $dryRun, Closure $out): void
+    {
+        $version = KubectlBinary::versionFrom($info);
+        if ($version === null) {
+            return;
+        }
+
+        foreach ($cluster->targets as $target) {
+            $region = $target->region;
+            $was = $region->getAttribute('kubernetes_version');
+            if ($was === $version) {
+                continue;
+            }
+            $change = 'Kubernetes '.($was ?? 'not recorded')." → {$version}";
+            if ($dryRun) {
+                $out('info', "  [kubernetes-version] {$target->label()}: would record {$change}");
+
+                continue;
+            }
+            try {
+                $target->run(fn () => $region->forceFill(['kubernetes_version' => $version])->save());
+                $out('info', "  [kubernetes-version] {$target->label()}: {$change}");
+            } catch (Throwable $e) {
+                $out('warn', "  [kubernetes-version] {$target->label()}: not recorded ({$e->getMessage()})");
+                Log::warning('Region reconcile: the Kubernetes version was not recorded', [
+                    'region' => $region->id,
+                    'version' => $version,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

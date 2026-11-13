@@ -1,5 +1,5 @@
 # cmd_test_upgrade — upgrade of a Docker Compose install (compose/, compose/README.md → Updating):
-# the release being upgraded from (--from, default main) runs on PostgreSQL and gets realistic data
+# the release being upgraded from (--from, default the previous release) runs on PostgreSQL and gets realistic data
 # (an administrator, a member, projects with environment variables and a code version, API tokens
 # — one of them with 0.4.x scopes — and settings); then the images of this checkout start on the
 # same database the way the README updates an install. Asserts: the migrations run cleanly, every
@@ -9,7 +9,9 @@
 #
 #   ci.sh test-upgrade [--from=REF] [--tenancy] [--keep] [--skip-build]
 #
-#   --from=REF     git ref of the old release (default main)
+#   --from=REF     git ref of the old release (default: the previous release, previous_release_tag
+#                  of lib/common.sh — the newest vX.Y.Z tag at or below the checkout's version that
+#                  is not HEAD, the release main carries; a checkout without main has it too)
 #   --from-dir=DIR a checkout or unpacked release of the old version instead of --from
 #   --tenancy      multi-tenant install: a tenant with an owner, a "member" (from 0.5.x: a
 #                  "developer") and a "viewer", the projects in the tenant; the upgrade also runs
@@ -18,7 +20,9 @@
 # From a release with roles (0.5.0 and later) everybody keeps the role they had, a secret variable
 # of that release stays listed, and the region keeps its supply chain settings; from 0.4.x the
 # users become Admin (single-tenant) and the region gets the supply chain off. A new secret value
-# needs the region's cluster (pass-through), which this install does not have: 503.
+# needs the region's cluster (pass-through), which this install does not have: 503. A release with
+# pass-through itself (0.6.0 and later) runs with RUNR_SECRET_STORAGE=database, an install that
+# postponed it, so that its secret variable has a value without a cluster.
 #   --keep         leave the stack and the images for a look afterwards
 #   --skip-build   reuse runr-upgrade-api:from / :to from an earlier run
 #
@@ -120,7 +124,7 @@ EOF
 cmd_test_upgrade() {
   # The checks handle their failures themselves (ci.sh runs with set -e)
   set +e
-  local from_ref="main" from_dir="" tenancy=false keep=false skip_build=false
+  local from_ref="" from_dir="" tenancy=false keep=false skip_build=false
   for arg in "$@"; do
     case "$arg" in
       --from=*)     from_ref="${arg#--from=}" ;;
@@ -133,6 +137,11 @@ cmd_test_upgrade() {
   done
 
   local root; root="$(cd "${SCRIPT_DIR}/.." && pwd)"
+  # Without --from: the previous release (a checkout of the bundle of kind-suite.yml has no main)
+  if [ -z "$from_dir" ] && [ -z "$from_ref" ]; then
+    from_ref="$(previous_release_tag "$root")" \
+      || { echo -e "${RED}No previous release to upgrade from: pass --from=REF${NC}"; return 1; }
+  fi
   _UP_PROJECT="${UPGRADE_PROJECT:-runr-upgrade}"
   _UP_PORT="${UPGRADE_API_PORT:-18060}"
   _UP_BASE="http://127.0.0.1:${_UP_PORT}"
@@ -189,6 +198,15 @@ EOF
 
   _UP_DIR="${_UP_WORK}/compose-from"
   _up_compose_dir "$from_tree" "$_UP_DIR" "$img_from"
+  # Where the old release keeps a secret variable's value: 0.5.x in its database; from 0.6.0 in the
+  # region's cluster (pass-through, CHANGELOG 0.6.0), which this install has none of — every value
+  # would be refused (503 region_unreachable). A 0.6.0+ release therefore runs as an install that
+  # postponed pass-through (RUNR_SECRET_STORAGE=database, docs/security.md) and this checkout with
+  # the default (region): the value written before stays in the database and listed until
+  # secrets:move-to-region, a new one needs the cluster
+  local from_passthrough=false
+  case "$from_tag" in 0.3.*|0.4.*|0.5.*|"") ;; *) from_passthrough=true ;; esac
+  [ "$from_passthrough" = true ] && printf 'RUNR_SECRET_STORAGE=database\n' >> "${_UP_DIR}/api.env"
 
   # Leftovers of an earlier run with --keep
   _up_compose "$_UP_DIR" down -v --remove-orphans >/dev/null 2>&1 || true
@@ -254,8 +272,8 @@ EOF
   [ -n "$caas" ] || { echo -e "${RED}Container project on ${from_ref}: $(_up_status) $(cat "${_UP_WORK}/body")${NC}"; return 1; }
   _up_api POST "/api/projects/${snippet}/code" "$dana_token" '{"code":"def handler(event, context):\n    return {\"orders\": []}\n","message":"orders v1"}' "$tenant" >/dev/null
   _up_2xx || { echo -e "${RED}Code version on ${from_ref}: $(_up_status) $(cat "${_UP_WORK}/body")${NC}"; return 1; }
-  # A release with the secrets API keeps a secret variable's value in its database; the region's
-  # supply chain settings as that release left them
+  # A release with the secrets API keeps a secret variable's value in its database (0.6.0+: with
+  # RUNR_SECRET_STORAGE=database, above); the region's supply chain settings as that release left them
   local supply_rows_before=""
   if [ "$from_roles" = true ]; then
     _up_api PUT "/api/projects/${snippet}/secrets/OLD_SECRET" "$dana_token" "{\"value\":\"${secret}-old\"}" "$tenant" >/dev/null

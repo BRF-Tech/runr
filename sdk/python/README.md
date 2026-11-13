@@ -7,7 +7,7 @@ function; every `step` is memoized, retried with backoff and survives sleeps of 
 pip install runr-workflows
 ```
 
-Python 3.9 or newer, no dependencies. Deploy the function in a project with the trigger
+Python 3.11 or newer, no dependencies. Deploy the function in a project with the trigger
 **Workflow**; the SDK speaks the [workflow protocol v1](../../docs/workflows-protocol.md).
 
 ```python

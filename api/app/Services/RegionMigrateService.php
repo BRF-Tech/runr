@@ -45,6 +45,7 @@ use App\Services\Projects\QueuedDeploys;
 use App\Services\Projects\VersionRebuilds;
 use App\Services\RegionMigrate\RegionSecretValues;
 use App\Services\Runtimes\RuntimeRegistry;
+use App\Services\Sandboxes\Exec\KubectlBinary;
 use App\Services\Secrets\External\ExternalSecretsInstallService;
 use App\Services\Secrets\OpenBao\OpenBaoInstallService;
 use App\Services\Skupper\SkupperService;
@@ -93,6 +94,8 @@ class RegionMigrateService
         'sandbox_wasm_status', 'sandbox_wasm_status_message', 'sandbox_wasm_shims', 'sandbox_wasm_nodes',
         'gpu_mode', 'gpu_status', 'gpu_status_message', 'gpu_settings', 'gpu_available', 'gpu_allocated',
         'function_tls_mode', 'function_tls_secret_name', 'function_tls_expires_at',
+        // the cluster's Kubernetes version (kubectl's minor for exec: KubectlBinary)
+        'kubernetes_version',
     ];
 
     /**
@@ -151,10 +154,11 @@ class RegionMigrateService
     public function migrateInfrastructure(KnativeRegion $region, string $newKubeconfig): void
     {
         $this->saveOldState($region);
-        $this->validateNewKubeconfig($newKubeconfig);
+        $version = $this->validateNewKubeconfig($newKubeconfig);
 
         $region->update([
             'kubeconfig' => $newKubeconfig,
+            'kubernetes_version' => KubectlBinary::versionFrom($version) ?? $region->kubernetes_version,
             'migration_status' => 'in_progress',
         ]);
         $this->broadcast($region);
@@ -1224,7 +1228,8 @@ class RegionMigrateService
         });
     }
 
-    private function validateNewKubeconfig(string $kubeconfig): void
+    /** @return array<string, mixed> the new cluster's /version answer */
+    private function validateNewKubeconfig(string $kubeconfig): array
     {
         $k8s = new KubernetesClient($kubeconfig);
         $version = $k8s->getServerVersion();
@@ -1232,6 +1237,8 @@ class RegionMigrateService
         if (! $version) {
             throw new \RuntimeException('Cannot connect to the new cluster.');
         }
+
+        return $version;
     }
 
     private function setupConfigDomains(KnativeRegion $region): void

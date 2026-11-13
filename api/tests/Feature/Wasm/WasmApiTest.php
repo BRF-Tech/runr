@@ -52,7 +52,7 @@ class WasmApiTest extends TestCase
 
         $response->assertJsonPath('status', 'not_installed')
             ->assertJsonPath('can_manage', true)
-            ->assertJsonPath('spin_runtime', '4.1.0')
+            ->assertJsonPath('spin_runtime', '4.2.6')
             ->assertJsonPath('available_shims.0.id', 'spin')
             ->assertJsonPath('available_shims.0.runtime_class', 'wasmtime-spin-v2')
             ->assertJsonPath('available_shims.1.id', 'wasmtime')

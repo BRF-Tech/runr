@@ -19,6 +19,10 @@
 //	UPSTREAM_URL    where the proxy hands calls on: the region Traefik's web entry point
 //	                (no proxy without it)
 //	SYNC_SECONDS    config sync interval (default 10)
+//	ON_DEMAND_SYNC_SECONDS
+//	                least seconds between two on-demand syncs, which a check runs for a key or
+//	                route the snapshot does not know (default 2; 0: none, a new key waits for
+//	                the next scheduled sync)
 //	FLUSH_SECONDS   usage report interval (default 30)
 //	POD_NAME        part of the usage batch ids
 package main
@@ -51,6 +55,7 @@ type settings struct {
 	proxy    string
 	upstream *url.URL
 	sync     time.Duration
+	onDemand time.Duration
 	flush    time.Duration
 	pod      string
 }
@@ -64,6 +69,7 @@ func loadSettings(getenv func(string) string) (settings, error) {
 		listen:   getenv("LISTEN"),
 		proxy:    getenv("PROXY_LISTEN"),
 		sync:     seconds(getenv("SYNC_SECONDS"), 10),
+		onDemand: secondsOrOff(getenv("ON_DEMAND_SYNC_SECONDS"), 2),
 		flush:    seconds(getenv("FLUSH_SECONDS"), 30),
 		pod:      getenv("POD_NAME"),
 	}
@@ -97,6 +103,15 @@ func seconds(v string, def int) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
+// secondsOrOff is seconds() where 0 means off (0s); empty or invalid is the default.
+func secondsOrOff(v string, def int) time.Duration {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 {
+		n = def
+	}
+	return time.Duration(n) * time.Second
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg, err := loadSettings(os.Getenv)
@@ -111,7 +126,14 @@ func main() {
 	client := &http.Client{Timeout: 30 * time.Second}
 	base := cfg.apiURL + "/api/internal/gateway-auth/" + cfg.regionID
 
-	syncer := &Syncer{URL: base + "/config", Token: cfg.token, Client: client}
+	syncer := &Syncer{URL: base + "/config", Token: cfg.token, Client: client, MinRefresh: cfg.onDemand}
+	syncer.OnRefresh = func(changed bool, err error) {
+		if err != nil {
+			logger.Warn("on-demand config sync failed", "error", err.Error())
+		} else if changed {
+			logger.Info("configuration loaded on demand", "version", syncer.Snapshot().Version)
+		}
+	}
 	recorder := NewRecorder(base+"/usage", cfg.token, cfg.pod, client)
 
 	var limiter Limiter = NewMemoryLimiter()
@@ -137,6 +159,7 @@ func main() {
 		JWKS:      NewJWKSCache(&http.Client{Timeout: 10 * time.Second}),
 		Usage:     recorder,
 		Logger:    logger,
+		Refresher: syncer,
 	}
 	if cfg.upstream != nil {
 		// tickets only where a proxy takes them (a route asks with ?meter=1)
@@ -217,7 +240,7 @@ func main() {
 		}()
 	}
 
-	logger.Info("gateway-auth listening", "version", version, "addr", cfg.listen, "proxy", proxyAddr(proxyServer), "region", cfg.regionID, "redis", cfg.redisURL != "")
+	logger.Info("gateway-auth listening", "version", version, "addr", cfg.listen, "proxy", proxyAddr(proxyServer), "region", cfg.regionID, "redis", cfg.redisURL != "", "on_demand_sync", cfg.onDemand.String())
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("server", "error", err.Error())
 		os.Exit(1)

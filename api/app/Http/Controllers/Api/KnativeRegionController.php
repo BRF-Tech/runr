@@ -28,6 +28,7 @@ use App\Services\KnativeRedisService;
 use App\Services\KnativeStatusService;
 use App\Services\KubernetesClient;
 use App\Services\RegionStatusService;
+use App\Services\Sandboxes\Exec\KubectlBinary;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Log;
@@ -68,8 +69,9 @@ class KnativeRegionController extends Controller
         $validated = $request->validated();
         $validated['kubeconfig'] = KubernetesClient::adaptKubeconfig($validated['kubeconfig']);
 
-        // Validate kubeconfig connectivity before creating region
-        $this->checkedServerVersion($validated['kubeconfig']);
+        // Validate kubeconfig connectivity before creating region; the version picks kubectl's
+        // minor for exec (KubectlBinary)
+        $validated['kubernetes_version'] = KubectlBinary::versionFrom($this->checkedServerVersion($validated['kubeconfig']));
 
         // Region name = project namespace (same value)
         $projectNs = $validated['name'];
@@ -265,8 +267,9 @@ class KnativeRegionController extends Controller
         // moving a region to another cluster is a migration (POST …/migrate)
         if (array_key_exists('kubeconfig', $data)) {
             $data['kubeconfig'] = KubernetesClient::adaptKubeconfig($data['kubeconfig']);
-            $this->checkedServerVersion($data['kubeconfig']);
+            $version = KubectlBinary::versionFrom($this->checkedServerVersion($data['kubeconfig']));
             $this->assertSameCluster($knativeRegion, $data['kubeconfig']);
+            $data['kubernetes_version'] = $version ?? $knativeRegion->kubernetes_version;
         }
 
         // Backward compat: is_active → region_status

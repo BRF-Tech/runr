@@ -32,7 +32,7 @@ prepare_runtime_e2e() {
       echo "  wrapper image: not loaded (the nodes pull it)"
     fi
 
-    # The images of the example runtimes the suite deploys (docker.io/library/bash:5.2, …) go in
+    # The images of the example runtimes the suite deploys (ghcr.io/brf-tech/runr/reqs/bash:5.2, …) go in
     # too: a node that pulls them itself depends on the registry's anonymous pull limit, which a
     # busy host runs out of
     local img rt manifests=()
@@ -208,7 +208,7 @@ _cpk_stop() {
 start_cloud_provider_kind() {
   if ! command -v cloud-provider-kind >/dev/null 2>&1; then
     echo "Installing cloud-provider-kind..."
-    local cpk_ver="v0.10.0"
+    local cpk_ver="v0.12.0"
     local cpk_os; cpk_os="$(uname -s | tr '[:upper:]' '[:lower:]')"
     local cpk_arch; cpk_arch="$(uname -m)"; [ "$cpk_arch" = "x86_64" ] && cpk_arch="amd64"
     local cpk_url="https://github.com/kubernetes-sigs/cloud-provider-kind/releases/download/${cpk_ver}/cloud-provider-kind_${cpk_ver#v}_${cpk_os}_${cpk_arch}.tar.gz"

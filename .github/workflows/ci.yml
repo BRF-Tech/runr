@@ -83,10 +83,10 @@ jobs:
     timeout-minutes: 60
     env:
       # the helm of the API image (api/Dockerfile.prod)
-      HELM_VERSION: v3.16.0
-      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
-      KUBECONFORM_VERSION: v0.7.0
-      KUBECONFORM_SHA256: c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
+      HELM_VERSION: v4.3.1
+      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+      KUBECONFORM_VERSION: v0.8.0
+      KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -102,7 +102,7 @@ jobs:
           tar -xzf /tmp/kubeconform.tar.gz -C "$RUNNER_TEMP/bin" kubeconform
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       # helm lint --strict + helm template with the defaults and every ci/helm-values/*.yaml,
-      # kubeconform against Kubernetes 1.30 and later
+      # kubeconform against Kubernetes 1.30 (RunR's oldest) and 1.37 (the newest, as the Kind suites)
       - run: helm version --short && bash ci/check-helm-chart.sh
 
   # the steps: api-tests.yml, which deps-test.yml runs too (a dependency bump of next)
@@ -134,7 +134,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: vue/package-lock.json
       - run: npm ci --no-audit --no-fund
@@ -164,12 +164,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # go1.26.9: the stdlib security fixes (GO-2026-6603 … 6617); every module tested here declares
+      # go1.27.4: Go 1.27 with the stdlib security fixes of go1.26.11; every module tested here declares
       # it. A toolchain GOTOOLCHAIN downloads for a newer go directive has no covdata, so
       # -coverprofile fails on packages without tests: raise this version with the modules.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.9'
+          go-version: '1.27.4'
           cache-dependency-path: '**/go.sum'
       # The Terraform provider's tests run real plans against the fake API (write-only attributes
       # need Terraform 1.11+); without a terraform binary every test would download one.
@@ -210,10 +210,10 @@ jobs:
       # A library keeps no lockfile (sdk/.gitignore): nothing to cache
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           package-manager-cache: false
-      # npm resolves the tree on every install: npm 10 fails to resolve Vitest 4, hence npm 11
-      # (devEngines in package.json)
+      # npm resolves the tree on every install, with the npm 11 the SDK requires (devEngines in
+      # package.json; npm 10 failed to resolve Vitest 4)
       - run: npm install -g npm@11 --no-audit --no-fund
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
@@ -234,7 +234,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: sdk/sandbox/node/package-lock.json
       - run: npm ci --no-audit --no-fund
@@ -252,7 +252,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The runner's Python 3 (3.12 on ubuntu-24.04; the SDKs declare requires-python >=3.9): a
+      # The runner's Python 3 (3.12 on ubuntu-24.04; the SDKs declare requires-python >=3.11): a
       # python-version of setup-python would be a toolchain pin of its own. The SDKs keep no
       # lockfile: each is installed with its test extra into a venv of its own, as
       # ci/deps-check.sh py-test does for a dependency bump.

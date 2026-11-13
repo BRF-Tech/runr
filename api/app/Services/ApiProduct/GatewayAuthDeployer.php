@@ -72,6 +72,7 @@ class GatewayAuthDeployer
                 max(5, (int) config('api_product.flush_seconds', 30)),
                 // the metering proxy hands the calls on to the region Traefik's web entry point
                 GatewayAuthManifests::upstreamUrl($region->knative_serving_namespace ?: 'knative-serving'),
+                max(0, (int) config('api_product.on_demand_sync_seconds', 2)),
             ),
             GatewayAuthManifests::service($namespace),
             GatewayAuthManifests::proxyService($namespace),

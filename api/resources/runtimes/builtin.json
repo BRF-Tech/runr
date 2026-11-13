@@ -15,7 +15,12 @@
             "versionDiscovery": {
                 "repository": "ghcr.io/brf-tech/runr/exec-python",
                 "image": "ghcr.io/brf-tech/runr/exec-python:{version}",
-                "eol": "python"
+                "eol": "python",
+                "lifecycle": {
+                    "3.10": {
+                        "eol": "2026-10-01"
+                    }
+                }
             },
             "handler": {
                 "file": "main",
@@ -71,7 +76,12 @@
                 "repository": "ghcr.io/brf-tech/runr/exec-nodejs",
                 "image": "ghcr.io/brf-tech/runr/exec-nodejs:{version}",
                 "eol": "nodejs",
-                "filter": "lts-even-major"
+                "filter": "lts-even-major",
+                "lifecycle": {
+                    "20.20": {
+                        "eol": "2026-04-30"
+                    }
+                }
             },
             "handler": {
                 "file": "main",
@@ -123,7 +133,12 @@
             "versionDiscovery": {
                 "repository": "ghcr.io/brf-tech/runr/exec-go",
                 "image": "ghcr.io/brf-tech/runr/exec-go:{version}",
-                "eol": "go"
+                "eol": "go",
+                "lifecycle": {
+                    "1.25": {
+                        "eol": "2026-08-19"
+                    }
+                }
             },
             "handler": {
                 "file": "main",
@@ -684,8 +699,19 @@
             "versions": [
                 {
                     "version": "4.1",
-                    "image": "ghcr.io/brf-tech/runr/exec-wasm-js:4.1",
-                    "default": true
+                    "image": "ghcr.io/brf-tech/runr/exec-wasm-js:4.1"
+                },
+                {
+                    "version": "4.2",
+                    "image": "ghcr.io/brf-tech/runr/exec-wasm-js:4.2",
+                    "default": true,
+                    "build": {
+                        "files": {
+                            "package.json": "{\n  \"name\": \"runr-function\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"description\": \"A RunR function (JavaScript / TypeScript, Spin JS SDK)\",\n  \"scripts\": {\n    \"build\": \"node build.mjs\"\n  },\n  \"dependencies\": {\n    \"@spinframework/wasi-http-proxy\": \"^2.0.0\"\n  },\n  \"devDependencies\": {\n    \"@spinframework/build-tools\": \"^2.1.3\",\n    \"esbuild\": \"^0.28.2\",\n    \"mkdirp\": \"^3.0.1\"\n  }\n}\n",
+                            "build.mjs": "// Bundles the function (index.ts when the project has one, else index.js) with esbuild and\n// componentizes it into dist/app.wasm (Spin JS SDK, StarlingMonkey). Run by `spin build`.\nimport { existsSync } from 'node:fs'\nimport { build } from 'esbuild'\nimport { SpinEsbuildPlugin } from '@spinframework/build-tools/plugins/esbuild'\n\nconst entry = ['./index.ts', './index.mjs', './index.js'].find((f) => existsSync(f)) ?? './index.js'\n\nawait build({\n  entryPoints: [entry],\n  outfile: './build/bundle.js',\n  bundle: true,\n  format: 'esm',\n  platform: 'browser',\n  sourcemap: true,\n  minify: false,\n  resolveExtensions: ['.ts', '.mjs', '.js'],\n  plugins: [await SpinEsbuildPlugin({\n    componentize: {\n      debug: process.argv.includes('--debug'),\n      output: './dist/app.wasm',\n      initLocation: 'http://runr-function.localhost',\n    },\n  })],\n})\n",
+                            "spin.toml": "#:schema https://schemas.spinframework.dev/spin/manifest-v2/latest.json\n# Default Spin manifest of a wasm-js 4.2 function (versions[].build.files). One component serves\n# every path; RunR's triggers (http, queue, schedule) all arrive as HTTP requests on it.\nspin_manifest_version = 2\n\n[application]\nname = \"runr-function\"\nversion = \"0.1.0\"\ndescription = \"A RunR function (JavaScript / TypeScript, Spin JS SDK)\"\n\n[[trigger.http]]\nroute = \"/...\"\ncomponent = \"function\"\n\n[component.function]\nsource = \"dist/app.wasm\"\nexclude_files = [\"**/node_modules\"]\n# outbound HTTP(S) to any host; narrow it in a project's own spin.toml\nallowed_outbound_hosts = [\"https://*:*\", \"http://*:*\"]\n\n[component.function.build]\ncommand = \"node build.mjs\"\n"
+                        }
+                    }
                 }
             ],
             "handler": {
@@ -789,7 +815,7 @@
             "kind": "Runtime",
             "id": "wasm-rust",
             "name": "Rust (Wasm)",
-            "description": "Rust compiled to a WebAssembly component with the Spin SDK — #[http_component] fn handle(req: Request). Millisecond-class cold starts in the WebAssembly sandbox; needs WebAssembly support in the region.",
+            "description": "Rust compiled to a WebAssembly component with the Spin SDK — 4.2: #[http_service] async fn handle(req: Request) (Spin SDK 8), 4.1: #[http_component] fn handle(req: Request) (Spin SDK 5). Millisecond-class cold starts in the WebAssembly sandbox; needs WebAssembly support in the region.",
             "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM2NTRGRjAiLz48cGF0aCBkPSJNMjAgMGgyNHY4YTEyIDEyIDAgMCAxLTI0IDB6IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4xOCIvPjx0ZXh0IHg9IjMyIiB5PSIzOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XQTwvdGV4dD48dGV4dCB4PSIzMiIgeT0iNTYiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlJTPC90ZXh0Pjwvc3ZnPg==",
             "language": "rust",
             "extensions": [
@@ -799,14 +825,29 @@
             "versions": [
                 {
                     "version": "4.1",
-                    "image": "ghcr.io/brf-tech/runr/exec-wasm-rust:4.1",
-                    "default": true
+                    "image": "ghcr.io/brf-tech/runr/exec-wasm-rust:4.1"
+                },
+                {
+                    "version": "4.2",
+                    "image": "ghcr.io/brf-tech/runr/exec-wasm-rust:4.2",
+                    "default": true,
+                    "template": {
+                        "files": {
+                            "{file}": "use spin_sdk::http::body::IncomingBodyExt;\nuse spin_sdk::http::{IntoResponse, Request, Response};\nuse spin_sdk::http_service;\n\n/// Every trigger reaches the component as an HTTP request: queue messages and schedule\n/// ticks arrive as CloudEvents (the ce-type header names the event).\n#[http_service]\nasync fn handle(req: Request) -> anyhow::Result<impl IntoResponse> {\n    let event = req.headers().get(\"ce-type\").and_then(|v| v.to_str().ok()).unwrap_or(\"\").to_string();\n    let query = req.uri().query().unwrap_or(\"\").to_string();\n    let body = match event.as_str() {\n        \"dev.runr.schedule.tick\" => \"tick from Rust (Wasm)\".to_string(),\n        \"dev.runr.queue.message\" => {\n            let message = req.into_body().bytes().await?;\n            format!(\"processed {} (from Rust, Wasm)\", String::from_utf8_lossy(&message))\n        }\n        _ => {\n            let name = query.split('&').find_map(|p| p.strip_prefix(\"name=\")).unwrap_or(\"World\");\n            format!(\"Hello, {name}! (from Rust, Wasm)\")\n        }\n    };\n    println!(\"{body}\");\n    Ok(Response::builder()\n        .status(200)\n        .header(\"content-type\", \"text/plain\")\n        .body(body)?)\n}\n"
+                        }
+                    },
+                    "build": {
+                        "files": {
+                            "Cargo.toml": "# Default Cargo.toml of a wasm-rust 4.2 function (versions[].build.files): the handler file is the\n# crate root. A FaaS project may bring its own Cargo.toml (more crates); keep crate-type cdylib and\n# the package name, or change the component source in spin.toml with it.\n[package]\nname = \"runr-function\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.94\"\npublish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\npath = \"lib.rs\"\n\n[dependencies]\nanyhow = \"1\"\nspin-sdk = \"8.0.0\"\n\n[workspace]\n",
+                            "spin.toml": "#:schema https://schemas.spinframework.dev/spin/manifest-v2/latest.json\n# Default Spin manifest of a wasm-rust 4.2 function (versions[].build.files). One component serves\n# every path; RunR's triggers (http, queue, schedule) all arrive as HTTP requests on it.\nspin_manifest_version = 2\n\n[application]\nname = \"runr-function\"\nversion = \"0.1.0\"\ndescription = \"A RunR function (Rust, Spin SDK 8)\"\n\n[[trigger.http]]\nroute = \"/...\"\ncomponent = \"function\"\n\n[component.function]\nsource = \"target/wasm32-wasip2/release/runr_function.wasm\"\n# outbound HTTP(S) to any host; narrow it in a project's own spin.toml\nallowed_outbound_hosts = [\"https://*:*\", \"http://*:*\"]\n\n[component.function.build]\ncommand = \"cargo build --target wasm32-wasip2 --release\"\n"
+                        }
+                    }
                 }
             ],
             "handler": {
                 "file": "lib",
                 "function": "handle",
-                "pattern": "#\\[http_component\\]"
+                "pattern": "#\\[http_(component|service)\\]"
             },
             "template": {
                 "files": {

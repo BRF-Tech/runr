@@ -70,7 +70,18 @@ runr-gateway-auth ── every 10 s: GET  /api/internal/gateway-auth/<region>/co
 - The service never gets a key from RunR. It gets the SHA-256 hash of each usable key, and hashes
   what a caller sends. Revoked and expired keys are left out.
 - The service fetches changes every `SYNC_SECONDS` (default 10) with an ETag. RunR answers 304 until a
-  key, consumer, plan or route changes. A revoked key stops working within that interval.
+  key, consumer, plan or route changes. Each pod of the service fetches on its own.
+- **A new key works at once.** A pod that meets a key or a route it does not know asks RunR again
+  before it answers (the on-demand sync), and decides on what it got: a key created moments ago
+  gets 200 from every pod, not 401 until each pod's next fetch. Each pod runs one such fetch at a
+  time (the checks that need it meanwhile wait for it, 3 seconds at most) and starts the next one
+  `ON_DEMAND_SYNC_SECONDS` after it at the earliest (default 2, Helm value
+  `apiProduct.onDemandSyncSeconds`; 0 turns it off). A flood of invalid keys so costs RunR at most
+  one conditional request per pod every 2 seconds, and its callers keep getting 401. If RunR does
+  not answer, the pod decides on what it has.
+- **A revoked key stops working within `SYNC_SECONDS`.** The pods still know it, so its calls do
+  not ask RunR again; it stops sooner on a pod whose on-demand fetch for another caller loaded the
+  change first.
 - Each pod counts every decision and reports the counts to RunR every 30 seconds. RunR adds them to
   hourly rows and applies a report once (by its batch id), also when it is sent again.
 - The calls a key or JWT route lets through then pass the service's **metering proxy** (Service
@@ -221,7 +232,7 @@ curl https://jane.eu-1.runr.example/orders/42 -H 'X-Api-Key: rk_Hk2v9QzL…'
 | 403 | `wrong_gateway`, `route_not_allowed`, `method_not_allowed`, `consumer_suspended`, `unknown_subject` | the credential is valid but does not open this call |
 | 429 | `rate_limited`, `quota_exceeded` | a plan limit; `RateLimit-Limit`, `RateLimit-Remaining: 0`, `RateLimit-Reset` and `Retry-After` (seconds), `RateLimit-Policy: <limit>;w=<window seconds>` |
 | 503 | `auth_unavailable` | gateway-auth is not installed or not ready in the region ([below](#when-gateway-auth-is-not-ready); `Retry-After: 30`) |
-| 503 | `not_ready`, `route_unknown` | a gateway-auth pod is starting, or has not loaded a route change yet (`Retry-After: 5`) |
+| 503 | `not_ready`, `route_unknown` | a gateway-auth pod is starting, or does not have the route even after asking RunR again (`Retry-After: 5`) |
 | 502 | `upstream_unavailable` | the call was let through and the route's project gave no answer (counted as an upstream error) |
 | 504 | `upstream_timeout` | the same, in time |
 
@@ -438,7 +449,8 @@ rows carry the answers' fields too ([mcp.md](mcp.md#tools)).
 - A completed or rolled back base-domain or organization-domain migration rebuilds the region's
   gateways at once: their default host and their routes' Host rewrites follow the new domain
   ([regions.md](regions.md#changing-the-base-domain)).
-- Helm values: `apiProduct.gatewayAuthImage`, `callbackUrl`, `syncSeconds`, `usageRetentionDays`
+- Helm values: `apiProduct.gatewayAuthImage`, `callbackUrl`, `syncSeconds`, `onDemandSyncSeconds`,
+  `usageRetentionDays`
   ([helm-values.md](helm-values.md#apiproduct)). An air-gapped region needs the image in a
   registry it can reach.
 - When gateway-auth cannot be installed or is not ready, the key and JWT routes answer 503

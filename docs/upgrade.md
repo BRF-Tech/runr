@@ -87,6 +87,93 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.13 → 0.7.0
+
+0.7.0 moves RunR to the current major versions of its dependencies (Helm 4, Go 1.27, Trivy 0.76
+and cosign 3, the Spin shim v0.27.2, the console's Vite 8, vue-router 5 and Pinia 4). Nothing has to
+be set ([Procedure](#procedure)). There are two migrations, in the central schema and in every
+organization's: `knative_regions.kubernetes_version`, a new column, and the pin of the existing
+`wasm-rust` and `wasm-js` projects without a runtime version to 4.1
+([WebAssembly](#webassembly-42-for-new-rust-and-javascript-projects)). The region Job
+([Order of operations](#order-of-operations)) records each region's Kubernetes version and moves
+the region agent and the event gateway to 0.7.0, gateway-auth to `1.1.0` (a key a pod does not
+know yet is asked about again before the answer: [api-product.md](api-product.md)) and, on a region
+with WebAssembly, the Spin shim to `v0.27.2-runr.1`: the wasm-installer replaces the binary on its
+nodes one at a time, without a container runtime restart ([wasm.md](wasm.md#the-spin-shim-runr-installs)).
+Uploads run `image-upload:1.2.0` and the supply-chain Jobs `supply-chain:1.1.0`. A region that
+pulls through a mirror of its own needs these images there first.
+
+### Helm 4
+
+The API image runs Helm 4.3 (0.6.x: Helm 3.16) for the releases RunR installs on the region
+clusters (Traefik, cert-manager, Loki, kube-prometheus-stack, Zot, CloudNativePG, the GPU operator,
+…). Nothing has to be done: RunR applies them client-side and waits for them as Helm 3 did
+(`--server-side=false`, `--wait=legacy`, `--rollback-on-failure` for Helm 3's `--atomic`), so a
+region's releases upgrade as before, and a region added on 0.7.0 gets its releases the same way as
+one added earlier. Helm 4 reads and writes the releases' revisions in the same Secrets as Helm 3:
+`helm history` lists them on, and a rollback to 0.6.13 (Helm 3.16) reads the revisions 0.7.0 wrote.
+
+The chart installs and upgrades with Helm 3 or Helm 4. What changes with your own helm 4:
+
+- **`helm upgrade` of the RunR release** (installed with Helm 3) stays client-side: Helm 4's default
+  `--server-side=auto` takes the method of the release's last revision. A new install with Helm 4
+  is server-side. Do not pass `--server-side=true` to an upgrade of an existing release: a field
+  another manager set (`kubectl edit`, a controller) then stops the upgrade with a conflict, unless
+  `--force-conflicts` takes it over.
+- **`--atomic` is `--rollback-on-failure`** (Helm 4 still takes `--atomic`, with a warning), and
+  `--force` is `--force-replace`.
+- **`--wait` alone waits by kstatus** (every resource, custom resources with a status of their own
+  too, e.g. the console's cert-manager `Certificate` with `ingress.tls.mode: letsencrypt`);
+  `--wait=legacy` is Helm 3's wait. `helm upgrade` without `--wait` waits for the hooks only, as
+  before.
+- **The same goes for a region release you upgrade by hand** (`helm -n <namespace> upgrade …`): it
+  stays client-side unless you pass `--server-side=true`.
+
+### kubectl per region
+
+The console's terminal and the sandbox commands that go through `kubectl exec` run the kubectl of
+the region's Kubernetes minor: the API image carries kubectl 1.31, 1.33, 1.35 and 1.37 and takes the
+one of the region's minor, else the one below it, else the one above
+([Kubernetes version](regions.md#kubernetes-version)). The upgrade's `region:reconcile` records the
+version of every existing region (`knative_regions.kubernetes_version`); until it has, a region
+takes the newest, 1.37 (0.6.x ran kubectl 1.35 for every region). `SANDBOX_KUBECTL` is unset by
+default now: a value you set with `extraEnv` still names one binary for every cluster, so take it
+out to let RunR pick. The chart's Jobs run `runr-kubectl`, which picks the same way for the
+cluster RunR is installed on.
+
+### WebAssembly: 4.2 for new Rust and JavaScript projects
+
+`wasm-rust` and `wasm-js` have version 4.2 next to 4.1 (Spin Rust SDK 8 on WASIp3, esbuild 0.28),
+and 4.2 is the default of new projects ([wasm.md](wasm.md#versions)). A project without a runtime
+version runs the default, so the upgrade's migration pins the existing `wasm-rust` and `wasm-js`
+projects without one to **4.1** (the central schema and every organization's schema): their next
+deploy builds on 4.1 as before, and nothing has to be done. Projects that already name a version
+keep it. `wasm-go` stays on 4.1 alone; its next SDK generation waits for WASIp3 support in a Go
+release.
+
+To move a project to 4.2, port its code to the new SDK first (Rust: `#[http_service] async fn`,
+see [`examples/wasm/rust`](../examples/wasm/rust); JavaScript: the same code), then set its
+version: `PUT /api/projects/{id}` with `{"runtime_version": "4.2"}`. Its next build and deploy run
+4.2. Going back is the same with `"4.1"`.
+
+A Terraform `runr_project` of such a project reads `runtime_version = "4.1"` after the upgrade;
+without `runtime_version` in its configuration that is no change to apply.
+
+RunR's runtime catalog (`ghcr.io/brf-tech/runr/runtime-catalog:stable`) carries 4.2 from this
+release on. An installation still on 0.6.x does not read the catalog's new fields: it keeps
+`wasm-rust` and `wasm-js` as they were and shows them as a problem of the catalog source until it
+is upgraded.
+
+### Back to 0.6.13
+
+A rollback to 0.6.13 is a `helm rollback` on the same database (`helm history runr -n runr` lists
+the revisions; where only one package version is kept, add the 0.6.13 package again and upgrade to
+it). **Never uninstall** to go back. The migrations stay: 0.6.13 ignores the column, and the 4.1
+pins are what it runs. A project moved to 4.2 does not build on 0.6.13, which has no 4.2: set it
+back to `"4.1"` (with its code of 4.1) before the rollback. The region Job of the rollback moves the
+region agent, the event gateway, gateway-auth and the Spin shim back to 0.6.13's; Helm 3.16 of
+0.6.13 reads the region releases' revisions 0.7.0 wrote.
+
 ## 0.6.12 → 0.6.13
 
 0.6.13 is a dependency release of 0.6.12, made by the dependency test bot: it moves one dependency
@@ -384,7 +471,8 @@ they were. Nothing needs a step ([sandbox-api.md](sandbox-api.md)).
 - **`SANDBOX_EXEC_CLIENT`** (via `extraEnv`): `native`, the default; `kubectl` brings back a
   kubectl process for every command, as in 0.6.7.
 - **Terminal sessions** (`"tty": true`, the console terminal) keep `kubectl exec -t`. The API image
-  keeps kubectl.
+  keeps kubectl (from 0.7.0 one for every second Kubernetes minor:
+  [Kubernetes version](regions.md#kubernetes-version)).
 - **kubectl takes over by itself** where the native client cannot run a command, before the command
   starts, so it never fails for it:
   - a region kubeconfig with an exec plugin, an auth provider, a token, client certificate or CA in
@@ -2270,8 +2358,9 @@ them at its next deploy.
 
 `runtime/ci.sh test-helm-upgrade` repeats the upgrade on a Kind cluster (`runtime/ci.sh
 test-upgrade` does the same for a Docker Compose install): it installs the chart and images of
-`main` (`--from=<ref>`; the API and UI images of that ref's chart values at its `appVersion`,
-built from that ref when they are not public) with the chart defaults, creates data through the old API —
+the previous release (`--from=<ref>`; default the newest `vX.Y.Z` tag at or below the checkout's
+version that is not `HEAD`, the release `main` carries; the API and UI images of that ref's chart
+values at its `appVersion`, built from that ref when they are not public) with the chart defaults, creates data through the old API —
 the administrator and a second user, the same cluster as a region (registry, Knative Serving,
 Traefik, the region agent), a Python function with two env vars, a full-access and a
 `projects:read` token — and runs `helm upgrade --reuse-values` (`--values-mode=reset`:
