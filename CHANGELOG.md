@@ -8,6 +8,11 @@ did not change says so.
 
 ## [Unreleased]
 
+### Changed
+
+- **GitHub Actions pins moved** (minor and patch updates, nothing a release image ships):
+  docker/login-action v4.6.0 → v4.8.0.
+
 ## [0.7.2] - 2026-11-14
 
 ### Upgrade notes
