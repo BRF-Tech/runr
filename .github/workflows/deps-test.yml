@@ -1,6 +1,8 @@
 # The dependency test bot (docs/development.md → Dependency test bot), every week and by hand:
-# every open issue of upstream-releases.yml whose version has no result yet ("deps: <chart>
-# <version> released", "Knative 1.<minor> released: …") is moved on the last release tag of the
+# every open row of upstream-releases.yml's weekly summary ("deps: week <ISO week>": a chart's
+# version, a Knative release, a package group's updates; a security one the same day) and every
+# open issue of its own (a red bump split out for a person) whose version has no result yet is
+# moved on the last release tag of the
 # private development repository (origin), never on next, and tested alone with its dependency's
 # suites on the release it would make. The green ones of a run are then made again together on
 # the tag, one after the other (an urgent one first, then the oldest issue), with one release
@@ -10,12 +12,15 @@
 # as a merge (a fast-forward of next, never forced), this repository's main gets one commit of the
 # release's tree and the signed tag, whose push starts release-images.yml; once its images are
 # checked against the registry, the GitHub release (its notes list every bump) is made and the
-# chart's publish on helm.brf.sh dispatched and checked. The issues are closed with label "deps:
-# passed". Red, a bump that is not mechanical, that breaks the combination, or a release that
-# cannot be made: label "needs attention", a comment with what failed and what was done, nothing
-# pushed (or, past the origin's push, how to resume). A labelled issue is tested again when the
-# workflow is run with its number; a newer release of the dependency supersedes it. `dry_run`
-# makes and checks everything and pushes, creates and labels nothing.
+# chart's publish on helm.brf.sh dispatched and checked. A row gets its state in the summary's
+# body (ci/deps-digest.sh report: green → shipped in vX.Y.Z, green, …; the bot writes no comment
+# there); an issue of its own is closed with label "deps: passed". Red, a bump that is not
+# mechanical or that breaks the combination: the row moves to an issue of its own with what failed
+# (labels deps, needs attention; its Item links it); an issue of its own gets the label and a
+# comment; a release that cannot be made: its rows "needs attention" and one issue for the run
+# with what was done and how to resume; nothing pushed. A held row or issue is tested again when
+# the workflow is run with its ref; a newer release of the dependency supersedes it. `dry_run`
+# makes and checks everything and pushes, creates, edits and labels nothing.
 #
 # The package groups of ci/check-package-releases.sh (Composer, npm, Go modules, Actions pins,
 # Dockerfile bases; ci/deps/packages.sh) go the same way; the bumps of theirs that change nothing
@@ -45,7 +50,7 @@ on:
   workflow_dispatch:
     inputs:
       issue:
-        description: 'Issue numbers to test (again), comma-separated; empty: every open deps issue without a result'
+        description: 'What to test (again), comma-separated: N (an issue, or the weekly summary: its open rows) or N:group (one row of the summary); empty: every open row and issue without a result'
         default: ''
       attempt:
         description: 'The bot sets it when the last release moved under the green bumps (1: a new test)'
@@ -55,7 +60,7 @@ on:
         type: boolean
         default: false
       resume:
-        description: 'A release tag v<x.y.z> of the bot that did not finish (its issues name it, with their numbers above): go on from where it stopped'
+        description: 'A release tag v<x.y.z> of the bot that did not finish (its comment names it, with the refs for issue above): go on from where it stopped'
         default: ''
 
 permissions:
@@ -101,20 +106,20 @@ jobs:
           ONLY: ${{ inputs.issue }}
         run: |
           only="${ONLY// /}"
-          if ! [[ "$only" =~ ^[0-9,]*$ ]]; then
-            echo "::error::issue '${ONLY}': issue numbers separated by commas"
+          if ! [[ "$only" =~ ^([0-9]+(:[a-z0-9-]+)?(,[0-9]+(:[a-z0-9-]+)?)*)?$ ]]; then
+            echo "::error::issue '${ONLY}': issue numbers (N, or N:group for a row of the weekly summary) separated by commas"
             exit 1
           fi
           if [ -n "$RESUME" ]; then
-            if ! [[ "$RESUME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || ! [[ "$only" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
-              echo "::error::resume '${RESUME}': a release tag v<x.y.z>, with the issues it releases"
+            if ! [[ "$RESUME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [ -z "$only" ]; then
+              echo "::error::resume '${RESUME}': a release tag v<x.y.z>, with the refs of what it releases"
               exit 1
             fi
             { echo "tests=[]"; echo "any=false"; echo "resume=${RESUME}"; } >> "$GITHUB_OUTPUT"
             echo "### Resumed: the release ${RESUME} (#${only})" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 300 --json number,title,labels,body > "$RUNNER_TEMP/issues.json"
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 300 --json number,title,labels,body,createdAt > "$RUNNER_TEMP/issues.json"
           bash ci/deps-plan.sh "$RUNNER_TEMP/issues.json" --only="$only" > "$RUNNER_TEMP/plan.json"
           jq . "$RUNNER_TEMP/plan.json"
           {
@@ -122,19 +127,32 @@ jobs:
             echo "any=$(jq -r '.tests | length > 0' "$RUNNER_TEMP/plan.json")"
             echo "resume="
           } >> "$GITHUB_OUTPUT"
-          jq -r '.tests[] | "- #\(.issue): \(.dep) \(.version)"' "$RUNNER_TEMP/plan.json" | sed '1i ### Tested in this run' >> "$GITHUB_STEP_SUMMARY"
-      # the labels (created once), superseded issues closed, re-triggered ones unlabelled (not in a
-      # dry run)
+          jq -r '.tests[] | "- #\(.ref): \(.dep) \(.version)"' "$RUNNER_TEMP/plan.json" | sed '1i ### Tested in this run' >> "$GITHUB_STEP_SUMMARY"
+      # the labels (created once), superseded issues closed, re-triggered ones unlabelled, the
+      # summary's rows of this run "testing" (no movement: a run that starts opens no summary; not
+      # in a dry run)
       - name: Issues
         if: env.DRY_RUN != 'true' && env.RESUME == ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          gh label create deps --repo "$GITHUB_REPOSITORY" --color 0366d6 \
+            --description "The dependency bots' weekly summary and the issues they open" 2>/dev/null || true
+          gh label create security --repo "$GITHUB_REPOSITORY" --color b60205 \
+            --description "A security advisory: the dependency test bot tests it the same day" 2>/dev/null || true
           gh label create "needs attention" --repo "$GITHUB_REPOSITORY" --color d93f0b \
             --description "The dependency test bot holds it: a person decides" 2>/dev/null || true
           gh label create "deps: passed" --repo "$GITHUB_REPOSITORY" --color 0e8a16 \
             --description "The dependency test bot tested and released it" 2>/dev/null || true
+          mkdir -p "$RUNNER_TEMP/marks"
+          jq -r --arg run "$RUN_URL" '.tests[] | select(.ref | test(":"))
+            | [.ref, "", .dep, .version, "testing", "quiet", "", "", "", $run] | join("\u001f")' \
+            "$RUNNER_TEMP/plan.json" > "$RUNNER_TEMP/marks/lines"
+          if [ -s "$RUNNER_TEMP/marks/lines" ]; then
+            bash ci/deps-digest.sh report "$RUNNER_TEMP/marks" "$RUNNER_TEMP/issues.json" "$(date -u +%F)" > "$RUNNER_TEMP/marks.json"
+            bash ci/deps-digest.sh apply "$RUNNER_TEMP/marks.json"
+          fi
           jq -c '.superseded[]' "$RUNNER_TEMP/plan.json" | while read -r s; do
             issue=$(jq -r .issue <<< "$s"); by=$(jq -r .by <<< "$s"); version=$(jq -r .version <<< "$s")
             gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --reason "not planned" \
@@ -738,6 +756,10 @@ jobs:
       contents: read
       issues: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # an issue of its own gets a comment; a row of the summary goes back to new (no movement)
       - name: Report
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -746,11 +768,20 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           msg="**The dependency test bot could not make the bumps** (the job \"Bumps on the last release\" ${RESULT}, [run](${RUN_URL})): nothing was tested, released or pushed. The job's log says why; the next run tries again."
-          { echo "### The bump job ${RESULT}"; echo ""; echo "$msg"; echo ""; jq -r '.[] | "- #\(.issue): \(.dep) \(.version)"' <<<"$TESTS"; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### The bump job ${RESULT}"; echo ""; echo "$msg"; echo ""; jq -r '.[] | "- #\(.ref // .issue): \(.dep) \(.version)"' <<<"$TESTS"; } >> "$GITHUB_STEP_SUMMARY"
           [ "$DRY_RUN" != true ] || exit 0
-          jq -r '.[].issue' <<<"$TESTS" | while read -r issue; do
+          jq -r '.[] | select((.ref // "") | test(":") | not) | .issue' <<<"$TESTS" | while read -r issue; do
             gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$msg"
           done
+          mkdir -p "$RUNNER_TEMP/marks"
+          jq -r --arg run "$RUN_URL" '.[] | select((.ref // "") | test(":"))
+            | [.ref, "", .dep, .version, "new", "quiet", "the bumps could not be made: the next run tries again", "", "", $run] | join("\u001f")' \
+            <<<"$TESTS" > "$RUNNER_TEMP/marks/lines"
+          if [ -s "$RUNNER_TEMP/marks/lines" ]; then
+            gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 300 --json number,title,labels,body,createdAt > "$RUNNER_TEMP/issues.json"
+            bash ci/deps-digest.sh report "$RUNNER_TEMP/marks" "$RUNNER_TEMP/issues.json" "$(date -u +%F)" > "$RUNNER_TEMP/marks.json"
+            bash ci/deps-digest.sh apply "$RUNNER_TEMP/marks.json"
+          fi
 
   release:
     name: Release the green bumps, report on the issues
@@ -989,16 +1020,14 @@ jobs:
           dry=""
           [ "$DRY_RUN" != true ] || dry=--dry-run
           bash ci/deps-run.sh actions "$RUNNER_TEMP/deps" "$RUN_URL" "$ATTEMPT" $dry
-          while IFS=$'\t' read -r action issue arg; do
-            case "$action" in
-              comment) gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body-file "$arg" ;;
-              label) gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --add-label "$arg" ;;
-              unlabel) gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label "$arg" ;;
-              close) gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --reason completed ;;
-              dispatch) gh workflow run deps-test.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f issue="$issue" -f attempt="$arg" ;;
-            esac
-          done < "$RUNNER_TEMP/deps/actions"
           cat "$RUNNER_TEMP"/deps/comments/*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          [ "$DRY_RUN" != true ] || exit 0
+          # the issues of their own (comments, labels, closing), then the summary's rows in its body
+          # (a line that needs a person moves to an issue of its own), then the dispatch of what is
+          # tested again
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 300 --json number,title,labels,body,createdAt > "$RUNNER_TEMP/open-issues.json"
+          DEPS_DISPATCH_REF="$GITHUB_REF_NAME" bash ci/deps-digest.sh report "$RUNNER_TEMP/deps" "$RUNNER_TEMP/open-issues.json" "$(date -u +%F)" > "$RUNNER_TEMP/deps/report.json"
+          bash ci/deps-digest.sh apply "$RUNNER_TEMP/deps/report.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -1018,5 +1047,8 @@ jobs:
             ${{ runner.temp }}/deps/land/attribution.txt
             ${{ runner.temp }}/deps/role/
             ${{ runner.temp }}/deps/comments/
+            ${{ runner.temp }}/deps/actions
+            ${{ runner.temp }}/deps/lines
+            ${{ runner.temp }}/deps/report.json
           if-no-files-found: ignore
           retention-days: 30

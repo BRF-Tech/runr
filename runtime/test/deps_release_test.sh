@@ -19,7 +19,10 @@
 #   - the images, the GitHub release and the chart are checked: a digest the registry does not
 #     serve, a failed run or another chart stops the release with the reason;
 #   - the issue gets what happened: released (label, comment, close), moved (tested again), failed
-#     (label, what is done, how to resume); one that waits gets a comment and no label;
+#     (label, what is done, how to resume); one that waits gets a comment and no label; a row of the
+#     weekly summary (ref <summary>:<group>) gets no action of its own but its row (shipped, red split
+#     out to an issue, a failed release for the run's issue with its resume ref), and resume takes
+#     its ref;
 #   - one run, one release: the green bumps are made again one after the other on the tag (an
 #     urgent one first, then by issue), with one release commit (a trailer and a changelog line
 #     each, the notes and the tags name all), tested together with the union of their suites; a red
@@ -400,6 +403,19 @@ grep -qF "$(printf 'label\t20\tneeds attention')" "$dir/actions" && grep -qF 'xa
 grep -qF "$(printf 'close\t15')" "$dir/actions" || fail "nothing to do: not closed"
 grep -qF "$(printf 'comment\t21\t')" "$dir/actions" && ! grep -qF "$(printf 'label\t21')" "$dir/actions" || fail "an error: a comment, no label"
 grep -qF "$(printf 'label\t8\tneeds attention')" "$dir/actions" && grep -qF 'a new major' "$dir/comments/8.md" || fail "attention: the reasons"
+# the same bumps as rows of the weekly summary (ref <summary>:<group>): no action of their own, a row
+# each for ci/deps-digest.sh (red: split out to an issue of its own with its report; nothing to
+# do: closed), an issue of its own both
+loki="$(cat "$dir/bump/loki-stack/issue")"
+echo 90:traefik > "$dir/bump/traefik/ref"; echo 90:loki-stack > "$dir/bump/loki-stack/ref"
+bash "$root/ci/deps-run.sh" actions "$dir" https://example.test/run/1 1
+! grep -qE "^[a-z]+	(20|${loki})(	|\$)" "$dir/actions" && grep -qF "$(printf 'label\t8\tneeds attention')" "$dir/actions" \
+  || fail "rows of the summary got actions of their own: $(cat "$dir/actions")"
+grep -qxF "$(printf '90:traefik\037chart\037traefik\0372.0.1\037red\037split\037failed on v1.2.3\037%s\037\037https://example.test/run/1' "$dir/comments/20-traefik.md")" "$dir/lines" \
+  && grep -qF 'xaas-python-3.15-http' "$dir/comments/20-traefik.md" \
+  && grep -qxF "$(printf '90:loki-stack\037chart\037loki-stack\037%s\037closed\037line\037the last release has it\037\037\037https://example.test/run/1' "$(cat "$dir/bump/loki-stack/version")")" "$dir/lines" \
+  && grep -qF "$(printf '8\037chart\037')" "$dir/lines" || fail "the rows: $(cat -v "$dir/lines")"
+rm -f "$dir/bump/traefik/ref" "$dir/bump/loki-stack/ref"
 rm -f "$dir/results/deps-result-traefik-e2e/failures.md"
 result traefik e2e success
 echo 0 > "$dir/results/deps-result-traefik-e2e/failed"
@@ -527,6 +543,13 @@ if [ "$signing" = 1 ]; then
   bash "$root/ci/deps-run.sh" resume "$tmp/resumed3" "$rclone" "$public" v1.2.4 20,14
   [ "$(cat "$tmp/resumed3/role/resume-20") $(cat "$tmp/resumed3/role/resume-14") $(cat "$tmp/resumed3/bump/resume-14/issue")" = "release release 14" ] \
     || fail "resume of several issues: $(ls "$tmp/resumed3/bump")"
+  # rows of the weekly summary: their refs
+  bash "$root/ci/deps-run.sh" resume "$tmp/resumed4" "$rclone" "$public" v1.2.4 20,90:traefik
+  [ "$(cat "$tmp/resumed4/role/resume-90-traefik") $(cat "$tmp/resumed4/bump/resume-90-traefik/ref") $(cat "$tmp/resumed4/bump/resume-90-traefik/issue")" = "release 90:traefik 90" ] \
+    || fail "resume of a row of the summary: $(ls "$tmp/resumed4/bump")"
+  rc=0
+  bash "$root/ci/deps-run.sh" resume "$tmp/resumed5" "$rclone" "$public" v1.2.4 '90:Traefik' >/dev/null 2>&1 || rc=$?
+  [ "$rc" = 1 ] || fail "resume took a ref that is no N or N:group"
   echo "ok - the publish: the origin's main, next (merged again on a next that moved) and the signed tag in one push, the public main one commit of the release's tree as the bot with its signed tag; again, nothing changes; resume reads the release from the origin's tag"
 else
   # without signing, the git half as a dry run is what can be checked here
@@ -635,6 +658,15 @@ grep -qF '**Released: traefik 2.0.1 is RunR 1.2.4** ([release](https://example.t
 grep -qF "$(printf 'label\t14\tneeds attention')" "$dir/actions" || fail "attention: $(cat "$dir/actions")"
 grep -q '^dispatch' "$dir/actions" && fail "a dispatch after a release"
 grep -qF 'together with' "$dir/comments/20.md" && fail "the release of one bump names others: $(cat "$dir/comments/20.md")"
+grep -qxF "$(printf '20\037chart\037traefik\0372.0.1\037shipped\037line\037\037\037v1.2.4\037https://example.test/releases/v1.2.4')" "$dir/lines" \
+  || fail "the row that mirrors a released issue: $(cat -v "$dir/lines")"
+# released as a row of the weekly summary: shipped in the release, no action of its own
+echo 90:traefik > "$dir/bump/traefik/ref"
+bash "$root/ci/deps-run.sh" actions "$dir" https://example.test/run/1 1
+grep -qE '^[a-z]+	20(	|$)' "$dir/actions" && fail "a released row got actions of its own: $(cat "$dir/actions")"
+grep -qxF "$(printf '90:traefik\037chart\037traefik\0372.0.1\037shipped\037line\037\037\037v1.2.4\037https://example.test/releases/v1.2.4')" "$dir/lines" \
+  || fail "the released row: $(cat -v "$dir/lines")"
+rm -f "$dir/bump/traefik/ref"
 # a green bump that waits (its batch stopped before it): a comment, no label, no dispatch
 mkdir -p "$dir/bump/kata"
 echo 31 > "$dir/bump/kata/issue"; echo 4.0.0 > "$dir/bump/kata/version"; echo v1.2.3 > "$dir/bump/kata/base-tag"
@@ -656,6 +688,13 @@ echo "publish: the origin has v1.2.4, the public push failed: denied" > "$st/fai
 bash "$root/ci/deps-run.sh" actions "$dir" https://example.test/run/1 1
 grep -qF "$(printf 'label\t20\tneeds attention')" "$dir/actions" && ! grep -qF "$(printf 'close\t20')" "$dir/actions" || fail "failed: $(cat "$dir/actions")"
 grep -qF 'the public push failed' "$dir/comments/20.md" && grep -qF '`resume` = `v1.2.4` and this issue'"'"'s number' "$dir/comments/20.md" || fail "failed comment: $(cat "$dir/comments/20.md")"
+# the same as a row of the weekly summary: needs attention, its text for the run's issue, how to
+# resume with the row's ref
+echo 90:traefik > "$dir/bump/traefik/ref"
+bash "$root/ci/deps-run.sh" actions "$dir" https://example.test/run/1 1
+grep -qxF "$(printf '90:traefik\037chart\037traefik\0372.0.1\037needs attention\037incident\037its release v1.2.4 did not finish\037%s\037\037https://example.test/run/1' "$dir/comments/20-traefik.md")" "$dir/lines" \
+  && grep -qF '`resume` = `v1.2.4` and `issue` = `90:traefik`' "$dir/comments/20-traefik.md" || fail "a failed release's row: $(cat -v "$dir/lines"; cat "$dir/comments/20-traefik.md")"
+rm -f "$dir/bump/traefik/ref"
 ! grep -q '^dispatch' "$dir/actions" && ! grep -qF "$(printf 'label\t31')" "$dir/actions" || fail "the bump that waits after a failed release: $(cat "$dir/actions")"
 # the base moved: the release's bumps are tested again, attempt + 1, at most three in a row; one that
 # waits is not

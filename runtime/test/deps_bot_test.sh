@@ -6,7 +6,8 @@
 #     person unless the run names it (which takes the label off), and labels a Knative minor that
 #     has no row;
 #   - the deploy key: an SSH URL of the pinned host, 0600 files, the host's published key only.
-# The bumps, their outcome, the release and the issues' actions: runtime/test/deps_release_test.sh.
+# The bumps, their outcome, the release and the issues' actions: runtime/test/deps_release_test.sh;
+# the weekly summary and the plan of its rows: runtime/test/deps_digest_test.sh.
 #
 #   bash runtime/test/deps_bot_test.sh
 set -euo pipefail

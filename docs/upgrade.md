@@ -87,6 +87,41 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.7.0 → 0.7.1
+
+0.7.1 gives the scheduler the memory its overlapping runs need and changes nothing else an
+installation runs. There is no database migration, the images keep their names (those of 0.7.0,
+built again at 0.7.1), and the region Job moves the region agent and the event gateway to 0.7.1
+([Order of operations](#order-of-operations)).
+
+- **The scheduler's memory.** Since 0.7.0 the run at the top of the hour can take longer than a
+  minute and overlap the next minute's run. `schedule:work`, each `schedule:run` and every artisan
+  command they start hold about 70 MB each, so `runr-scheduler` went past its `256Mi` limit and was
+  OOMKilled. The chart's `scheduler.resources` default is now requests `50m` / `160Mi` and limits
+  `256m` / `512Mi` ([helm-values.md](helm-values.md#scheduler)); the scheduler pod is replaced once.
+- **`--reuse-values` keeps the old default.** Helm's `--reuse-values` renders with the defaults of
+  the chart the release runs, so the scheduler would stay at `64Mi` / `256Mi`. Set the two memory
+  values in the upgrade (your other values stay):
+
+  ```sh
+  helm repo update brf-tech
+  helm upgrade runr brf-tech/runr --version 0.7.1 -n runr --reuse-values \
+    --set scheduler.resources.requests.memory=160Mi --set scheduler.resources.limits.memory=512Mi
+  ```
+
+  or upgrade with `--reset-then-reuse-values`, which keeps your values and takes every default of
+  0.7.1. A release that sets `scheduler.resources` itself keeps its own values: give it at least
+  `512Mi` of memory.
+- **The dependency bots** report in one weekly summary issue instead of an issue per finding
+  ([development.md](development.md#the-weekly-summary)); nothing an installation runs changes.
+
+### Back to 0.7.0
+
+A `helm rollback` (`helm history runr -n runr` lists the revisions); nothing runs on the database,
+and the region Job of the rollback moves the region agent and the event gateway back to 0.7.0. The
+scheduler goes back to `64Mi` / `256Mi`, and its top-of-the-hour runs can run out of memory again.
+**Never uninstall** to go back.
+
 ## 0.6.13 → 0.7.0
 
 0.7.0 moves RunR to the current major versions of its dependencies (Helm 4, Go 1.27, Trivy 0.76

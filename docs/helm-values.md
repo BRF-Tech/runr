@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.7.0 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.7.1 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.7.0` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.7.1` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -177,7 +177,7 @@ Replicas and resources with the chart defaults:
 | `runr-ui` | 2 | `50m` / `64Mi` | `200m` / `128Mi` |
 | `runr-reverb` | 1 | `100m` / `128Mi` | `500m` / `512Mi` |
 | `runr-horizon` | 1 | `200m` / `256Mi` | `1` / `1Gi` |
-| `runr-scheduler` | 1 | `50m` / `64Mi` | `256m` / `256Mi` |
+| `runr-scheduler` | 1 | `50m` / `160Mi` | `256m` / `512Mi` |
 | `runr-redis` (bundled) | 1 | `100m` / `128Mi` | `500m` / `512Mi` |
 | `runr-postgres` (bundled) | 1 | `200m` / `256Mi` | `1` / `1Gi` |
 | `runr-mailpit` (bundled) | 1 | `25m` / `32Mi` | `100m` / `64Mi` |
@@ -242,7 +242,7 @@ Reverb, the WebSocket server, is always installed.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `scheduler.resources` | requests `50m` / `64Mi`, limits `256m` / `256Mi` | |
+| `scheduler.resources` | requests `50m` / `160Mi`, limits `256m` / `512Mi` | Each minute `schedule:work` starts a `schedule:run`, and each run starts the due artisan commands; each of these PHP processes holds about 70 MB. A run that takes longer than a minute overlaps the next one, so the peak is several of them at once |
 
 ### app, queue and cache
 

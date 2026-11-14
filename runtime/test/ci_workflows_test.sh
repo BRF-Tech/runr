@@ -17,9 +17,10 @@
 #     ran and passed; Playwright's); the dev stack (docker-compose.yml) creates the mount points of
 #     its volumes in the checkout, vue/node_modules and api/vendor, as the checkout's owner, so the
 #     stack suite's npm ci on the runner can write there;
-#   - upstream-releases.yml runs the Knative and Helm chart release checks every day and files an
-#     issue per finding; each chart of the Helm check has a pin in the code to compare with
-#     (helm_releases_check_test.sh tests the comparison);
+#   - upstream-releases.yml runs the Knative and Helm chart release checks every day and lists the
+#     findings in the weekly summary through ci/deps-digest.sh (deps_digest_test.sh tests it); each
+#     chart of the Helm check has a pin in the code to compare with (helm_releases_check_test.sh
+#     tests the comparison); deps-test.yml reports on the summary through ci/deps-digest.sh too;
 #   - deps-test.yml (the dependency test bot) runs every week and by hand, never on a push or a
 #     pull request; its GITHUB_TOKEN never writes contents and it opens no pull request; it pushes
 #     only through ci/deps-release.sh: one atomic push of the origin's main, next and the release
@@ -258,7 +259,9 @@ has "$on" "cron: '" "upstream-releases.yml has no schedule"
 grep -qxE '  workflow_dispatch:' <<<"$on" || fail "upstream-releases.yml cannot be run by hand"
 has "$(cat "$up")" 'bash ci/check-knative-releases.sh' "upstream-releases.yml does not check the Knative releases"
 has "$(cat "$up")" 'bash ci/check-helm-releases.sh' "upstream-releases.yml does not check the Helm chart releases"
-has "$(cat "$up")" 'gh issue create' "upstream-releases.yml files no issue"
+has "$(cat "$up")" 'bash ci/deps-digest.sh file "$RELEASES_REPORT_DIR"' "upstream-releases.yml does not list the findings in the weekly summary (ci/deps-digest.sh file)"
+has "$(cat "$up")" 'bash ci/deps-digest.sh apply' "upstream-releases.yml does not apply the summary's operations (ci/deps-digest.sh apply)"
+grep -qE '^ *gh issue (create|edit|close|comment)' "$up" && fail "upstream-releases.yml writes issues other than through ci/deps-digest.sh"
 for wf in "$wfdir"/*.yml; do
   [ "$wf" = "$up" ] || [ "$(basename "$wf")" = deps-test.yml ] && continue
   grep -qE 'issues: write' "$wf" && fail "$(basename "$wf") can write issues"
@@ -278,7 +281,7 @@ while IFS='|' read -r name _ _ _ pin_file pin_constant; do
   grep -qE "const +${pin_constant} *= *'[^']+'" "$root/$pin_file" \
     || fail "ci/check-helm-releases.sh: no ${pin_constant} in ${pin_file} for ${name}"
 done <<<"$charts"
-echo "ok - upstream-releases.yml: Knative and Helm chart releases, daily, an issue per finding; every chart has its pin"
+echo "ok - upstream-releases.yml: Knative, Helm chart and package releases, daily, listed in the weekly summary; every chart has its pin"
 
 # --- deps-test.yml: the dependency test bot -------------------------------------------------------
 deps="$wfdir/deps-test.yml"
@@ -375,7 +378,7 @@ grep -E -A1 "${gitcmd} push" "$rel" | grep -E -- '--force|--force-with-lease|--m
 grep -nE 'update-ref -d ' "$rel" | grep -vF 'update-ref -d "refs/tags/${NEW_TAG}"' | grep -vF 'update-ref -d refs/deps-release/release' \
   && fail "ci/deps-release.sh deletes other refs than its own unpushed tag and its temporary ref"
 grep -qF 'bash "$ROOT/ci/deps/check-attribution.sh" "$pub" "$PUBLIC_BASE" "$p"' "$rel" || fail "ci/deps-release.sh does not check the attribution rule before the push"
-for s in deps-bump.sh deps-plan.sh deps-run.sh; do
+for s in deps-bump.sh deps-plan.sh deps-run.sh deps-digest.sh; do
   grep -qE "${gitcmd} (push|merge|rebase|reset --hard)( |\$)" "$root/ci/$s" && fail "ci/${s} pushes or rewrites history"
 done
 # every dependency of the bot: a chart of the release check with its pin, or Knative's table; every
@@ -432,6 +435,12 @@ done
 has "$(job "$deps" batch)" 'needs: [plan, bump, unit, shell, check, ui, ui-stack, kind]' "deps-test.yml puts the bumps together before each is tested"
 has "$release_job" 'needs: [plan, bump, batch, batch-unit, batch-shell, batch-check, batch-ui, batch-ui-stack, batch-kind]' "deps-test.yml releases before the combined tree is tested"
 has "$release_job" "bash ci/deps-run.sh pick \"\$RUNNER_TEMP/deps\" \"\$RUNNER_TEMP/repo\"" "deps-test.yml does not pick the run's release through ci/deps-run.sh pick"
+# the weekly summary: the rows' results, the run's start (testing) and a bump job that failed go
+# through ci/deps-digest.sh report and apply (no comment on the summary)
+for j in release plan bump-failed; do
+  has "$(job "$deps" "$j")" 'bash ci/deps-digest.sh report' "deps-test.yml's ${j} job does not report on the weekly summary through ci/deps-digest.sh"
+  has "$(job "$deps" "$j")" 'bash ci/deps-digest.sh apply' "deps-test.yml's ${j} job does not apply the summary's operations through ci/deps-digest.sh"
+done
 # every suite of a package group: a Kind suite ci/deps/bump-packages.sh knows, a check of
 # ci/deps-check.sh, or the console's (routed to their jobs above)
 pkgs="$(sed -n '/^DEPS_PKG=(/,/^)/p;/^DEPS_DOCKERFILES=(/,/^)/p' "$root/ci/deps/packages.sh" | grep -F '|' || true)"

@@ -710,31 +710,37 @@ cluster or in its OpenBao (`runtime/lib/test-region-move.sh` lists every case).
 
 ### Dependency test bot
 
-`.github/workflows/deps-test.yml` tests the new versions `upstream-releases.yml` files issues for,
-and releases the ones that pass: **one run, one release**, a patch release of RunR with every green
+`.github/workflows/deps-test.yml` tests the new versions `upstream-releases.yml` lists in the
+[weekly summary](#the-weekly-summary) (one issue per week, one row per dependency), and releases
+the ones that pass: **one run, one release**, a patch release of RunR with every green
 bump of the run. It builds on the last release, not on `next` (the development branch of the
 private development repository, origin): nothing unfinished of `next` ships in a release of the
 bot. The workflow's `GITHUB_TOKEN` stays read-only on contents; the release is pushed with a GitHub
 App's token and the origin's deploy key.
 
 It runs on Saturdays at 06:41 UTC, after that day's release check, and by hand: **Actions →
-Dependency tests → Run workflow**, or `gh workflow run deps-test.yml -f issue=8`. A run takes every
-open issue `deps: <chart> <version> released`, `Knative 1.<minor> released: update
-KNATIVE_K8S_COMPAT` or `deps: <group> [<fingerprint>]: …` (a package group, see [Package
-dependencies](#package-dependencies)) that has no label yet. Of several open issues of one dependency it tests the
-newest version and closes the older ones as superseded. `Knative 1.<minor> is not in
-KNATIVE_K8S_COMPAT` only gets the label `needs attention`: a person adds the minor's row and its
-minimum Kubernetes version.
+Dependency tests → Run workflow**, or `gh workflow run deps-test.yml -f issue=<summary>` (every open
+row of that week's summary), `-f issue=<summary>:<group>` (one row; the group's row is found in
+whichever summary it has carried over to) or `-f issue=<N>` (an issue of its own). A run takes
+every row of the open summary in state `new`, `testing` (a run that did not finish) or `green`
+(passed, not shipped yet) — a chart's version, a Knative release or a package group's updates (see
+[Package dependencies](#package-dependencies)) — and every open issue of its own `deps: <group>
+[<fingerprint>]: …`, `deps: <chart> <version> released` or `Knative 1.<minor> released: …` that has
+no label yet. A row or issue that needs attention is tested only when the run names it (the
+summary's number names them all). Of several findings of one dependency it tests the newest and
+closes an older issue as superseded. `Knative 1.<minor> is not in KNATIVE_K8S_COMPAT` is an issue
+for a person: they add the minor's row and its minimum Kubernetes version.
 
 **The base** is the newest release tag `v<x.y.z>` of the origin (`ci/deps-release.sh base`). The
 bot releases on top of it only when the origin's `main` is that tag, `next` contains it, and this
-repository's `main` is its public commit with the same tree. Otherwise every issue of the run gets
-`needs attention` with the reason, and nothing is tested: a release under way, commits on the
+repository's `main` is its public commit with the same tree. Otherwise every row of the run gets
+`needs attention` (one issue for the run with the reason; an issue of its own gets the label and
+a comment), and nothing is tested: a release under way, commits on the
 public `main` that are in no release (the bot's tree would leave them out), or a release of the bot
 that did not finish (see *Resume*). A dependency the base's own bump does not know yet (a package
 group added after the tag: the tag's `ci/deps/packages.sh` has no row of it, or the tag has none)
-is held with that reason and no label: the next full release brings it, and a run after it tests
-the issue by itself.
+is held with that reason (its row back to `new`): the next full release brings it, and a run after
+it tests the row by itself.
 
 Each version is first made and tested alone:
 
@@ -794,8 +800,8 @@ Each version is first made and tested alone:
    line in the changelog's and `docs/upgrade.md`'s sections, the suites of all of them), which next
    must take (step 3). A bump that is not made mechanically there (its bump needs a person or
    fails, or the release cannot be made with it) stops the batch before it: it gets `needs
-   attention` with the reason, and the bumps after it a comment that they passed alone and wait for
-   the next run, with no label. Two bumps or more are tested together in a second test phase of
+   attention` with the reason (its row moves to an issue of its own), and the bumps after it stay
+   `green`: they passed alone and wait for the next run. Two bumps or more are tested together in a second test phase of
    the same run, on `deps/batch`: the union of their suites (PHPUnit when one of them needs it,
    `runtime/test`, their checks and Kind suites, each command and environment once). A batch of one
    is the tree that was tested alone. When the combined tree fails a suite, the bump that breaks it
@@ -803,9 +809,9 @@ Each version is first made and tested alone:
    failed one: the bot releases the bumps before it (the batch's own commits of them, with a release
    commit of their own; not tested again, since each passed alone and its suites passed on the
    larger tree; the first alone is its tree that was tested alone). The breaker gets `needs
-   attention` and a comment with the failed suites and the bumps it was combined with; the bumps
-   after it wait for the next run, with no label. A red bump is left out and blocks none of the
-   green ones. A security finding still starts a run of its own the same day
+   attention` (an issue of its own with the failed suites and the bumps it was combined with); the
+   bumps after it stay `green` and wait for the next run. A red bump is left out and blocks none of
+   the green ones. A security finding still starts a run of its own the same day
    (`upstream-releases.yml`).
 6. **Green: the release** of the batch, one per run (one release at a time, the workflow's
    concurrency group):
@@ -835,11 +841,14 @@ Each version is first made and tested alone:
    4. *helm*: helm.brf.sh lists `runr <x.y.z+1>` within 30 minutes, and its chart is the release's
       (`helm pull` against `helm package` of the release's `helm/`, file by file).
 
-   Every issue of the release gets the release, the bumps it came with, the commits, the run of
-   the images, its suites and those of the combined tree and the label `deps: passed`, and is
-   closed.
-7. **Red**: the label `needs attention` and a comment with the failing suites, their errors and
-   the run. Nothing of it is pushed; the run's other bumps go without it. The version waits until
+   Every row of the release becomes `green → shipped in v<x.y.z+1>` (its Item the GitHub release);
+   an issue of its own gets the release, the bumps it came with, the commits, the run of the
+   images, its suites and those of the combined tree and the label `deps: passed`, and is closed.
+   The step summary of the run has that comment for every bump.
+7. **Red**: the row moves to an issue of its own, `deps: <group> [<fingerprint>]: …` (labels
+   `deps`, `needs attention`; `security` too for a security finding), with the failing suites,
+   their errors and the run, and its marker with the updates; the row says `red` and its Item links
+   the issue. Nothing of it is pushed; the run's other bumps go without it. The version waits until
    someone runs the workflow with the issue's number (which takes the label off and tests it
    again), or a newer release of the dependency supersedes the issue.
 
@@ -850,48 +859,120 @@ Traefik chart with a new app version (RunR pins its image from the reqs mirror, 
 BRF-Tech/runr-runtimes publishes first); a kata-deploy chart whose objects changed beyond its
 version (RunR renders kata-deploy's DaemonSet itself); a pin the console or the landing page
 names; a Knative minor without its unreleased row, or without a Kind node image of a Kubernetes it
-supports; a release the pin rules or `next` cannot take. The comment says which.
+supports; a release the pin rules or `next` cannot take. Its issue of its own says which.
 
-**A release that fails** after its checks stops where it is and says so on its issues (label
-`needs attention`): what was done (the origin's push, the public push, the images, the GitHub
-release, the chart) and what failed. Nothing is published before the images are checked: a failed
-`release-images.yml` run or a tag that does not name the digest the run pushed makes no GitHub
-release, and the chart's publish waits for that release. **Resume**: once the cause is fixed (the
-failed jobs of the images' run re-run, a new package made public), run the workflow with `resume`
-= `v<x.y.z+1>` and the issues' numbers (comma-separated, as the comment names them): the bot reads
+**A release that fails** after its checks stops where it is and says so: its rows `needs
+attention`, linked to one issue for the run (`deps: a dependency test run needs a person (<week>)`,
+labels `deps`, `needs attention`), an issue of its own a comment and the label: what was done (the
+origin's push, the public push, the images, the GitHub release, the chart) and what failed. Nothing
+is published before the images are checked: a failed `release-images.yml` run or a tag that does
+not name the digest the run pushed makes no GitHub release, and the chart's publish waits for that
+release. **Resume**: once the cause is fixed (the failed jobs of the images' run re-run, a new
+package made public), run the workflow with `resume` = `v<x.y.z+1>` and `issue` = the refs the
+issue names (`<summary>:<group>` of each row, an issue's number; comma-separated): the bot reads
 the release and its bumps from the origin's tag (a tag of the bot only, its trailer lines), does
 what is not done yet (the public push, then the images, the GitHub release and the chart) and
-closes the issues. Every step checks what is there first, so it can run again.
+ships the rows (closes the issues). Every step checks what is there first, so it can run again.
+The run's issue closes itself once none of its rows waits for it.
 
 **Dry run** (`dry_run`): the whole run, with the release made, merged, signed and checked
-(attribution included) and nothing pushed, created, labelled or commented; the images, GitHub
-release and chart steps check the base release instead, read-only. The step summary has what the
-issues would get, the artifact `deps-release` the release notes and the steps. Without the App or
-the signing key a dry run reads anonymously and leaves its tags unsigned (it says so).
+(attribution included) and nothing pushed, created, edited, labelled or commented; the images,
+GitHub release and chart steps check the base release instead, read-only. The step summary has
+what each bump would get, the artifact `deps-release` the release notes and the steps. Without the
+App or the signing key a dry run reads anonymously and leaves its tags unsigned (it says so).
 
-A new kind of dependency adds what tells it apart, not a release: its issue title (`ci/deps-plan.sh`),
-its row of `DEPS_BOT` with its suites (`ci/deps/lib.sh`) and its bump in `ci/deps-bump.sh` (the pin,
-its `CHANGELOG.md` line, its `suites.json`). `ci/deps-release.sh` releases any bumps that are
-commits of the bot on the tag, each with its trailer and its line under `[Unreleased]`.
+A new kind of dependency adds what tells it apart, not a release: its issue title (`ci/deps-plan.sh`,
+`ci/deps/digest.jq`), its row of `DEPS_BOT` with its suites (`ci/deps/lib.sh`) and its bump in
+`ci/deps-bump.sh` (the pin, its `CHANGELOG.md` line, its `suites.json`). `ci/deps-release.sh`
+releases any bumps that are commits of the bot on the tag, each with its trailer and its line under
+`[Unreleased]`.
+
+#### The weekly summary
+
+`upstream-releases.yml` (daily) and `deps-test.yml` keep **one issue per ISO week** that lists what
+the dependency bots found and did, instead of an issue per finding (`ci/deps-digest.sh`, its rules
+in `ci/deps/digest.jq`, tested by `runtime/test/deps_digest_test.sh`). The format is shared with
+filex's dependency bot (bot name `runr-deps` here):
+
+- **Title** `deps: week 2026-W46` (ISO week, UTC); label `deps`. **Summary marker**: the body's
+  last line, `<!-- runr-deps:digest:2026-W46 -->`.
+- **Table** `| Dependency | Version | State | Item | Note |`, one row per dependency. **Row
+  marker**: the first cell is the id in backticks, then `<!-- runr-deps:row:<id> -->`
+  (`` | `npm-vue` <!-- runr-deps:row:npm-vue --> | … ``). A bot's own marker (the summary's, a
+  major versions issue's, a run's issue's) counts only as the body's last line: one quoted in a
+  person's text is none, and none of them is the `deps-bot` data marker below.
+  `<id>` is the package group (`npm-vue`, `pins-ci`, …), the chart (`zot`) or `knative`: one row
+  per group, a newer finding of it replaces the row. A major a hold keeps is a row of its own,
+  `<group>/<package>` (`npm-vue/cronstrue`).
+- **Version**: a group's updates (`` `axios` 1.21.0 → 1.21.1 ``, the first eight and "and N
+  more"), a chart's or Knative's version, a held major's `pinned → newest`.
+- **State**, exactly one of: `new` (found, not tested yet); `testing` (a run tests it, Item the
+  run); `green` (passed, not shipped yet: it waits for the next run, the base moved under it, or
+  it landed on `next` and ships with the next release — the Note says which); `green → shipped
+  in vX.Y.Z` (released; a bump that landed on `next` once the check no longer finds it on the
+  public `main`, in that release); `red` (its bump failed: an issue of its own, the Item);
+  `needs attention` (a person has to act: the Item is the issue); `held (<reason>)` (a major a hold
+  keeps, the reason of `ci/deps/holds.txt`); `closed` (closed without shipping: superseded, the
+  last release has it, no longer found, its issue closed).
+- **Item**: the issue a person acts in (`#N`), else the release of a shipped row or the last run.
+  **Note**: `security: <advisory ids>` for a finding with an advisory, then why (a green row's
+  wait, the run's attempt, …).
+- RunR keeps each row's data, which the test bot reads (its updates with their files, digests and
+  commits, the fingerprint, the date it was found), in one hidden `<!-- deps-bot {"id", "kind",
+  "group", "version", "state", …} -->` per row above the summary marker.
+- **A week opens its summary only when it has movement** (a new finding, a test result, a
+  release). Its open rows (not `green → shipped` or `closed`; the `held` ones too) carry over into
+  the next summary when there is one; the last one then gets `Continued in #N.` above its marker and closes,
+  and the new one starts with `Continued from #N.`. In a later week a summary with nothing open
+  closes with `Closed at the end of the week: nothing was left open.`; a quiet week leaves an open
+  one open (edited at most: a run that starts, a row whose issue was closed). The bots edit the
+  body; they write no comment on a summary, and an issue they close gets its closing text in its
+  body: a finding filed as an issue of its own before the summary, `Folded into the weekly summary
+  #N: the bot opens a separate issue only when a person has to do something.`
+- **Security**: a finding with an advisory is a row like any other, its Note `security: <ids>`,
+  tested the same day (`upstream-releases.yml` starts `deps-test.yml` with `issue=<summary>:<group>`):
+  `testing` → `green` → `green → shipped in vX.Y.Z`; it gets an issue of its own only if it goes red.
+- **Separate issues**, only where a person has to do something: a red bump (above, `deps:
+  <group> [<fingerprint>]: …`, tested again through it); a run that needs a person (`deps: a
+  dependency test run needs a person (<week>)`, marker `<!-- runr-deps:incident -->`, closed by
+  the bot once none of its rows waits for it); `Knative 1.<minor> is not in KNATIVE_K8S_COMPAT`;
+  and **one issue per group for its major versions**: `deps: <group> major versions need a
+  decision`, marker `<!-- runr-deps:majors:<group> -->`, labels `deps` and `needs attention`, a
+  table `| Dependency | Pinned | Newest major | allow |` (`allow`: the constraint of the manifest or
+  pin). The bot edits its list every day, closes it when the list is empty and reopens it when a
+  person closed it while the list is not: a person decides a major by moving it, or by a hold
+  with its reason, which turns it into a `held` row of the summary.
+- A finding is listed once: one a summary row or an issue already had, open or closed, is not
+  listed again. A group whose sources were all read (`checked`) and that no longer reports a
+  finding closes its open row, or ships its landed one.
+
+The first daily run after this change folds the findings that were issues of their own (open, not
+labelled `needs attention`) into the week's summary and the single majors (`deps: <group> <name>
+<line> released (outside …)`) into their group's major versions issue; a red issue stays, and a
+newer finding of its group supersedes it.
 
 #### Package dependencies
 
 Besides the charts and Knative, the bot follows every package RunR ships or builds with: the
 groups of `ci/deps/packages.sh` (`DEPS_PKG`, `DEPS_DOCKERFILES`, `DEPS_PINS`). `ci/check-package-releases.sh`
-(daily in `upstream-releases.yml`, read-only) files **one finding per group**: every minor and patch
-update of one manifest found in one check is one issue, `deps: <group> [<fingerprint>]: <n>
-updates: <name> <version>, …`, whose body ends with the marker the bot reads (`<!-- deps-bot
-{"group", "updates": [{name, from, to, …}], "urgent", "advisories"} -->`). The fingerprint is that
-of the set, so the same set is filed once; a new release of one of its packages files a new set,
-and the plan tests the newest issue of a group and closes the older ones as superseded. An update
-outside the manifest's constraint (a new major, a new minor of a 0.x caret range, an exact pin, a
-new Go major path, a toolchain image's next line, the Go toolchain an advisory of the standard
-library needs) is an issue of its own per release line, `deps: <group> <name> <line> released
-(outside <constraint>)`, which only gets `needs attention`: a person moves it with the code it
-needs. A security advisory (`composer audit`, `npm audit`, `govulncheck`) adds its package to the
-group's finding (a transitive one too), marks it `(security)` with the label `security`, and
+(daily in `upstream-releases.yml`, read-only) reports **one finding per group**: every minor and
+patch update of one manifest found in one check is one finding, `deps: <group> [<fingerprint>]: <n>
+updates: <name> <version>, …`, with the marker the bot reads (`<!-- deps-bot {"group", "updates":
+[{name, from, to, …}], "urgent", "advisories"} -->`): one row of the [weekly
+summary](#the-weekly-summary). The fingerprint is that of the set, so the same set is listed once;
+a new release of one of its packages is a new set, which replaces the group's row (an older issue
+of the group is closed as superseded). An update outside the manifest's constraint (a new major, a
+new minor of a 0.x caret range, an exact pin, a new Go major path, a toolchain image's next line,
+the Go toolchain an advisory of the standard library needs) is reported per release line, `deps:
+<group> <name> <line> released (outside <constraint>)` with its marker (`"kind": "outside"`), and
+collected into the group's **major versions issue** (`deps: <group> major versions need a
+decision`): a person moves it with the code it needs, or holds it with its reason. A major a hold
+keeps is written to `held/` instead, a `held (<reason>)` row of the summary. A security advisory
+(`composer audit`, `npm audit`, `govulncheck`) adds its package to the group's finding (a
+transitive one too) and marks it `(security)`: its row's Note says `security: <advisory ids>`, and
 `upstream-releases.yml` starts `deps-test.yml` for it the same day; of a run's green bumps an urgent
-one goes first. Every tracked `composer.json`, `package.json`, `go.mod`, `pyproject.toml`,
+one goes first. Every group whose sources were all read is a line of `checked` (a finding it no
+longer reports is gone). Every tracked `composer.json`, `package.json`, `go.mod`, `pyproject.toml`,
 `requirements*.txt`, `Cargo.toml` and Dockerfile is a group's, a Dockerfile of the table or listed
 in `DEPS_UNTRACKED` with its reason (today the API's modules, merged into `api/composer.json`, and
 `examples/runtime-sources/`, a copy of BRF-Tech/runr-sample-custom-executor), and every version
@@ -928,8 +1009,8 @@ RunR's `-runr.N`) is RunR's patched build of upstream: every newer release is a 
 as `go-toolchain`, with the advisories' finding), never a bump.
 
 **Holds** (`ci/deps/holds.txt`, `GROUP NAME VERSIONS REASON`): what a person pinned on purpose.
-The check leaves them and names each one with its reason; a bump that would move one goes to a
-person. Today: `cronstrue` and `@playwright/test` (pinned exactly in `vue/package.json`: the warmer
+The check leaves them and names each one with its reason (a major it keeps is a `held (<reason>)`
+row of the weekly summary, never an issue); a bump that would move one goes to a person. Today: `cronstrue` and `@playwright/test` (pinned exactly in `vue/package.json`: the warmer
 editor's tests compare cronstrue's wording; each Playwright brings its own Chromium), the Spin
 shim's Rust and cross-rs images (by digest, with upstream's toolchain) and its protoc, libseccomp
 and containerd-shim-wasm pins (upstream's build inputs, which move with containerd-shim-spin), the
@@ -980,8 +1061,10 @@ ones of a run **land on next together**, with no release: made again one after t
 by `next`'s own bump (step 5; two or more tested together on `deps/batch-next` in the second
 phase), and pushed in one fast-forward of the origin's `next` (`ci/deps-release.sh land`, with the
 deploy key, never forced, after the attribution check), before the release, whose merge into
-`next` takes the landed `next`. Their issues get `deps: passed` and are closed, and the next full
-release carries them. A bump made on the tag that turns out to ship nothing (composer
+`next` takes the landed `next`. Their rows say `green` with the Note "landed on next: ships with
+the next release" (an issue of its own gets `deps: passed` and is closed), and the next full
+release carries them: once the daily check no longer finds them on the public `main`, the row is
+`green → shipped in v<that release>`. A bump made on the tag that turns out to ship nothing (composer
 `packages-dev` only, npm test tooling only) is made again on next. A `next` that moved since is
 tested again on the new one (the run's dispatch, as a moved release). One release and one landing
 per run.
@@ -1134,8 +1217,8 @@ GitHub Actions is the repository's CI; the workflows live in `.github/workflows/
 | `dependency-audit.yml` → `composer` | `composer audit --locked` of `api/` | same | no |
 | `e2e.yml` → `kind` | `runtime/ci.sh test` (Kind, Knative and the Compose stack on the runner's Docker); the steps are `kind-suite.yml` | weekly, by hand | no |
 | `e2e.yml` → `ui-stack` | Playwright against the dev stack (`docker compose`, project `stack`, single-tenant, `E2E_SEED_DEMO=true`; report: artifact `e2e-ui-stack`); the steps are `ui-stack-suite.yml`, whose result is read from Playwright's JSON report too (`ci/ui-results.sh`) | weekly, by hand | no |
-| `upstream-releases.yml` → `check` | `ci/check-knative-releases.sh`, `ci/check-helm-releases.sh`; an issue per finding | daily, by hand | no |
-| `deps-test.yml` | the [dependency test bot](#dependency-test-bot): each new version of those issues moved on the last release tag and tested alone, then the green ones of the run together (their combined tree tested when two or more); one patch release of all of them per run (origin and this repository, the images, the GitHub release, the chart), merged into `next`; the bumps of `next` only landed in one fast-forward; else held | weekly, by hand (`dry_run`, `resume`) | no |
+| `upstream-releases.yml` → `check` | `ci/check-knative-releases.sh`, `ci/check-helm-releases.sh`, `ci/check-package-releases.sh`; the findings listed in the [weekly summary](#the-weekly-summary) (`ci/deps-digest.sh`), an issue only where a person has to do something | daily, by hand | no |
+| `deps-test.yml` | the [dependency test bot](#dependency-test-bot): each new version of the summary's open rows moved on the last release tag and tested alone, then the green ones of the run together (their combined tree tested when two or more); one patch release of all of them per run (origin and this repository, the images, the GitHub release, the chart), merged into `next`; the bumps of `next` only landed in one fast-forward; else held | weekly, by hand (`dry_run`, `resume`) | no |
 | `api-tests.yml`, `ui-tests.yml`, `kind-suite.yml`, `ui-stack-suite.yml` | reusable workflows (`on: workflow_call`): the API checks and the UI checks of `ci.yml`, one `runtime/ci.sh` Kind suite and the UI stack suite of `e2e.yml`, also run on a dependency bump by `deps-test.yml` (both of its test phases) | when called | — |
 | `release-images.yml` | the release images (below) | release tag `v<version>`, by hand | — |
 
@@ -1158,8 +1241,9 @@ Docker runs as root: `vue-init` creates that volume's mount point, `vue/node_mod
 checkout's owner first, as for a developer on Linux ([Services](#services)); without it `npm ci`
 fails with `EACCES`. `runtime/test/ci_workflows_test.sh` checks that `vue` waits for `vue-init`.
 
-`upstream-releases.yml` files an issue once per title (`deps: <chart> <version> released`,
-`Knative 1.<minor> released: …`): a title an issue already has, open or closed, is not filed again.
+`upstream-releases.yml` lists each finding once in the [weekly summary](#the-weekly-summary)
+(`deps: <chart> <version> released`, `Knative 1.<minor> released: …`, a package group's set): one a
+summary row or an issue already had, open or closed, is not listed again.
 `ci/check-helm-releases.sh` reads the version of each chart from the constant the code pins it in
 and reports only a newer one; a constant it cannot read fails the check.
 `bash ci/check-knative-releases.sh` makes the table change of a released Knative minor in a

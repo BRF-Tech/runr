@@ -111,9 +111,11 @@ horizon:
 
 # ─── Scheduler ───────────────────────────────
 scheduler:
+  # schedule:work and each schedule:run hold about 70 MB, and so does every artisan command a run
+  # starts. A run longer than a minute overlaps the next one: that peak went past 256Mi.
   resources:
-    requests: { cpu: 50m, memory: 64Mi }
-    limits:   { cpu: 256m, memory: 256Mi }
+    requests: { cpu: 50m, memory: 160Mi }
+    limits:   { cpu: 256m, memory: 512Mi }
 
 # ─── Redis ───────────────────────────────────
 # host empty → an internal Redis is installed

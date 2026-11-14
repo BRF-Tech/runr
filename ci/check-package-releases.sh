@@ -15,11 +15,15 @@ set -euo pipefail
 # body ends with a marker the bot reads: <!-- deps-bot {"group", "updates": [{name, from, to, …}],
 # "urgent", "advisories"} -->. An update outside the manifest's constraint (a new major, a new
 # minor of a 0.x caret range, an exact pin, a new Go major path, the Go toolchain) is a finding of
-# its own that a person decides: deps: <group> <name> <version> released (outside <constraint>).
-# A security advisory (composer audit, npm audit, govulncheck) makes the group's finding urgent:
-# its packages join it and the title says (security). The holds (ci/deps/holds.txt) are left and
-# named with their reasons. .github/workflows/upstream-releases.yml files an issue per title no
-# issue has yet.
+# its own that a person decides: deps: <group> <name> <version> released (outside <constraint>),
+# its marker {"group", "kind": "outside", "name", "line", "from", "to", "constraint", "where",
+# "why"}. A security advisory (composer audit, npm audit, govulncheck) makes the group's finding
+# urgent: its packages join it and the title says (security). The holds (ci/deps/holds.txt) are
+# left and named with their reasons; a release outside the constraint that a hold keeps is written
+# to RELEASES_REPORT_DIR/held/ (a line "held (<reason>)" of the weekly digest, no issue), and every
+# group whose sources were all read is a line of RELEASES_REPORT_DIR/checked.
+# ci/deps-digest.sh file turns the findings into the weekly digest and the few issues that need a
+# person (.github/workflows/upstream-releases.yml).
 #
 #   bash ci/check-package-releases.sh [KIND…]          composer npm go actions docker pins pypi
 #                                                      cargo (default: all)
@@ -62,6 +66,13 @@ report() {
   printf '%s\n\n%s\n' "$2" "$3" > "${RELEASES_REPORT_DIR}/$1.md"
 }
 unreadable() { echo "✗ $*"; unread=$((unread + 1)); }
+# checked GROUP — every source of GROUP was read: RELEASES_REPORT_DIR/checked lists it, so what it no
+# longer reports is gone (ci/deps-digest.sh)
+checked() {
+  [ -n "${RELEASES_REPORT_DIR:-}" ] || return 0
+  mkdir -p "$RELEASES_REPORT_DIR"
+  echo "$1" >> "$RELEASES_REPORT_DIR/checked"
+}
 
 # finding GROUP UPDATES ADVISORIES — the group's finding: UPDATES a JSON array of {name, from, to,
 # …}, ADVISORIES a JSON array of {id, package}
@@ -117,7 +128,26 @@ outside() {
   echo "▶ deps: $1 $2 ${line} released (outside $5)"
   report "deps-$1-outside-${slug}-${line}" "deps: $1 $2 ${line} released (outside $5)" "**${2}** ${4} is out; ${1} pins ${3} (${6}), and ${4} is outside \`${5}\`: ${8:-a new major, a new minor of a 0.x range, an exact pin or a new toolchain}. The bot does not move it: read its release notes, move it by hand (with the code it needs) and the bot takes the minor and patch updates from there.
 
-Reported by ci/check-package-releases.sh."
+Reported by ci/check-package-releases.sh.
+
+<!-- deps-bot $(jq -nc --arg g "$1" --arg n "$2" --arg l "$line" --arg f "$3" --arg t "$4" --arg c "$5" --arg w "$6" \
+  --arg why "${8:-a new major, a new minor of a 0.x range, an exact pin or a new toolchain}" \
+  '{group: $g, kind: "outside", name: $n, line: $l, from: $f, to: $t, constraint: $c, where: $w, why: $why}' | sed 's/-->/--\\u003e/g') -->"
+}
+
+# held_major GROUP NAME VERSION [FROM] [CONSTRAINT] — as held, for a release outside the constraint:
+# one a hold keeps (with its written reason) is no issue but a line of the weekly digest, "held
+# (<reason>)" (RELEASES_REPORT_DIR/held/, ci/deps-digest.sh)
+held_major() {
+  local reason slug
+  reason="$(deps_held "$1" "$2" "$3")" || return 1
+  echo "  held: $2 $3 ($reason)"
+  [ -n "${RELEASES_REPORT_DIR:-}" ] || return 0
+  mkdir -p "$RELEASES_REPORT_DIR/held"
+  slug="$(tr -c 'a-zA-Z0-9.\n-' '-' <<<"$2" | tr -s '-')"
+  jq -nc --arg g "$1" --arg n "$2" --arg v "$3" --arg l "$(series "$3")" --arg f "${4:-}" --arg c "${5:-}" --arg r "$reason" \
+    '{group: $g, name: $n, version: $v, line: $l, from: $f, constraint: $c, reason: $r}' > "$RELEASES_REPORT_DIR/held/$1--${slug}.json"
+  return 0
 }
 
 # held GROUP NAME VERSION — true (and says so) when the holds keep NAME at VERSION
@@ -156,7 +186,7 @@ detect_composer() {
   finding "$group" "$updates" "$advisories"
   while IFS=$'\t' read -r name from to; do
     [ -n "$name" ] || continue
-    held "$group" "$name" "$to" && continue
+    held_major "$group" "$name" "$to" "$from" && continue
     constraint="$(jq -r --arg n "$name" '(.require[$n] // ."require-dev"[$n]) // "?"' "${dir}/composer.json")"
     outside "$group" "$name" "$from" "$to" "$constraint" "${dir}/composer.json"
   done < <(jq -r '(.locked // .installed // [])[] | select(.latest != .version) | [.name, .version, .latest] | @tsv' <<<"$major")
@@ -182,7 +212,7 @@ detect_npm() {
     if [ -f "$lock" ] && [ -n "$from" ] && [ -n "$wanted" ] && deps_is_newer "$wanted" "$from" && ! held "$group" "$name" "$wanted"; then
       updates="$(jq -c --arg n "$name" --arg f "$from" --arg t "$wanted" --arg file "$lock" '. + [{name: $n, from: $f, to: $t, files: [$file]}]' <<<"$updates")"
     fi
-    if [ -n "$latest" ] && deps_is_newer "$latest" "${wanted:-${from:-0}}" && ! held "$group" "$name" "$latest"; then
+    if [ -n "$latest" ] && deps_is_newer "$latest" "${wanted:-${from:-0}}" && ! held_major "$group" "$name" "$latest" "${from:-$range}" "$range"; then
       outside "$group" "$name" "${from:-$range}" "$latest" "$range" "${dir}/package.json"
     fi
   done < <(jq -r '(.dependencies // {}), (.devDependencies // {}) | to_entries[] | [.key, .value] | @tsv' "$dir/package.json")
@@ -253,7 +283,7 @@ detect_go() {
     next="$(next_major "$name")"
     latest="$(curl -fsS --max-time 20 "${GOPROXY_URL}/$(goproxy_escape "$next")/@v/list" 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)" || latest=""
     [ -n "$latest" ] || continue
-    held "$group" "$name" "$latest" && continue
+    held_major "$group" "$name" "$latest" "$from" "$name" && continue
     outside "$group" "$next" "$from" "$latest" "${name}" "${dir}/go.mod"
   done < <(jq -sr '.[] | select((.Main // false | not) and (.Indirect // false | not)) | [.Path, .Version] | @tsv' <<<"$mods")
 }
@@ -306,7 +336,7 @@ detect_actions() {
       continue
     fi
     latest="$(newest_tag "$tags")"
-    if [ -n "$latest" ] && [ "$(deps_major "${latest%% *}")" -gt "$major" ] 2>/dev/null && [ -z "${seen[$key]+x}" ] && ! held "$group" "$repo" "${latest%% *}"; then
+    if [ -n "$latest" ] && [ "$(deps_major "${latest%% *}")" -gt "$major" ] 2>/dev/null && [ -z "${seen[$key]+x}" ] && ! held_major "$group" "$repo" "${latest%% *}" "${comment:-$ref}" "v${major}"; then
       outside "$group" "$repo" "${comment:-$ref}" "${latest%% *}" "v${major}" "$file"
     fi
     seen[$key]=1
@@ -389,7 +419,7 @@ detect_docker() {
         fi
       fi
       if [ -n "$bestmaj" ] && [ "$(line_of "$image" "$bestmaj")" != "$(line_of "$image" "$ver")" ] && deps_is_newer "$bestmaj" "$ver" \
-        && [ -z "${seen[$key]+x}" ] && ! held "$group" "$image" "$bestmaj"; then
+        && [ -z "${seen[$key]+x}" ] && ! held_major "$group" "$image" "$bestmaj" "$tag"; then
         outside "$group" "$image" "$tag" "${prefix}${bestmaj}${suffix}" "${prefix}$(line_of "$image" "$ver")${suffix}" "$file" \
           "$(if [ "$n" -le 2 ]; then echo "${prefix}${bestmaj}${suffix}"; else series "${prefix}${bestmaj}"; fi)"
       fi
@@ -476,7 +506,7 @@ detect_pins() {
     case "$line" in
       toolchain-*)
         # a newer line of the toolchain the code is written for: never a bump
-        if deps_is_newer "$newest" "${from#v}" && [ "$(pin_line "$line" "$newest")" != "$(pin_line "$line" "$from")" ] && ! held "$group" "$name" "$newest"; then
+        if deps_is_newer "$newest" "${from#v}" && [ "$(pin_line "$line" "$newest")" != "$(pin_line "$line" "$from")" ] && ! held_major "$group" "$name" "$newest" "$from"; then
           label="$(pin_line "$line" "$newest").x"
           if [ "$name" = go ]; then
             # the Go toolchain of every module: one finding with the advisories' (go-toolchain)
@@ -488,7 +518,7 @@ detect_pins() {
         fi ;;
       person)
         # RunR builds a patched upstream: every newer release is a person's
-        if deps_is_newer "$newest" "${from#v}" && ! held "$group" "$name" "${prefix}${newest}"; then
+        if deps_is_newer "$newest" "${from#v}" && ! held_major "$group" "$name" "${prefix}${newest}" "$from"; then
           outside "$group" "$name" "$from" "${prefix}${newest}" "$from" "$where" "" "RunR builds this upstream with patches of its own, so a person moves it with them"
         fi ;;
       *)
@@ -502,7 +532,7 @@ detect_pins() {
         fi
         # a newer line: a person's (patch: the newest row of its set reports it)
         if [ "$line" != patch ] && [ -n "$newest" ] && deps_is_newer "$newest" "${from#v}" && [ "$(pin_line "$line" "$newest")" != "$(pin_line "$line" "$from")" ] \
-          && ! held "$group" "$name" "${prefix}${newest}"; then
+          && ! held_major "$group" "$name" "${prefix}${newest}" "$from"; then
           label="$(series "${prefix}${newest}")"
           why=""
           if [ "$line" = minor ]; then
@@ -541,7 +571,7 @@ no_lock_check() {
     newest="${verdict%%$'\t'*}"
     out="${verdict##*$'\t'}"
     [ "$out" = 1 ] && [ -n "$newest" ] || continue
-    held "$group" "$name" "$newest" && continue
+    held_major "$group" "$name" "$newest" "$spec" "$spec" && continue
     outside "$group" "$name" "$spec" "$newest" "$spec" "$manifest" "" "$why"
   done <<<"$4"
   # without a lockfile the minor and patch updates need no change
@@ -660,7 +690,9 @@ for kind in $kinds; do
     echo ""
     echo "── ${group}"
     dir="$(deps_field "$(deps_pkg_row "$group")" 3)"
+    before="$unread"
     "detect_${kind}" "$group" "$dir"
+    [ "$unread" != "$before" ] || checked "$group"
   done
 done
 # the Go toolchain an advisory of the standard library needs: one finding for every module
@@ -668,6 +700,8 @@ if [ -n "$go_fixed" ]; then
   echo ""
   outside go-toolchain go "$go_from" "$go_fixed" "go ${go_from}" "every go.mod's go line, ci.yml's setup-go and the golang base image" "$go_fixed"
 fi
+# the Go toolchain's findings come from the Go groups and the pins: checked when all of them were
+[ "$unread" != 0 ] || [[ " ${kinds} " != *" go "* ]] || [[ " ${kinds} " != *" pins "* ]] || checked go-toolchain
 echo ""
 if [ "$unread" -gt 0 ]; then
   echo "${unread} source(s) could not be read or are unknown: see above."

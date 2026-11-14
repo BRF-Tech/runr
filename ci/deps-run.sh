@@ -51,13 +51,17 @@ set -euo pipefail
 #   bash ci/deps-run.sh resume DIR REPO PUBLIC TAG ISSUES
 #       a release of the bot that did not finish (the workflow's `resume`): REPO is a clone of the
 #       origin, TAG its tag; DIR/release/release.env (ci/deps-release.sh resume-env) and a report
-#       for each issue of ISSUES (comma-separated), which the release closes
+#       for each ref of ISSUES (comma-separated: N, or N:group for a line of the weekly digest),
+#       which the release closes
 #   bash ci/deps-run.sh actions DIR RUN_URL ATTEMPT [--dry-run]
 #       after the release and the landing (DIR/release/, DIR/land/: steps, failed, moved, see
 #       ci/deps-release.sh): what the issues get, one action per line of DIR/actions
 #       (tab-separated: comment ISSUE FILE, label ISSUE LABEL, unlabel ISSUE LABEL, close ISSUE,
-#       dispatch ISSUES ATTEMPT: the bumps of a release or a landing whose base moved, tested
-#       again), the comments in DIR/comments/; --dry-run writes the comments and no action
+#       dispatch REFS ATTEMPT: the bumps of a release or a landing whose base moved, tested
+#       again), the comments in DIR/comments/; and what the weekly digest's lines become, one per
+#       bump in DIR/lines (ci/deps-digest.sh report: a test of a digest line gets no action of
+#       its own, only its line; one of an issue of its own both). A test's ref (the plan's: N, or
+#       N:group) is DIR/bump/<dep>/ref. --dry-run writes the comments, no action and no line
 #
 # Needs bash, git, jq.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -125,6 +129,8 @@ cmd_bumps() {
     report="$dir/bump/$dep"
     mkdir -p "$report"
     echo "$issue" > "$report/issue"
+    # where the test came from: N (an issue of its own) or N:group (a line of the weekly digest)
+    jq -r ".[$i].ref // (.[$i].issue | tostring)" "$tests" > "$report/ref"
     echo "$version" > "$report/version"
     echo "$run_url" > "$report/run-url"
     rm -f -- "$report/updates.json" "$report/urgent" "$report/held" "$report/held-wait"
@@ -748,8 +754,8 @@ cmd_pick() {
 }
 
 cmd_resume() {
-  local dir="$1" repo="$2" public="$3" tag="$4" issues="$5" issue report label release base_tag
-  [[ "$issues" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "resume: the issue numbers (comma-separated)" >&2; exit 1; }
+  local dir="$1" repo="$2" public="$3" tag="$4" issues="$5" issue ref id report label release base_tag
+  [[ "$issues" =~ ^[0-9]+(:[a-z0-9-]+)?(,[0-9]+(:[a-z0-9-]+)?)*$ ]] || { echo "resume: the issue numbers (N, or N:group for a line of the digest; comma-separated)" >&2; exit 1; }
   mkdir -p "$dir/release" "$dir/outcome" "$dir/role"
   if ! bash "$ROOT/ci/deps-release.sh" resume-env "$repo" "$public" "$tag" > "$dir/release/release.env" 2> "$dir/release/resume.err"; then
     echo "resume: $(cat "$dir/release/resume.err")" > "$dir/release/failed"
@@ -759,14 +765,17 @@ cmd_resume() {
   base_tag="$(env_of "$dir/release/release.env" BASE_TAG)"
   # the tag says what it releases ("A dependency release of 0.6.8: Region Traefik chart 42.3.1.")
   label="$(git -C "$repo" cat-file tag "refs/tags/${tag}" 2>/dev/null | sed '1,/^$/d' | tr '\n' ' ' | sed -nE 's/.*A dependency release of [^:]*: (.*)\. .*/\1/p' || true)"
-  for issue in ${issues//,/ }; do
-    report="$dir/bump/resume-${issue}"
+  for ref in ${issues//,/ }; do
+    issue="${ref%%:*}"
+    id="resume-${ref//:/-}"
+    report="$dir/bump/${id}"
     mkdir -p "$report"
     echo "$issue" > "$report/issue"
+    echo "$ref" > "$report/ref"
     echo "$tag" > "$report/version"
     touch "$report/resumed" "$report/summary.md"
-    echo green > "$dir/outcome/resume-${issue}"
-    echo release > "$dir/role/resume-${issue}"
+    echo green > "$dir/outcome/${id}"
+    echo release > "$dir/role/${id}"
     echo "$base_tag" > "$report/base-tag"
     echo "$release" > "$report/head"
     echo "${label:-the release ${tag}}" > "$report/label"
@@ -841,11 +850,22 @@ role_deps() {
   return 0
 }
 
-# role_issues DIR ROLE — their issue numbers, comma-separated
+# ref_of REPORT — where a bump's test came from: N (an issue of its own) or N:group (a line of the
+# weekly digest)
+ref_of() { cat "$1/ref" 2>/dev/null || cat "$1/issue"; }
+
+# role_issues DIR ROLE — their refs (issue numbers, N:group for a digest's line), comma-separated
 role_issues() {
   local d list=""
-  for d in $(role_deps "$1" "$2"); do list="${list:+${list},}$(cat "$1/bump/$d/issue")"; done
+  for d in $(role_deps "$1" "$2"); do list="${list:+${list},}$(ref_of "$1/bump/$d")"; done
   echo "$list"
+}
+
+# rerun_hint REPORT — how a comment names the bump to run the workflow with
+rerun_hint() {
+  local ref
+  ref="$(ref_of "$1")"
+  if [[ "$ref" == *:* ]]; then echo "\`issue\` = \`${ref}\`"; else echo "this issue's number"; fi
 }
 
 # role_others DIR ROLE DEP — the other bumps of DEP's release (or landing), as the comments name them
@@ -860,7 +880,9 @@ role_others() {
 rerun_line() {
   local issues
   issues="$(role_issues "$dir" "$1")"
-  if [[ "$issues" == *,* ]]; then echo "the issue numbers \`${issues}\`"; else echo "this issue's number"; fi
+  if [[ "$issues" == *,* ]]; then echo "the issue numbers \`${issues}\`"
+  elif [[ "$issues" == *:* ]]; then echo "\`issue\` = \`${issues}\`"
+  else echo "this issue's number"; fi
 }
 
 # comment_release DIR DEP NAME — the comment of a bump of the run's release; verdict: what the issue
@@ -1014,9 +1036,10 @@ comment_land() {
 
 cmd_actions() {
   local dir="$1" run_url="$2" attempt="${3:-1}" dry="${4:-}" report dep issue version outcome base_tag head comment suite
-  local name role rstate lstate new_tag release land next_attempt verdict where retest=()
+  local name role rstate lstate new_tag release land next_attempt verdict where retest=() ref kind group lversion digest split
   mkdir -p "$dir/comments"
   : > "$dir/actions"
+  : > "$dir/lines"
   [[ "$attempt" =~ ^[0-9]+$ ]] || attempt=1
   next_attempt=$((attempt + 1))
   rstate="$(release_state "$dir" release)"
@@ -1024,14 +1047,43 @@ cmd_actions() {
   new_tag="$(env_of "$dir/release/release.env" NEW_TAG)"
   release="$(env_of "$dir/release/release.env" RELEASE)"
   land="$(env_of "$dir/land/release.env" LAND)"
-  # act ISSUE LINE… — the issue's actions (none in a dry run)
-  act() { [ "$dry" = --dry-run ] || printf '%s\n' "${@:2}" >> "$dir/actions"; }
+  # act ISSUE LINE… — the issue's actions (none in a dry run; none for a line of the digest, which
+  # ci/deps-digest.sh report updates from DIR/lines)
+  act() { [ "$dry" = --dry-run ] || [ "$digest" = 1 ] || printf '%s\n' "${@:2}" >> "$dir/actions"; }
+  # line STATE MODE NOTE [FILE] [RELEASE] [URL] — the bump's row of the weekly summary (a ref N:group)
+  # or the row that mirrors its issue (a ref N), fields separated by \x1f (none in a dry run).
+  # STATE: new, green, landed, shipped (RELEASE, URL the GitHub release), red, needs attention,
+  # closed; URL otherwise the run. MODE: line; split (a row that needs a person moves to an issue
+  # of its own, FILE its text); incident (the run needs a person: FILE goes into one issue for all
+  # such rows)
+  line() {
+    [ "$dry" != --dry-run ] || return 0
+    local mode="$2"
+    [ "$digest" = 1 ] || mode=line
+    printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' "$ref" "$kind" "$group" "$lversion" "$1" "$mode" \
+      "$(tr '\n\t\037' '   ' <<<"$3" | sed 's/ *$//')" "${4:-}" "${5:-}" "${6:-}" >> "$dir/lines"
+  }
   for report in "$dir"/bump/*/; do
     [ -d "$report" ] || continue
     report="${report%/}"
     dep="${report##*/}"
     issue="$(cat "$report/issue")"
     version="$(cat "$report/version")"
+    ref="$(ref_of "$report")"
+    digest=0
+    [[ "$ref" != *:* ]] || digest=1
+    group="$dep"
+    lversion="$version"
+    kind=chart
+    [ ! -s "$report/updates.json" ] || kind=group
+    [ "$dep" != knative ] || kind=knative
+    # a resumed release: its line is the group's open one (the digest's) or its issue's
+    if [ -e "$report/resumed" ]; then
+      kind=""
+      lversion=""
+      group=""
+      [ "$digest" = 0 ] || group="${ref#*:}"
+    fi
     # what the comments call it (a resumed release: what its tag says it releases)
     name="$(cat "$report/label" 2>/dev/null || echo "${dep} ${version}")"
     base_tag="$(cat "$report/base-tag" 2>/dev/null || true)"
@@ -1040,6 +1092,7 @@ cmd_actions() {
     [ "$(cat "$report/path" 2>/dev/null || echo release)" != next ] || where="next"
     outcome="$(cat "$dir/outcome/$dep" 2>/dev/null || echo error)"
     comment="$dir/comments/${issue}.md"
+    [ "$digest" = 0 ] || comment="$dir/comments/${issue}-${dep}.md"
     case "$outcome" in
       current)
         {
@@ -1049,7 +1102,8 @@ cmd_actions() {
           echo ""
           echo "Closed by the dependency test bot ([run](${run_url}))."
         } > "$comment"
-        act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" "$(printf 'close\t%s' "$issue")" ;;
+        act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" "$(printf 'close\t%s' "$issue")"
+        line closed line "the last release has it" "" "" "$run_url" ;;
       held)
         if [ -e "$report/held-wait" ]; then
           # nothing a person does: the next full release brings what the bot needs
@@ -1059,13 +1113,16 @@ cmd_actions() {
             echo "Nothing was tested or pushed ([run](${run_url})). The issue keeps no label: a run after that release tests it by itself."
           } > "$comment"
           act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
+          line new line "$(cat "$report/held")" "" "" "$run_url"
         else
           {
             echo "**The bot cannot release now:** $(cat "$report/held")"
             echo ""
-            echo "Nothing was tested or pushed ([run](${run_url})). Once that is fixed, run **Actions → Dependency tests → Run workflow** with this issue's number."
+            echo "Nothing was tested or pushed ([run](${run_url})). Once that is fixed, run **Actions → Dependency tests → Run workflow** with $(rerun_hint "$report")."
           } > "$comment"
           act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
+          # one cause for every bump of the run: one comment on the digest says it
+          line "needs attention" incident "the bot cannot release now" "$comment" "" "$run_url"
         fi ;;
       attention)
         {
@@ -1073,7 +1130,8 @@ cmd_actions() {
           echo ""
           echo "Nothing was pushed: the origin and this repository are unchanged ([run](${run_url})). Once the last release can take it (or a person moved it), run **Actions → Dependency tests → Run workflow** with this issue's number to test it again; a newer release supersedes this issue by itself."
         } > "$comment"
-        act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" ;;
+        act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
+        line "needs attention" split "no mechanical bump: a person moves it" "$comment" "" "$run_url" ;;
       error)
         {
           echo "**The dependency test bot could not check ${name}** ([run](${run_url})): the next run tries again."
@@ -1082,7 +1140,8 @@ cmd_actions() {
           tail -n 15 "$report/bump.log" 2>/dev/null || echo "no log"
           echo '```'
         } > "$comment"
-        act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" ;;
+        act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
+        line new line "the bot could not check it: the next run tries again" "" "" "$run_url" ;;
       red)
         {
           echo "**Needs attention: ${name} failed on ${where}.** Nothing was released or pushed; the run's other bumps went without it."
@@ -1105,15 +1164,18 @@ cmd_actions() {
           echo ""
           echo "Fix what failed (on next, and in a release the bot can build on), or decide the version waits; then run **Actions → Dependency tests → Run workflow** with this issue's number. A newer release supersedes this issue by itself."
         } > "$comment"
-        act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" ;;
+        act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
+        line red split "failed on ${where}" "$comment" "" "$run_url" ;;
       green)
         role="$(cat "$dir/role/$dep" 2>/dev/null || echo nobatch)"
         verdict=comment
+        split=line
         case "$role" in
           release) comment_release "$dir" "$dep" "$name" > "$comment" ;;
           land) comment_land "$dir" "$dep" "$name" > "$comment" ;;
           breaker)
             verdict=attention
+            split="split"
             {
               cat "$dir/role/$dep.md"
               echo ""
@@ -1127,8 +1189,22 @@ cmd_actions() {
         case "$verdict" in
           passed) act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$PASSED_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" "$(printf 'close\t%s' "$issue")" ;;
           attention) act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" ;;
-          retest) act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"; retest+=("$issue") ;;
+          retest) act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"; retest+=("$ref") ;;
           comment) act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" ;;
+        esac
+        # the row of the weekly summary: what became of the bump, in a few words (its comment: the
+        # run's summary; the issue of a run that needs a person when the release or landing does)
+        case "$role:$verdict" in
+          release:passed) line shipped line "" "" "$new_tag" "$(step_field "$dir" release github 3)" ;;
+          land:passed) line landed line "" "" "" "$run_url" ;;
+          *:retest) line green line "the base moved under it: tested again, attempt ${next_attempt} of ${MAX_ATTEMPTS}" "" "" "$run_url" ;;
+          release:attention) line "needs attention" incident "its release ${new_tag} did not finish" "$comment" "" "$run_url" ;;
+          land:attention) line "needs attention" incident "its landing on next did not finish" "$comment" "" "$run_url" ;;
+          breaker:*) line "needs attention" "$split" "passed alone, failed together with this run's other bumps" "$comment" "" "$run_url" ;;
+          wait:*) line green line "passed alone; this run's release stops before it: the next run tests it again" "" "" "$run_url" ;;
+          release:comment|land:comment) line green line "the base moved under it ${MAX_ATTEMPTS} runs in a row: the next weekly run tests it again" "" "" "$run_url" ;;
+          release:none|land:none) ;;
+          *) line green line "passed alone; this run could not put its green bumps together: the next run tests it again" "" "" "$run_url" ;;
         esac ;;
     esac
   done
@@ -1147,5 +1223,5 @@ case "$command" in
   pick) cmd_pick "$@" ;;
   resume) cmd_resume "$@" ;;
   actions) cmd_actions "$@" ;;
-  *) sed -n '4,61p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '4,66p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

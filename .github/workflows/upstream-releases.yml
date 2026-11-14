@@ -3,10 +3,13 @@
 # installs into a region that are newer than the ones its code pins (ci/check-helm-releases.sh),
 # and the newer versions of the packages RunR ships or builds with (ci/check-package-releases.sh:
 # Composer, npm, Go modules, GitHub Actions pins, Dockerfile base images; one finding per group).
-# Each finding becomes an issue of this repository once: a title an issue already has, open or
-# closed, is not filed again. A finding with a security advisory gets the label "security" and is
-# tested by the dependency test bot the same day (deps-test.yml with its issue number), not on
-# Saturday.
+# Each finding is listed once, as a line of the week's digest issue "deps: week <ISO week>"
+# (ci/deps-digest.sh; docs/development.md → Dependency test bot → The weekly digest): a finding a
+# digest line or an issue already has, open or closed, is not listed again, and a quiet week opens
+# no digest. An issue of its own only where a person acts: a finding with a security advisory
+# (label "security", tested by the dependency test bot the same day: deps-test.yml with its issue
+# number, not on Saturday), one issue per group for its releases outside the constraint (one a
+# hold keeps with its reason is a digest line "held" instead), a Knative minor without its row.
 name: Upstream releases
 
 on:
@@ -86,35 +89,25 @@ jobs:
           GOTOOLCHAIN: auto
           GOFLAGS: -mod=mod
         run: bash ci/check-package-releases.sh
-      # one issue per finding whose title no issue (open or closed) has yet
-      - name: File the findings as issues
+      # the week's summary and the few issues where a person has to do something (ci/deps-digest.sh
+      # file): a finding no row and no issue had yet becomes a row (a security one is tested today:
+      # the bot's own run, one release at a time); a group's major versions are one issue; the
+      # findings filed as issues of their own before the summary fold into it
+      - name: The weekly summary and the issues
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASES_REPORT_DIR: ${{ runner.temp }}/releases
         run: |
-          shopt -s nullglob
+          set -o pipefail
+          gh label create deps --repo "$GITHUB_REPOSITORY" --color 0366d6 \
+            --description "The dependency bots' weekly summary and the issues they open" 2>/dev/null || true
           gh label create security --repo "$GITHUB_REPOSITORY" --color b60205 \
             --description "A security advisory: the dependency test bot tests it the same day" 2>/dev/null || true
-          urgent=()
-          for f in "$RELEASES_REPORT_DIR"/*.md; do
-            title="$(head -n 1 "$f")"
-            tail -n +3 "$f" > "$f.body"
-            known="$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 100 \
-              --search "\"${title}\" in:title" --json title --jq '.[].title')"
-            if grep -qxF -- "$title" <<<"$known"; then
-              echo "already filed: ${title}"
-              continue
-            fi
-            labels=()
-            [[ "$title" != *' (security)' ]] || labels=(--label security)
-            url="$(gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$f.body" "${labels[@]}")"
-            echo "filed: ${title} ${url}"
-            echo "- [${title}](${url})" >> "$GITHUB_STEP_SUMMARY"
-            [ "${#labels[@]}" -eq 0 ] || urgent+=("${url##*/}")
-          done
-          # a security advisory is tested today (the bot's own run: one release at a time)
-          if [ "${#urgent[@]}" -gt 0 ]; then
-            gh workflow run deps-test.yml --repo "$GITHUB_REPOSITORY" -f issue="$(IFS=,; echo "${urgent[*]}")"
-            echo "- deps-test.yml started for #${urgent[*]} (security)" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          gh label create "needs attention" --repo "$GITHUB_REPOSITORY" --color d93f0b \
+            --description "The dependency test bot holds it: a person decides" 2>/dev/null || true
+          mkdir -p "$RELEASES_REPORT_DIR"
+          gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 1000 \
+            --json number,title,state,labels,body,createdAt > "$RUNNER_TEMP/issues.json"
+          bash ci/deps-digest.sh file "$RELEASES_REPORT_DIR" "$RUNNER_TEMP/issues.json" "$(date -u +%F)" > "$RUNNER_TEMP/digest-ops.json"
+          bash ci/deps-digest.sh apply "$RUNNER_TEMP/digest-ops.json" | sed 's/^/- /' | tee -a "$GITHUB_STEP_SUMMARY"

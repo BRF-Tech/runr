@@ -5,8 +5,9 @@ set -euo pipefail
 # The latest version of every Helm chart RunR installs into a region from an upstream repository,
 # against the version the code pins. One newer than the pin is printed, and written to
 # RELEASES_REPORT_DIR when that is set: a Markdown file whose first line is its title, "deps:
-# <chart> <version> released". .github/workflows/upstream-releases.yml files an issue for each
-# title no issue has yet, so every new version is reported once. A chart at its pin is no finding.
+# <chart> <version> released"; every chart whose versions were read is a line of
+# RELEASES_REPORT_DIR/checked. ci/deps-digest.sh (.github/workflows/upstream-releases.yml) lists
+# each new version once, as a row of the weekly summary. A chart at its pin is no finding.
 #
 #   bash ci/check-helm-releases.sh
 #   RELEASES_REPORT_DIR=DIR bash ci/check-helm-releases.sh
@@ -95,6 +96,11 @@ for dep in "${DEPS[@]}"; do
         echo "✗ ${NAME}: could not read the latest version from ${SOURCE}"
         unread=$((unread + 1))
         continue
+    fi
+    # read: a version of the chart it no longer reports is gone (ci/deps-digest.sh)
+    if [ -n "${RELEASES_REPORT_DIR:-}" ]; then
+        mkdir -p "$RELEASES_REPORT_DIR"
+        echo "$NAME" >> "$RELEASES_REPORT_DIR/checked"
     fi
 
     if ! is_newer "$LATEST" "$PIN"; then

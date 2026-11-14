@@ -7,8 +7,9 @@ set -euo pipefail
 # gets its row uncommented and its latest chart pinned in FALLBACK_CHART_VERSIONS, in this
 # checkout, for review; a minor newer than every row is named (its minimum Kubernetes minor is
 # added by hand). Each finding is printed, and written to RELEASES_REPORT_DIR when that is set: a
-# Markdown file whose first line is its title. .github/workflows/upstream-releases.yml files an
-# issue for each title no issue has yet.
+# Markdown file whose first line is its title. ci/deps-digest.sh (.github/workflows/
+# upstream-releases.yml) lists a released minor once, as a row of the weekly summary, and files a
+# minor without its row as an issue for a person.
 #
 #   bash ci/check-knative-releases.sh
 #   RELEASES_REPORT_DIR=DIR bash ci/check-knative-releases.sh

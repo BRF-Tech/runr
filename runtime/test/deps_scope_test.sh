@@ -20,8 +20,9 @@
 #   - detection: the minor and patch updates of a group are one finding with its marker and
 #     fingerprint (the same set: the same title), an update outside the constraint (a major, a 0.x
 #     minor, an exact pin, a new Go major path, a toolchain image line) is a finding of its own per
-#     release line, an advisory makes the finding urgent (security) and adds its package, a hold is
-#     left with its reason, the Go toolchain is one finding for every module;
+#     release line (with its marker), an advisory makes the finding urgent (security) and adds its
+#     package, a hold is left with its reason (a major it keeps written for the weekly summary's held
+#     row), the Go toolchain is one finding for every module, the groups read are listed;
 #   - the plan takes a group's newest finding with its updates and supersedes the older ones; an
 #     update outside its constraint only gets the label;
 #   - the bumps: composer and npm move only their lockfile and decide release or next from what
@@ -499,6 +500,13 @@ grep -qxF 'deps: docker ghcr.io/brf-tech/runr/reqs/golang 1.27-alpine released (
   && grep -qxF 'deps: docker ghcr.io/brf-tech/runr/reqs/alpine 4.0 released (outside 3)' <<<"$titles" \
   && grep -qxF 'deps: docker ghcr.io/aquasecurity/trivy 0.60.x released (outside 0.58)' <<<"$titles" || fail "docker's lines: ${titles}"
 grep -q 'reqs/rust' <<<"$titles" && fail "the held Rust image was filed"
+# the weekly summary's inputs: a held release outside the constraint (a row "held (<reason>)"), a
+# release outside the constraint's marker (its group's major versions issue), the groups read
+jq -e '.group == "npm-vue" and .name == "cronstrue" and .version == "3.39.0" and .line == "3.x" and (.reason | test("pinned exactly"))' \
+  "$rd/held/npm-vue--cronstrue.json" >/dev/null || fail "the held release outside the constraint: $(cat "$rd"/held/*.json 2>/dev/null)"
+o="$(sed -n 's/.*<!-- deps-bot \(.*\) -->.*/\1/p' "$(grep -l -F 'deps: npm-vue vite 8.x released' "$rd"/*.md)")"
+[ "$(jq -c '[.kind, .group, .name, .line, .constraint]' <<<"$o")" = '["outside","npm-vue","vite","8.x","^6.4.5"]' ] || fail "the release outside the constraint's marker: ${o}"
+grep -qx npm-vue "$rd/checked" && grep -qx composer-api "$rd/checked" && grep -qx go-toolchain "$rd/checked" || fail "the groups read: $(cat "$rd/checked" 2>/dev/null)"
 # the same set again: the same titles (filed once)
 RELEASES_REPORT_DIR="$tmp/releases2" bash "$repo/ci/check-package-releases.sh" composer >/dev/null 2>&1 || true
 [ "$(head -n 1 "$tmp/releases2"/deps-composer-api-[0-9a-f]*.md)" = "$(grep -F 'deps: composer-api [' <<<"$titles")" ] || fail "the same set has another title"

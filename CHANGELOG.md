@@ -8,6 +8,42 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-14
+
+### Upgrade notes
+
+- **Upgrading from 0.7.0 needs no migration and no new value, but the scheduler's new default has
+  to reach the release.** The images of 0.7.0 are built again at 0.7.1, and the scheduler pod is
+  replaced once. `helm upgrade --reuse-values` renders with the defaults of the chart the release
+  runs, so it would keep the scheduler at `64Mi` / `256Mi`: add
+  `--set scheduler.resources.requests.memory=160Mi --set scheduler.resources.limits.memory=512Mi`,
+  or upgrade with `--reset-then-reuse-values` instead
+  ([0.7.0 → 0.7.1 in upgrade.md](docs/upgrade.md#070--071)).
+- **Back to 0.7.0 is a `helm rollback`**; nothing runs on the database.
+
+### Changed
+
+- **The dependency bots report in one weekly summary.** Instead of an issue per finding, the daily
+  release check and the dependency test bot keep one issue per week, `deps: week <ISO week>`, with
+  one row per dependency and its state (`new`, `testing`, `green`, `green → shipped in vX.Y.Z`,
+  `red`, `needs attention`, `held (<reason>)`, `closed`); a quiet week opens none, and the rows
+  still open carry over to the next one. A security finding is a row flagged `security: <advisory>`
+  and is still tested the same day. A separate issue only where a person has to do something: a
+  bump that went red, a test run that needs a person, and one issue per group for its major
+  versions (closed when its list is empty); a major held with a written reason is a `held` row
+  instead. The findings filed as issues of their own before are folded into the first summary. See
+  [docs/development.md](docs/development.md#the-weekly-summary).
+
+### Fixed
+
+- **The scheduler no longer runs out of memory.** Since 0.7.0 the run at the top of the hour can
+  take longer than a minute, and then it overlaps the next minute's run. `schedule:work`, each
+  `schedule:run` and every artisan command they start hold about 70 MB each. With those overlaps
+  `runr-scheduler` went past its 256Mi limit and was OOMKilled several times a day: 5 times in its
+  first 31 hours on both test regions. The default is now requests `50m` / `160Mi` and limits
+  `256m` / `512Mi` (`scheduler.resources`). A release that sets `scheduler.resources` itself keeps
+  its own values.
+
 ## [0.7.0] - 2026-11-13
 
 ### Upgrade notes
@@ -4649,7 +4685,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.0...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.1...main
+[0.7.1]: https://github.com/brf-tech/runr/releases/tag/v0.7.1
 [0.7.0]: https://github.com/brf-tech/runr/releases/tag/v0.7.0
 [0.6.13]: https://github.com/brf-tech/runr/releases/tag/v0.6.13
 [0.6.12]: https://github.com/brf-tech/runr/releases/tag/v0.6.12
