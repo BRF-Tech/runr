@@ -116,7 +116,7 @@ helm status runr -n runr      # ilk yöneticinin parolasının nasıl okunacağ�
 Chart gateway'i, UI'ı, API'yi, Horizon'u, zamanlayıcıyı ve Reverb'i, dış servislere
 yönlendirmediğiniz sürece PostgreSQL, Redis ve Mailpit'i kurar; migration ve bootstrap hook'ları
 ilk yöneticiyi oluşturur. Belirli bir sürümü kurmak için chart sürümünü sabitleyin
-(`--version 0.7.1`); API ve UI imajları onu izler. `edition=multi-tenant`, Tenancy ve Auth Provider
+(`--version 0.7.2`); API ve UI imajları onu izler. `edition=multi-tenant`, Tenancy ve Auth Provider
 modüllerini ve çok kiracılı konsol imajını açar.
 
 <details>

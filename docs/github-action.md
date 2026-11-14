@@ -36,7 +36,7 @@ upload the code as a new version and deploy it.
          - uses: actions/checkout@v4
 
          - id: runr
-           uses: brf-tech/runr/actions/deploy@v0.7.1
+           uses: brf-tech/runr/actions/deploy@v0.7.2
            with:
              api-url: https://runr.example.com
              token: ${{ secrets.RUNR_TOKEN }}
@@ -69,7 +69,7 @@ jobs:
           push: true
           tags: ghcr.io/acme/web:${{ github.sha }}
 
-      - uses: brf-tech/runr/actions/deploy@v0.7.1
+      - uses: brf-tech/runr/actions/deploy@v0.7.2
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -88,7 +88,7 @@ pull secret).
         service: [orders, billing, notify]
     steps:
       - uses: actions/checkout@v4
-      - uses: brf-tech/runr/actions/deploy@v0.7.1
+      - uses: brf-tech/runr/actions/deploy@v0.7.2
         with:
           api-url: ${{ vars.RUNR_API_URL }}
           token: ${{ secrets.RUNR_TOKEN }}
@@ -103,7 +103,7 @@ before the deploy, so the new deployment runs with them. Take the values from re
 environment secrets:
 
 ```yaml
-      - uses: brf-tech/runr/actions/deploy@v0.7.1
+      - uses: brf-tech/runr/actions/deploy@v0.7.2
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -173,7 +173,7 @@ jobs:
         run: sed -i "s/^name: .*/name: ${PREVIEW}/" functions/orders/runr.yaml
 
       - id: runr
-        uses: brf-tech/runr/actions/deploy@v0.7.1
+        uses: brf-tech/runr/actions/deploy@v0.7.2
         with:
           api-url: ${{ vars.RUNR_API_URL }}
           token: ${{ secrets.RUNR_PREVIEW_TOKEN }}

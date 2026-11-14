@@ -8,6 +8,24 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-14
+
+### Upgrade notes
+
+- **A dependency release of 0.7.1: upgrading needs no step.** There is no database migration, the
+  images keep their names and nothing has to be set; only the dependency below changes. The CLI, the
+  Terraform provider and runr.sh stay those of 0.7.1. See
+  [docs/upgrade.md](docs/upgrade.md#071--072).
+
+### Changed
+
+- **Region agent Go modules moved** (minor and patch updates): github.com/emicklei/go-restful/v3
+  v3.11.0 → v3.13.0, github.com/fxamacker/cbor/v2 v2.7.0 → v2.9.1, github.com/go-logr/logr v1.4.2 →
+  v1.4.3, github.com/go-openapi/jsonpointer v0.21.0 → v1.0.0, github.com/go-openapi/jsonreference
+  v0.20.2 → v1.0.0, github.com/go-openapi/swag v0.23.0 → v0.27.1,
+  github.com/go-openapi/swag/cmdutils none → v0.27.1, github.com/go-openapi/swag/conv none → v0.27.1
+  and 38 more. The release's images carry them.
+
 ## [0.7.1] - 2026-11-14
 
 ### Upgrade notes
@@ -4685,7 +4703,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.1...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.2...main
+[0.7.2]: https://github.com/brf-tech/runr/releases/tag/v0.7.2
 [0.7.1]: https://github.com/brf-tech/runr/releases/tag/v0.7.1
 [0.7.0]: https://github.com/brf-tech/runr/releases/tag/v0.7.0
 [0.6.13]: https://github.com/brf-tech/runr/releases/tag/v0.6.13

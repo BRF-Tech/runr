@@ -87,6 +87,25 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.7.1 → 0.7.2
+
+0.7.2 is a dependency release of 0.7.1, made by the dependency test bot: it moves one dependency of
+a region and nothing else. There is no database migration, the images keep their names, and nothing
+has to be set ([Procedure](#procedure)). The CLI, the Terraform provider and runr.sh stay those of
+0.7.1.
+
+- **Region agent Go modules moved** (minor and patch updates): github.com/emicklei/go-restful/v3
+  v3.11.0 → v3.13.0, github.com/fxamacker/cbor/v2 v2.7.0 → v2.9.1, github.com/go-logr/logr v1.4.2 →
+  v1.4.3, github.com/go-openapi/jsonpointer v0.21.0 → v1.0.0, github.com/go-openapi/jsonreference
+  v0.20.2 → v1.0.0, github.com/go-openapi/swag v0.23.0 → v0.27.1,
+  github.com/go-openapi/swag/cmdutils none → v0.27.1, github.com/go-openapi/swag/conv none → v0.27.1
+  and 38 more. The release's images carry them.
+
+The bot ran these suites on this release before it was tagged: `runtime/test`, `runtime/ci.sh test`,
+`runtime/ci.sh test-helm-upgrade --from=v0.7.1`, `ci/deps-check.sh go:runtime/agent`,
+`ci/deps-check.sh image:runtime/agent/Dockerfile`
+([run](https://github.com/BRF-Tech/runr/actions/runs/43613219812)).
+
 ## 0.7.0 → 0.7.1
 
 0.7.1 gives the scheduler the memory its overlapping runs need and changes nothing else an
