@@ -80,7 +80,7 @@
     "applicationCategory": "DeveloperApplication",
     "applicationSubCategory": "Serverless platform",
     "operatingSystem": "Kubernetes",
-    "softwareVersion": "0.7.0",
+    "softwareVersion": "0.7.1",
     "license": "https://opensource.org/licenses/MIT",
     "url": "https://runr.sh",
     "downloadUrl": "https://runr.sh/dl/",
@@ -2025,7 +2025,7 @@ helm upgrade --install runr brf-tech/runr \
       <p data-tr="Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır."
          data-en="A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.">
          A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.</p>
-      <pre data-snippet="compose"><code>git clone -b v0.7.0 \
+      <pre data-snippet="compose"><code>git clone -b v0.7.1 \
   https://github.com/BRF-Tech/runr.git
 cd runr &amp;&amp; bash compose/build.sh
 cd compose &amp;&amp; cp .env.example .env
@@ -2074,7 +2074,7 @@ runr deploy</code></pre>
          data-en="Deploy on every push and run preview environments for pull / merge requests: the ready-made Action on GitHub, a job that installs the CLI and runs <code>runr deploy</code> on GitLab CI/CD.">
          Deploy on every push and run preview environments for pull / merge requests: the ready-made Action on GitHub, a job that installs the CLI and runs <code>runr deploy</code> on GitLab CI/CD.</p>
       <pre data-snippet="ci"><code># GitHub Actions: secrets RUNR_API_URL, RUNR_TOKEN
-- uses: brf-tech/runr/actions/deploy@v0.7.0
+- uses: brf-tech/runr/actions/deploy@v0.7.1
   with:
     api-url: ${{ secrets.RUNR_API_URL }}
     token: ${{ secrets.RUNR_TOKEN }}
@@ -2300,7 +2300,7 @@ deploy:
     </div>
     <div class="footer-bottom">
       <span>© 2026 BRF Teknoloji and RunR contributors. <span data-tr="MIT lisansıyla yayımlanır." data-en="Released under the MIT License.">Released under the MIT License.</span></span>
-      <span class="mono">runr.sh · <a href="/dl/" data-umami-event="download-click" data-umami-event-place="footer-version">v0.7.0</a></span>
+      <span class="mono">runr.sh · <a href="/dl/" data-umami-event="download-click" data-umami-event-place="footer-version">v0.7.1</a></span>
     </div>
   </div>
 </footer>
