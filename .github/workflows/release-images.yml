@@ -45,8 +45,8 @@ env:
   CRANE_VERSION: v0.22.1
   CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
   # the helm of the API image (api/Dockerfile.prod), for the chart next to the image tars
-  HELM_VERSION: v4.3.1
-  HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+  HELM_VERSION: v4.3.2
+  HELM_SHA256: d1c0278d46beab79582d7e50f5b3dc206944ba8e577cde618513fd07daa53983
 
 jobs:
   release:

@@ -69,8 +69,8 @@ jobs:
       CLOUD_PROVIDER_KIND_VERSION: v0.12.0
       CLOUD_PROVIDER_KIND_SHA256: 5716aca8f01a85172c12f3b6329c70f151bec02c91b6f600c9f230845ee138e6
       # the helm of the API image (api/Dockerfile.prod): test-helm-upgrade and the bot's checks
-      HELM_VERSION: v4.3.1
-      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+      HELM_VERSION: v4.3.2
+      HELM_SHA256: d1c0278d46beab79582d7e50f5b3dc206944ba8e577cde618513fd07daa53983
       K8S_VERSION: ${{ inputs.k8s }}
       KIND_WORKERS: ${{ inputs.workers }}
       SUITE_COMMAND: ${{ inputs.command }}

@@ -20,6 +20,8 @@ did not change says so.
 - **Terraform provider Go modules moved** (minor and patch updates, nothing a release image ships):
   github.com/ProtonMail/go-crypto v1.4.1 → v1.5.2, github.com/hashicorp/go-plugin v1.7.0 → v1.8.0,
   github.com/hashicorp/hc-install v0.9.4 → v0.10.0, golang.org/x/sys v0.48.0 → v0.50.0.
+- **CI tool pins moved** (minor and patch updates, nothing a release image ships): helm v4.3.1 →
+  v4.3.2, terraform 1.13.3 → 1.17.2, govulncheck v1.1.4 → v1.9.0.
 
 ## [0.7.4] - 2026-11-14
 

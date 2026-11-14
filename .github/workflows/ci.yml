@@ -83,8 +83,8 @@ jobs:
     timeout-minutes: 60
     env:
       # the helm of the API image (api/Dockerfile.prod)
-      HELM_VERSION: v4.3.1
-      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+      HELM_VERSION: v4.3.2
+      HELM_SHA256: d1c0278d46beab79582d7e50f5b3dc206944ba8e577cde618513fd07daa53983
       KUBECONFORM_VERSION: v0.8.0
       KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
     steps:
@@ -175,7 +175,7 @@ jobs:
       # need Terraform 1.11+); without a terraform binary every test would download one.
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          terraform_version: '1.13.3'
+          terraform_version: '1.17.2'
           terraform_wrapper: false
       - name: gofmt + go vet + go test -race (every go.mod)
         env:

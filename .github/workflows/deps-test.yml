@@ -187,8 +187,8 @@ jobs:
       any: ${{ steps.bumps.outputs.any }}
     env:
       # the helm of the API image (api/Dockerfile.prod)
-      HELM_VERSION: v4.3.1
-      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+      HELM_VERSION: v4.3.2
+      HELM_SHA256: d1c0278d46beab79582d7e50f5b3dc206944ba8e577cde618513fd07daa53983
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -375,7 +375,7 @@ jobs:
       - if: matrix.command == 'go:terraform-provider-runr'
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          terraform_version: '1.13.3'
+          terraform_version: '1.17.2'
           terraform_wrapper: false
       - name: Install actionlint (pinned, checksum verified)
         if: matrix.command == 'actionlint'
@@ -476,8 +476,8 @@ jobs:
       any: ${{ steps.batch.outputs.any }}
     env:
       # the helm of the API image (api/Dockerfile.prod)
-      HELM_VERSION: v4.3.1
-      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+      HELM_VERSION: v4.3.2
+      HELM_SHA256: d1c0278d46beab79582d7e50f5b3dc206944ba8e577cde618513fd07daa53983
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -669,7 +669,7 @@ jobs:
       - if: matrix.command == 'go:terraform-provider-runr'
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          terraform_version: '1.13.3'
+          terraform_version: '1.17.2'
           terraform_wrapper: false
       - name: Install actionlint (pinned, checksum verified)
         if: matrix.command == 'actionlint'
@@ -803,8 +803,8 @@ jobs:
       # the artifacts of release-images.yml's run, and the run of the bumps the release moved under
       actions: write
     env:
-      HELM_VERSION: v4.3.1
-      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+      HELM_VERSION: v4.3.2
+      HELM_SHA256: d1c0278d46beab79582d7e50f5b3dc206944ba8e577cde618513fd07daa53983
       CRANE_VERSION: v0.22.1
       CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
     steps:

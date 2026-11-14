@@ -37,8 +37,8 @@ jobs:
       actions: write
     env:
       # the helm of the API image (api/Dockerfile.prod)
-      HELM_VERSION: v4.3.1
-      HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+      HELM_VERSION: v4.3.2
+      HELM_SHA256: d1c0278d46beab79582d7e50f5b3dc206944ba8e577cde618513fd07daa53983
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,7 +80,7 @@ jobs:
       - name: Install govulncheck (pinned)
         if: ${{ !cancelled() }}
         env:
-          GOVULNCHECK_VERSION: v1.1.4
+          GOVULNCHECK_VERSION: v1.9.0
         run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
       - name: Package releases
         if: ${{ !cancelled() }}
