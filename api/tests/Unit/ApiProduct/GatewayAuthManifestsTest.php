@@ -77,7 +77,7 @@ class GatewayAuthManifestsTest extends TestCase
 
     public function test_the_deployment_runs_hardened_and_restarts_with_its_secret(): void
     {
-        $deployment = GatewayAuthManifests::deployment('fn', 'registry.test/gateway-auth:1.1.0', 2, 'rev-1', 10, 30);
+        $deployment = GatewayAuthManifests::deployment('fn', 'registry.test/gateway-auth:1.1.1', 2, 'rev-1', 10, 30);
         $pod = $deployment['spec']['template'];
         $container = $pod['spec']['containers'][0];
 

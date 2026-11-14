@@ -356,7 +356,7 @@ steps before it are read-only.
      module only Platform users, and tenant owners for their own region, may set them.
 
    **Save & Next** creates the region: RunR tests the storage (or the external registry, from a
-   pod), installs Zot (release `runr-zot` in `runr-registry`, chart `zot/zot` 0.1.130) with its
+   pod), installs Zot (release `runr-zot` in `runr-registry`, chart `zot/zot` 0.1.134) with its
    node mirror, pre-pulls common images on the nodes, creates the region and its project
    namespace, applies the worker selection and queues RunR's managed Redis.
 3. **Operator.** RunR first adopts a Knative Operator and Serving already running in
@@ -506,7 +506,7 @@ way; an internal one is removed first, because its volume holds the region's ima
 
 | Setting | Values | What it does |
 |---|---|---|
-| Mode | `internal` or `external` | `internal`: RunR runs Zot (release `runr-zot`, chart `zot/zot` 0.1.130, namespace `runr-registry`, ClusterIP port 5000) as the region's registry and as a pull-through cache of `ghcr.io` and Docker Hub, with the node mirror `runr-registry-mirror`. `external`: builds push to your registry |
+| Mode | `internal` or `external` | `internal`: RunR runs Zot (release `runr-zot`, chart `zot/zot` 0.1.134, namespace `runr-registry`, ClusterIP port 5000) as the region's registry and as a pull-through cache of `ghcr.io` and Docker Hub, with the node mirror `runr-registry-mirror`. `external`: builds push to your registry |
 | Storage (`internal`) | `pvc`: StorageClass and size; `s3`: endpoint, bucket, region, access key, secret key | where Zot keeps the images |
 | Address (`external`) | the registry address, optional username and password | tested from a pod in the cluster before the registry is set up |
 

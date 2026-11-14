@@ -106,7 +106,7 @@ prepare_fake() {
   local tool="${TOOL_IMAGE:-alpine:3.21}"
   local client="${CLIENT_IMAGE:-runr-e2e-client:latest}"
   local python="${PY_IMAGE:-ghcr.io/brf-tech/runr/reqs/alpine:3.21}"
-  local gateway="${GATEWAY_IMAGE:-${REGISTRY}/gateway-auth:1.1.0}"
+  local gateway="${GATEWAY_IMAGE:-${REGISTRY}/gateway-auth:1.1.1}"
   local upstream="${UPSTREAM_IMAGE:-ghcr.io/acme/tool:1.0}"
   [ "${E2E_LOCAL_RUNR_IMAGES:-1}" = 1 ] && echo "$image $tool $client $python $gateway $upstream"
 }

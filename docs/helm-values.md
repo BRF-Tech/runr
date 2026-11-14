@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.7.3 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.7.4 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.7.3` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.7.4` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -646,7 +646,7 @@ chain); these are the platform-wide defaults. Empty values keep the application 
 | Key | Default | What it does |
 | --- | --- | --- |
 | `supplyChain.enabled` | `true` | Every image RunR builds gets its supply-chain run |
-| `supplyChain.toolsImage` | `""` | Tools image; empty: `ghcr.io/brf-tech/runr/supply-chain:1.1.0` |
+| `supplyChain.toolsImage` | `""` | Tools image; empty: `ghcr.io/brf-tech/runr/supply-chain:1.1.1` |
 | `supplyChain.jobNamespace` | `""` | Namespace of the Jobs and the region signing key; empty: `runr-supply-chain` |
 | `supplyChain.rescanHours` | `""` | Re-scan interval of deployed images for new regions; empty: 24 |
 | `supplyChain.trivyDbSource` | `""` | Mirror source of the vulnerability database; empty: `mirror.gcr.io/aquasec/trivy-db:2` |
@@ -745,7 +745,7 @@ Empty values keep the application defaults.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `apiProduct.gatewayAuthImage` | `""` | Image of gateway-auth the regions pull; empty: `ghcr.io/brf-tech/runr/gateway-auth:1.1.0` |
+| `apiProduct.gatewayAuthImage` | `""` | Image of gateway-auth the regions pull; empty: `ghcr.io/brf-tech/runr/gateway-auth:1.1.1` |
 | `apiProduct.callbackUrl` | `""` | RunR's base URL as the regions reach it (config sync, usage reports); empty: the URL the region agent connects to |
 | `apiProduct.syncSeconds` | `""` | How often gateway-auth fetches changed keys and plans — the longest a revoked key keeps working; empty: 10 |
 | `apiProduct.onDemandSyncSeconds` | `""` | Least time between two fetches of a gateway-auth pod for a key or route it does not know, so a new key works at once ([api-product.md](api-product.md)); empty: 2, `0`: none (a new key waits for each pod's next fetch) |

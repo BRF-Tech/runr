@@ -148,7 +148,7 @@ global_projects_prepare_phase2() {
   local nginx="${REGISTRY}/reqs/nginx:1.27-alpine"
   local upload_tag="${REGISTRY}/image-upload:$(image_upload_version)"
   local transfer_tag="${REGISTRY}/image-upload:${ORG_TRANSFER_AGENT_VERSION:-$(image_upload_version)}"
-  local gateway_auth="${GATEWAY_AUTH_IMAGE:-${REGISTRY}/gateway-auth:1.1.0}"
+  local gateway_auth="${GATEWAY_AUTH_IMAGE:-${REGISTRY}/gateway-auth:1.1.1}"
   local archive_tag="runr-e2e/gp-nginx:upload"
 
   echo ""

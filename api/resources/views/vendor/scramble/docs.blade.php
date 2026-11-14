@@ -20,8 +20,8 @@
     @if (is_file(public_path('api/vendor/scalar/api-reference.js')))
         <script src="/api/vendor/scalar/api-reference.js"></script>
     @else
-        <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.75.1/dist/browser/standalone.js"
-                integrity="sha384-G+2Q2i9l3PPfmYkk0b4BAIUrs7xb/DNaTL1wCYYab4c9dIKlCyiqzC0Qx3eq9Wf6"
+        <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.78.1/dist/browser/standalone.js"
+                integrity="sha384-HVpqul+lojb2wwVK554SYr5rD2XqgJZqkYKGl4MyZarBSg+rHR9F0x1LVgzgj7JZ"
                 crossorigin="anonymous"></script>
     @endif
     <script>

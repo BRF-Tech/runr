@@ -26,7 +26,7 @@ use App\Support\Images\RegistryMove;
 */
 
 return [
-    'gateway_auth_image' => RegistryMove::ref(env('RUNR_GATEWAY_AUTH_IMAGE') ?: 'ghcr.io/brf-tech/runr/gateway-auth:1.1.0'),
+    'gateway_auth_image' => RegistryMove::ref(env('RUNR_GATEWAY_AUTH_IMAGE') ?: 'ghcr.io/brf-tech/runr/gateway-auth:1.1.1'),
     'callback_url' => env('RUNR_GATEWAY_AUTH_CALLBACK_URL'),
     'sync_seconds' => (int) env('RUNR_GATEWAY_AUTH_SYNC_SECONDS', 10),
     'on_demand_sync_seconds' => (int) env('RUNR_GATEWAY_AUTH_ON_DEMAND_SYNC_SECONDS', 2),

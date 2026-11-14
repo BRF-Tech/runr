@@ -474,7 +474,7 @@ gitDeploy:
 # until an administrator enables them (publish / mirror toolsImage first).
 supplyChain:
   enabled: true                 # build-ready hooks: every RunR-built image gets its supply-chain run
-  toolsImage: ""                # default ghcr.io/brf-tech/runr/supply-chain:1.1.0 (ci.sh supply-chain)
+  toolsImage: ""                # default ghcr.io/brf-tech/runr/supply-chain:1.1.1 (ci.sh supply-chain)
   jobNamespace: ""              # default runr-supply-chain (Jobs + region signing key, per region)
   rescanHours: ""               # default re-scan interval of deployed images for new regions (24)
   trivyDbSource: ""             # mirror source of the vulnerability DB (mirror.gcr.io/aquasec/trivy-db:2)
@@ -558,7 +558,7 @@ runtimeCatalog:
 # API keys, JWT routes, plans and usage per consumer: the regions run gateway-auth, which the
 # region Traefik asks before every call of a key / JWT route. Empty values keep the defaults.
 apiProduct:
-  gatewayAuthImage: ""         # gateway-auth image the regions pull (default ghcr.io/brf-tech/runr/gateway-auth:1.1.0, ci.sh gateway-auth)
+  gatewayAuthImage: ""         # gateway-auth image the regions pull (default ghcr.io/brf-tech/runr/gateway-auth:1.1.1, ci.sh gateway-auth)
   callbackUrl: ""              # RunR's base URL as the regions reach it (default: the region agent's URL)
   syncSeconds: ""              # how often gateway-auth fetches changed keys / plans (default 10)
   onDemandSyncSeconds: ""      # least seconds between two fetches of a pod for a key it does not know (default 2; 0: none)

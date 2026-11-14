@@ -8,6 +8,38 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-11-14
+
+### Upgrade notes
+
+- **A dependency release of 0.7.3: upgrading needs no step.** There is no database migration, the
+  images keep their names and nothing has to be set; only the 5 dependencies below change. The CLI,
+  the Terraform provider and runr.sh stay those of 0.7.3. See
+  [docs/upgrade.md](docs/upgrade.md#073--074).
+
+### Changed
+
+- **API Composer packages moved** (minor and patch updates): doctrine/inflector 2.1.0 → 2.1.1,
+  dragonmantank/cron-expression v3.6.0 → v3.6.1, firebase/php-jwt v7.0.3 → v7.2.1, guzzlehttp/guzzle
+  7.15.5 → 7.16.1, guzzlehttp/promises 2.5.3 → 2.6.0, guzzlehttp/psr7 2.13.1 → 2.13.3,
+  laminas/laminas-diactoros 3.8.0 → 3.9.0, laravel/framework v12.70.0 → v12.72.0 and 56 more. The
+  release's images carry them.
+- **Gateway-auth Go modules moved** (minor and patch updates): github.com/dgryski/go-rendezvous
+  v0.0.0-20200823014737-9f7001d12a5f → none, github.com/redis/go-redis/v9 v9.7.3 → v9.23.0,
+  go.uber.org/atomic none → v1.12.0, golang.org/x/sys none → v0.48.0, gateway-auth image 1.1.0 →
+  1.1.1 (its own version: release-images.yml builds it). The release's images carry them.
+- **Zot chart 0.1.134** (from 0.1.130; Zot v2.1.23, as before). Registries set up from now on run
+  it; an installed Zot keeps its chart and version until `php artisan registry:upgrade-zot
+  <region>`, which restarts the registry.
+- **Image tool pins moved** (minor and patch updates): helm v4.3.1 → v4.3.2, scalar 1.75.1 → 1.78.1,
+  syft 1.18.1 → 1.57.1, oras 1.2.2 → 1.3.6, supply-chain image 1.1.0 → 1.1.1 (its own version:
+  release-images.yml builds it). The release's images carry them.
+- **Console npm packages moved** (minor and patch updates): @eslint/config-array 0.23.5 → 0.23.6,
+  @intlify/core-base 11.4.19 → 11.4.20, @intlify/devtools-types 11.4.19 → 11.4.20,
+  @intlify/message-compiler 11.4.19 → 11.4.20, @intlify/shared 11.4.19 → 11.4.20,
+  @isaacs/nonrecursive-glob-match none → 1.1.0, @lucide/vue 1.72.0 → 1.73.0, chokidar 5.0.0 → 6.0.0
+  and 9 more. The release's images carry them.
+
 ## [0.7.3] - 2026-11-14
 
 ### Upgrade notes
@@ -4735,7 +4767,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.3...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.4...main
+[0.7.4]: https://github.com/brf-tech/runr/releases/tag/v0.7.4
 [0.7.3]: https://github.com/brf-tech/runr/releases/tag/v0.7.3
 [0.7.2]: https://github.com/brf-tech/runr/releases/tag/v0.7.2
 [0.7.1]: https://github.com/brf-tech/runr/releases/tag/v0.7.1

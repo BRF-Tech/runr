@@ -370,7 +370,7 @@ class RegistryUpgradeZotCommandTest extends TestCase
             }
         };
 
-        $helm->upgradeToChart('runr-zot', 'zot/zot', self::NS, $this->fakeKubeconfig(), '0.1.130', ['configFiles' => ['config.json' => '{}']]);
+        $helm->upgradeToChart('runr-zot', 'zot/zot', self::NS, $this->fakeKubeconfig(), '0.1.134', ['configFiles' => ['config.json' => '{}']]);
 
         $this->assertContains('--reset-then-reuse-values', $helm->command);
         $this->assertNotContains('--reuse-values', $helm->command);
@@ -379,7 +379,7 @@ class RegistryUpgradeZotCommandTest extends TestCase
         $this->assertContains(HelmService::WAIT, $helm->command, "Helm 3's wait, not kstatus");
         $this->assertContains(HelmService::CLIENT_SIDE_APPLY, $helm->command);
         $this->assertNotContains('--atomic', $helm->command);
-        $this->assertSame('0.1.130', $helm->command[array_search('--version', $helm->command, true) + 1]);
+        $this->assertSame('0.1.134', $helm->command[array_search('--version', $helm->command, true) + 1]);
         $this->assertStringContainsString('config.json', $helm->valuesFile, 'in a file, not on the command line');
     }
 }

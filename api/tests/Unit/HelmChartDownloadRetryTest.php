@@ -16,7 +16,7 @@ use Tests\TestCase;
  */
 class HelmChartDownloadRetryTest extends TestCase
 {
-    private const URL = 'https://github.com/project-zot/helm-charts/releases/download/zot-0.1.130/zot-0.1.130.tgz';
+    private const URL = 'https://github.com/project-zot/helm-charts/releases/download/zot-0.1.134/zot-0.1.134.tgz';
 
     private const GATEWAY_TIMEOUT = 'Error: failed to fetch '.self::URL.' : 504 Gateway Timeout';
 
@@ -28,7 +28,7 @@ class HelmChartDownloadRetryTest extends TestCase
 
     /**
      * A HelmService whose helm calls answer $results in order (the last one repeats) and whose
-     * repository index gives $digest for zot 0.1.130; the commands and, for a local chart, the
+     * repository index gives $digest for zot 0.1.134; the commands and, for a local chart, the
      * file's content at the call are recorded.
      *
      * @param  list<HelmResult>  $results
@@ -53,7 +53,7 @@ class HelmChartDownloadRetryTest extends TestCase
             public function getRepoChartEntries(string $repoName, string $chartName): array
             {
                 return $repoName === 'zot' && $chartName === 'zot' && $this->digest
-                    ? [['version' => '0.1.129', 'digest' => str_repeat('0', 64)], ['version' => '0.1.130', 'digest' => $this->digest]]
+                    ? [['version' => '0.1.129', 'digest' => str_repeat('0', 64)], ['version' => '0.1.134', 'digest' => $this->digest]]
                     : [];
             }
         };
@@ -71,7 +71,7 @@ class HelmChartDownloadRetryTest extends TestCase
 
     private static function install(HelmService $helm): HelmResult
     {
-        return $helm->install('zot', 'zot/zot', 'runr-registry', [], "apiVersion: v1\n", '0.1.130');
+        return $helm->install('zot', 'zot/zot', 'runr-registry', [], "apiVersion: v1\n", '0.1.134');
     }
 
     public function test_download_failures_on_the_way_are_recognised(): void
@@ -99,8 +99,8 @@ class HelmChartDownloadRetryTest extends TestCase
     public function test_after_four_tries_the_chart_comes_through_the_github_api(): void
     {
         Http::fake([
-            'api.github.com/repos/project-zot/helm-charts/releases/tags/zot-0.1.130' => Http::response(['assets' => [
-                ['name' => 'zot-0.1.130.tgz', 'url' => 'https://api.github.com/repos/project-zot/helm-charts/releases/assets/7'],
+            'api.github.com/repos/project-zot/helm-charts/releases/tags/zot-0.1.134' => Http::response(['assets' => [
+                ['name' => 'zot-0.1.134.tgz', 'url' => 'https://api.github.com/repos/project-zot/helm-charts/releases/assets/7'],
             ]]),
             'api.github.com/repos/project-zot/helm-charts/releases/assets/7' => Http::response('the zot chart'),
         ]);
@@ -110,7 +110,7 @@ class HelmChartDownloadRetryTest extends TestCase
         $this->assertTrue(self::install($helm)->success);
         $this->assertCount(5, $helm->calls);
         $last = $helm->calls[4];
-        $this->assertStringEndsWith('/zot-0.1.130.tgz', $last['cmd'][4]);
+        $this->assertStringEndsWith('/zot-0.1.134.tgz', $last['cmd'][4]);
         $this->assertSame('the zot chart', $last['chart'], 'the helm call installs the file the API gave');
         $this->assertFileDoesNotExist($last['cmd'][4], 'the file is gone afterwards');
         Sleep::assertSequence([Sleep::for(2)->seconds(), Sleep::for(4)->seconds(), Sleep::for(8)->seconds()]);
@@ -119,8 +119,8 @@ class HelmChartDownloadRetryTest extends TestCase
     public function test_no_digest_or_another_one_no_file(): void
     {
         Http::fake([
-            'api.github.com/repos/project-zot/helm-charts/releases/tags/zot-0.1.130' => Http::response(['assets' => [
-                ['name' => 'zot-0.1.130.tgz', 'url' => 'https://api.github.com/repos/project-zot/helm-charts/releases/assets/7'],
+            'api.github.com/repos/project-zot/helm-charts/releases/tags/zot-0.1.134' => Http::response(['assets' => [
+                ['name' => 'zot-0.1.134.tgz', 'url' => 'https://api.github.com/repos/project-zot/helm-charts/releases/assets/7'],
             ]]),
             'api.github.com/repos/project-zot/helm-charts/releases/assets/7' => Http::response('another chart'),
         ]);
@@ -149,15 +149,15 @@ class HelmChartDownloadRetryTest extends TestCase
     public function test_the_upgrades_of_a_chart_are_tried_again_too(): void
     {
         $helm = self::helm([self::failed(self::GATEWAY_TIMEOUT), self::ok()]);
-        $this->assertTrue($helm->upgradeToChart('zot', 'zot/zot', 'runr-registry', "apiVersion: v1\n", '0.1.130', ['a' => 1])->success);
+        $this->assertTrue($helm->upgradeToChart('zot', 'zot/zot', 'runr-registry', "apiVersion: v1\n", '0.1.134', ['a' => 1])->success);
         $this->assertCount(2, $helm->calls);
 
         $helm = self::helm([self::failed(self::GATEWAY_TIMEOUT), self::ok()]);
-        $this->assertTrue($helm->upgradeToChartVersion('zot', 'zot/zot', 'runr-registry', "apiVersion: v1\n", '0.1.130', '{}')->success);
+        $this->assertTrue($helm->upgradeToChartVersion('zot', 'zot/zot', 'runr-registry', "apiVersion: v1\n", '0.1.134', '{}')->success);
         $this->assertCount(2, $helm->calls);
 
         $helm = self::helm([self::failed(self::GATEWAY_TIMEOUT), self::ok()]);
-        $this->assertTrue($helm->upgradeReusingValues('zot', 'zot/zot', 'runr-registry', "apiVersion: v1\n", '0.1.130', [])->success);
+        $this->assertTrue($helm->upgradeReusingValues('zot', 'zot/zot', 'runr-registry', "apiVersion: v1\n", '0.1.134', [])->success);
         $this->assertCount(2, $helm->calls);
     }
 }

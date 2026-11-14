@@ -15,9 +15,9 @@ use Tests\TestCase;
  */
 class GitHubReleaseAssetTest extends TestCase
 {
-    private const URL = 'https://github.com/project-zot/helm-charts/releases/download/zot-0.1.130/zot-0.1.130.tgz';
+    private const URL = 'https://github.com/project-zot/helm-charts/releases/download/zot-0.1.134/zot-0.1.134.tgz';
 
-    private const RELEASE = 'https://api.github.com/repos/project-zot/helm-charts/releases/tags/zot-0.1.130';
+    private const RELEASE = 'https://api.github.com/repos/project-zot/helm-charts/releases/tags/zot-0.1.134';
 
     private const ASSET = 'https://api.github.com/repos/project-zot/helm-charts/releases/assets/123';
 
@@ -31,15 +31,15 @@ class GitHubReleaseAssetTest extends TestCase
     {
         return ['assets' => [
             ['name' => 'zot-0.1.129.tgz', 'url' => 'https://api.github.com/repos/project-zot/helm-charts/releases/assets/122'],
-            ['name' => 'zot-0.1.130.tgz', 'url' => self::ASSET],
+            ['name' => 'zot-0.1.134.tgz', 'url' => self::ASSET],
         ]];
     }
 
     public function test_the_url_of_a_release_download(): void
     {
-        $this->assertSame(['owner' => 'project-zot', 'repo' => 'helm-charts', 'tag' => 'zot-0.1.130', 'file' => 'zot-0.1.130.tgz'], GitHubReleaseAsset::parse(self::URL));
+        $this->assertSame(['owner' => 'project-zot', 'repo' => 'helm-charts', 'tag' => 'zot-0.1.134', 'file' => 'zot-0.1.134.tgz'], GitHubReleaseAsset::parse(self::URL));
         $this->assertSame('knative-v1.21.0', GitHubReleaseAsset::parse('https://github.com/knative/serving/releases/download/knative-v1.21.0/serving-crds.yaml')['tag']);
-        $this->assertNull(GitHubReleaseAsset::parse('https://zotregistry.dev/helm-charts/zot-0.1.130.tgz'));
+        $this->assertNull(GitHubReleaseAsset::parse('https://zotregistry.dev/helm-charts/zot-0.1.134.tgz'));
         $this->assertNull(GitHubReleaseAsset::parse('https://github.com/project-zot/helm-charts/archive/main.tar.gz'));
     }
 
@@ -112,7 +112,7 @@ class GitHubReleaseAssetTest extends TestCase
 
     public function test_an_asset_url_elsewhere_is_not_followed(): void
     {
-        Http::fake([self::RELEASE => Http::response(['assets' => [['name' => 'zot-0.1.130.tgz', 'url' => 'https://example.test/zot.tgz']]])]);
+        Http::fake([self::RELEASE => Http::response(['assets' => [['name' => 'zot-0.1.134.tgz', 'url' => 'https://example.test/zot.tgz']]])]);
 
         $this->assertNull(GitHubReleaseAsset::viaApi(self::URL));
         Http::assertNotSent(fn (Request $r) => str_starts_with($r->url(), 'https://example.test/'));
@@ -120,7 +120,7 @@ class GitHubReleaseAssetTest extends TestCase
 
     public function test_another_host_gets_its_tries_but_no_api(): void
     {
-        $url = 'https://zotregistry.dev/helm-charts/zot-0.1.130.tgz';
+        $url = 'https://zotregistry.dev/helm-charts/zot-0.1.134.tgz';
         Http::fake([$url => Http::response('', 504)]);
 
         $this->assertNull(GitHubReleaseAsset::fetch($url));

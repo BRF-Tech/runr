@@ -198,7 +198,7 @@ preload_kind_images() {
     "ghcr.io/brf-tech/runr/reqs/busybox:latest"
     "ghcr.io/brf-tech/runr/reqs/redis:7-alpine"
     "ghcr.io/brf-tech/runr/queue-consumer:latest"
-    # the Zot of the pinned chart (ZotRegistryService::ZOT_CHART_VERSION 0.1.130)
+    # the Zot of the pinned chart (ZotRegistryService::ZOT_CHART_VERSION 0.1.134)
     "ghcr.io/project-zot/zot:v2.1.23"
     "ghcr.io/osscontainertools/kaniko:v1.28.5"
     # the region Traefik (KnativeConstants::TRAEFIK_IMAGE): three replicas that would each pull it

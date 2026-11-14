@@ -87,6 +87,44 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.7.3 → 0.7.4
+
+0.7.4 is a dependency release of 0.7.3, made by the dependency test bot: it moves 5 dependencies and
+nothing else. There is no database migration, the images keep their names, and nothing has to be set
+([Procedure](#procedure)). The CLI, the Terraform provider and runr.sh stay those of 0.7.3.
+
+- **API Composer packages moved** (minor and patch updates): doctrine/inflector 2.1.0 → 2.1.1,
+  dragonmantank/cron-expression v3.6.0 → v3.6.1, firebase/php-jwt v7.0.3 → v7.2.1, guzzlehttp/guzzle
+  7.15.5 → 7.16.1, guzzlehttp/promises 2.5.3 → 2.6.0, guzzlehttp/psr7 2.13.1 → 2.13.3,
+  laminas/laminas-diactoros 3.8.0 → 3.9.0, laravel/framework v12.70.0 → v12.72.0 and 56 more. The
+  release's images carry them.
+- **Gateway-auth Go modules moved** (minor and patch updates): github.com/dgryski/go-rendezvous
+  v0.0.0-20200823014737-9f7001d12a5f → none, github.com/redis/go-redis/v9 v9.7.3 → v9.23.0,
+  go.uber.org/atomic none → v1.12.0, golang.org/x/sys none → v0.48.0, gateway-auth image 1.1.0 →
+  1.1.1 (its own version: release-images.yml builds it). The release's images carry them.
+- **Zot chart 0.1.134** (from 0.1.130; Zot v2.1.23, as before). Registries set up from now on run
+  it; an installed Zot keeps its chart and version until `php artisan registry:upgrade-zot
+  <region>`, which restarts the registry.
+- **Image tool pins moved** (minor and patch updates): helm v4.3.1 → v4.3.2, scalar 1.75.1 → 1.78.1,
+  syft 1.18.1 → 1.57.1, oras 1.2.2 → 1.3.6, supply-chain image 1.1.0 → 1.1.1 (its own version:
+  release-images.yml builds it). The release's images carry them.
+- **Console npm packages moved** (minor and patch updates): @eslint/config-array 0.23.5 → 0.23.6,
+  @intlify/core-base 11.4.19 → 11.4.20, @intlify/devtools-types 11.4.19 → 11.4.20,
+  @intlify/message-compiler 11.4.19 → 11.4.20, @intlify/shared 11.4.19 → 11.4.20,
+  @isaacs/nonrecursive-glob-match none → 1.1.0, @lucide/vue 1.72.0 → 1.73.0, chokidar 5.0.0 → 6.0.0
+  and 9 more. The release's images carry them.
+
+The bot ran these suites before the release was tagged, each bump's own on that bump alone and all
+of them on this release: PHPUnit, Pint, Larastan and the API reference, `runtime/test`,
+`runtime/ci.sh test`, `runtime/ci.sh test-helm-upgrade --from=v0.7.3`, `runtime/ci.sh
+test-api-product`, `runtime/ci.sh test`, `runtime/ci.sh test-helm-upgrade --from=v0.7.3
+--after-upgrade=registry:upgrade-zot,{region} --expect-release=runr-registry/runr-zot=zot-0.1.134`,
+`runtime/ci.sh test-supply-chain`, `ci/deps-check.sh go:runtime/gateway-auth`, `ci/deps-check.sh
+image:runtime/gateway-auth/Dockerfile`, `ci/deps-check.sh image:api/Dockerfile.prod`,
+`ci/deps-check.sh image:api/Dockerfile`, `ci/deps-check.sh image:runtime/supply-chain/Dockerfile`,
+the console's lint, unit tests and build (`ui-tests.yml`), the console against the dev stack
+(`ui-stack-suite.yml`) ([run](https://github.com/BRF-Tech/runr/actions/runs/43635775412)).
+
 ## 0.7.2 → 0.7.3
 
 0.7.3 carries a fix of RunR's dependency test bot and a link to the live demo, and changes nothing

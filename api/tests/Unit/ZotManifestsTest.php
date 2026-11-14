@@ -23,7 +23,7 @@ class ZotManifestsTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Helm values (zot chart 0.1.130) ─────────────────────────────────────
+    // ── Helm values (zot chart 0.1.134) ─────────────────────────────────────
 
     public function test_pvc_values_use_chart_keys(): void
     {

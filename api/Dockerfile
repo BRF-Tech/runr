@@ -64,12 +64,12 @@ RUN install-php-extensions \
 # zstd: organization export packages (docs/org-export.md)
 # helm is pinned and checked against its published SHA-256 (amd64 / arm64), so every build of a
 # release tag gets the same binary
-ARG HELM_VERSION=v4.3.1
+ARG HELM_VERSION=v4.3.2
 RUN apk add --no-cache git git-daemon openssh-client sqlite curl libpq zstd \
     && KUBE_ARCH="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" \
     && case "$KUBE_ARCH" in \
-         amd64) HELM_SHA=0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b ;; \
-         arm64) HELM_SHA=8cf8f66ecbc252ac8f7f06cca68aba88508ddfde3a6a34feb1678ad1694b4f88 ;; \
+         amd64) HELM_SHA=d1c0278d46beab79582d7e50f5b3dc206944ba8e577cde618513fd07daa53983 ;; \
+         arm64) HELM_SHA=df31cb61680ef728f82c770e5280dd565617bee6b039d37e85c677288be4bbb0 ;; \
          *) echo "unsupported architecture $KUBE_ARCH" >&2; exit 1 ;; \
        esac \
     && curl -fsSL --retry 5 --retry-all-errors -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-${KUBE_ARCH}.tar.gz" \

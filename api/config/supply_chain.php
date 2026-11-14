@@ -21,7 +21,7 @@ return [
     'enabled' => (bool) env('RUNR_SUPPLY_CHAIN_ENABLED', true),
 
     // Tools image: syft + trivy + cosign + oras + runr-supply-chain (runtime/supply-chain/Dockerfile)
-    'tools_image' => RegistryMove::ref(env('RUNR_SUPPLY_CHAIN_IMAGE', 'ghcr.io/brf-tech/runr/supply-chain:1.1.0')),
+    'tools_image' => RegistryMove::ref(env('RUNR_SUPPLY_CHAIN_IMAGE', 'ghcr.io/brf-tech/runr/supply-chain:1.1.1')),
 
     // Namespace of the supply-chain Jobs and of the region signing key (one per region)
     'namespace' => env('RUNR_SUPPLY_CHAIN_NAMESPACE', 'runr-supply-chain'),

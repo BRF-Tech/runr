@@ -125,7 +125,7 @@ grep -q '^✗ loki-stack: could not read' "$out" || fail "a repository without t
 grep -q '^✗ kata-deploy: could not read' "$out" || fail "an OCI registry that does not answer: $(cat "$out")"
 [ "$(reported)" = "deps-kube-prometheus-stack-92.21.1.md " ] || fail "the charts it could read: $(reported)"
 
-repo_has 40.3.0 92.18.0 2.10.3 0.1.130 3.28.0
+repo_has 40.3.0 92.18.0 2.10.3 0.1.134 3.28.0
 printf "<?php\nclass ZotRegistryService\n{\n    private const ZOT_CHART = 'zot/zot';\n}\n" > "$repo/api/app/Services/ZotRegistryService.php"
 check
 [ "$rc" = 1 ] || fail "a renamed constant: exit ${rc}: $(cat "$out")"
