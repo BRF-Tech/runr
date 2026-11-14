@@ -8,10 +8,37 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-11-14
+
+### Upgrade notes
+
+- **Nothing an installation runs changes: upgrading from 0.7.2 changes the version only.** No
+  migration, no new value; the images of 0.7.2 are built again at 0.7.3 (the API's with one line
+  less that did nothing: the tenancy ticket list no longer calls `array_values()` on a list, and
+  its response is the same), and the region Job moves the agent and the event gateway to 0.7.3 as
+  in every release ([0.7.2 → 0.7.3 in upgrade.md](docs/upgrade.md#072--073)).
+- **Back to 0.7.2 is a `helm rollback`**; nothing runs on the database.
+
+### Added
+
+- **runr.sh and the README point to the live demo.** demo.runr.sh, a read-only RunR that resets
+  every night, gets a *Live demo* button in runr.sh's hero (and its mobile menu, English and
+  Turkish) with the sign-in under it (`demo@runr.sh` / `runr-demo`), and a badge and a line at the
+  top of README.md and README.tr.md. Until now nothing linked to it.
+
 ### Changed
 
 - **GitHub Actions pins moved** (minor and patch updates, nothing a release image ships):
   docker/login-action v4.6.0 → v4.8.0.
+
+### Fixed
+
+- **The dependency test bot tests its green bumps together even when one of the run's bumps went
+  red.** The combined-tree jobs had no status function in their `if`, so GitHub skipped them after
+  any red bump of the first phase. The bot then read the missing results as a failure: 0.7.2 took
+  only the first green bump of each path, and two bumps that passed (#78 zot 0.1.134, #30 go-cli)
+  were labelled "needs attention". A combined job that leaves no result now blames no bump: the
+  first goes, the others wait for the next run with no label.
 
 ## [0.7.2] - 2026-11-14
 
@@ -4708,7 +4735,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.2...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.3...main
+[0.7.3]: https://github.com/brf-tech/runr/releases/tag/v0.7.3
 [0.7.2]: https://github.com/brf-tech/runr/releases/tag/v0.7.2
 [0.7.1]: https://github.com/brf-tech/runr/releases/tag/v0.7.1
 [0.7.0]: https://github.com/brf-tech/runr/releases/tag/v0.7.0

@@ -629,18 +629,33 @@ pick_kind() {
   id="$(batch_id "$kind")"
   base_tag="$(env_of "$dir/base.env" BASE_TAG)"
   new="$(env_of "$dir/base.env" NEW_VERSION)"
-  rm -f -- "$b/final" "$b/how" "$b/failed" "$b/acc"
+  rm -f -- "$b/final" "$b/how" "$b/failed" "$b/untested" "$b/acc"
   [ -s "$b/members" ] || return 0
   mapfile -t members < "$b/members"
   n="${#members[@]}"
   final="$n"
   : > "$b/failed"
+  : > "$b/untested"
   if [ -e "$b/tested" ]; then
     for suite in $(report_suites "$b/report"); do
-      suite_green "$dir" "$id" "$suite" || echo "$suite" >> "$b/failed"
+      if [ ! -e "$dir/results/$(result_name "$id" "$suite")/status" ]; then
+        echo "$suite" >> "$b/untested"
+      elif ! suite_green "$dir" "$id" "$suite"; then
+        echo "$suite" >> "$b/failed"
+      fi
     done
   fi
-  if [ -s "$b/failed" ]; then
+  why="failed together with the bumps before it"
+  if [ -s "$b/untested" ]; then
+    # a job of the combined tree left no result (it did not run): nothing failed together and no
+    # bump is to blame; the first goes (it is the tree that passed alone), the others wait for the
+    # next run with no label (run 43613219812 labelled two of them "needs attention")
+    final=1
+    why="was not tested together with the bumps before it (the combined tree's $(paste -sd ' ' "$b/untested" | sed 's/ /, /g') left no result)"
+    for ((i = 1; i < n; i++)); do
+      wait_role "$dir" "$kind" "${members[$i]}" "${members[1]}" "$why"
+    done
+  elif [ -s "$b/failed" ]; then
     # the breaker: the first bump from the second on whose suites, with those of the bumps before
     # it, include one that failed on the combined tree (the first bump is the tree it passed alone)
     found=0
@@ -659,7 +674,6 @@ pick_kind() {
   fi
   # the bump that stopped the batch when it was made, and the ones after it
   stop="${members[$final]:-}"
-  why="failed together with the bumps before it"
   if [ -s "$b/breaker" ]; then
     dep="$(cat "$b/breaker")"
     if [ "$final" -lt "$n" ]; then

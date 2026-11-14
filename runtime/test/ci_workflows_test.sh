@@ -432,6 +432,11 @@ has "$(job "$deps" batch-shell)" 'bash "$t" || exit 1' "deps-test.yml does not r
 for j in batch-unit batch-shell batch-check batch-kind; do
   has "$(job "$deps" "$j")" 'deps-batch-tree' "deps-test.yml: ${j} does not test the combined tree (deps-batch-tree)"
 done
+# a red bump of the first phase must not skip the combined tests: an `if` without a status function
+# is success(), false after any failed job before it (run 43613219812)
+for j in batch-unit batch-shell batch-check batch-ui batch-ui-stack batch-kind; do
+  has "$(job "$deps" "$j")" "if: \${{ !cancelled() && needs.batch.result == 'success' && " "deps-test.yml: ${j} is skipped after a red bump of the first phase (its if has no !cancelled())"
+done
 has "$(job "$deps" batch)" 'needs: [plan, bump, unit, shell, check, ui, ui-stack, kind]' "deps-test.yml puts the bumps together before each is tested"
 has "$release_job" 'needs: [plan, bump, batch, batch-unit, batch-shell, batch-check, batch-ui, batch-ui-stack, batch-kind]' "deps-test.yml releases before the combined tree is tested"
 has "$release_job" "bash ci/deps-run.sh pick \"\$RUNNER_TEMP/deps\" \"\$RUNNER_TEMP/repo\"" "deps-test.yml does not pick the run's release through ci/deps-run.sh pick"

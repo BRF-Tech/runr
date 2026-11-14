@@ -940,6 +940,24 @@ res "$d4" batch upgrade success
 res "$d4" batch shell failure
 bash "$root/ci/deps-run.sh" pick "$d4" "$S/clone" > /dev/null
 [ "$(cat "$d4"/role/{traefik,zot} | paste -sd ' ' -)" = "release breaker" ] || fail "runtime/test failed on the combined tree: $(head "$d4"/role/*)"
+# the combined tree's jobs left no result (they did not run; run 43613219812): nothing failed
+# together, no bump is to blame; the first goes alone, the others wait with no label
+rm -rf "$d4"/results/deps-result-batch-*
+rm -f "$d4"/role/*
+bash "$root/ci/deps-run.sh" pick "$d4" "$S/clone" > /dev/null
+alone="$(cat "$d4/bump/traefik/head")"
+grep -qx "RELEASE=${alone}" "$d4/release/release.env" && grep -qx 'DEPS=traefik:2.0.1' "$d4/release/release.env" \
+  && [ "$(cat "$d4"/role/{traefik,zot,loki-stack,kata-deploy} | paste -sd ' ' -)" = "release wait wait wait" ] \
+  || fail "a combined tree with no result: $(cat "$d4/release/release.env"; head "$d4"/role/*)"
+grep -qF 'was not tested together with the bumps before it' "$d4/role/zot.md" && grep -qF 'left no result' "$d4/role/zot.md" \
+  && grep -qF 'stops before #12 zot 0.2.0, which was not tested together' "$d4/role/kata-deploy.md" \
+  || fail "the reasons of a combined tree with no result: $(cat "$d4/role/zot.md" "$d4/role/kata-deploy.md")"
+printf 'origin v1.2.4 %s %s\npublic v1.2.4 %s\nimages v1.2.4 u 1\ngithub v1.2.4 https://example.test/releases/v1.2.4\nhelm 1.2.4 ok\n' "$alone" "$alone" "$alone" > "$d4/release/steps"
+bash "$root/ci/deps-run.sh" actions "$d4" https://example.test/run/9 1
+grep -qF "$(printf 'close\t11')" "$d4/actions" && ! grep -qE "$(printf '^label\t(12|13|18)\t')" "$d4/actions" \
+  && ! grep -qF "$(printf 'close\t12')" "$d4/actions" && grep -qF 'keeps no label' "$d4/comments/12.md" \
+  || fail "the actions of a combined tree with no result: $(cat "$d4/actions")"
+echo "ok - a combined tree whose jobs left no result: the first bump goes alone, the others wait with no label (none needs attention)"
 
 # next changed the lines of a chart whose image RunR pins itself (Zot's): next's own bump makes it
 # again without reading the chart (--no-render), and the app version the tag's bump moved with the

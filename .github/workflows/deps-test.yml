@@ -569,11 +569,14 @@ jobs:
           retention-days: 14
 
   # the second test phase: the combined tree of two or more green bumps of a path (deps/batch,
-  # deps/batch-next) runs the union of their suites, as the first phase runs one bump's
+  # deps/batch-next) runs the union of their suites, as the first phase runs one bump's. Its jobs
+  # run after a red bump of the first phase too: a job's `if` without a status function is
+  # success(), which a failed job anywhere before it (a red bump's suite) makes false, and the
+  # green bumps were then never tested together (run 43613219812: 0.7.2 took two of them)
   batch-unit:
     name: ${{ matrix.dep }} unit
     needs: batch
-    if: needs.batch.outputs.any == 'true' && needs.batch.outputs.unit != '[]'
+    if: ${{ !cancelled() && needs.batch.result == 'success' && needs.batch.outputs.any == 'true' && needs.batch.outputs.unit != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -587,7 +590,7 @@ jobs:
   batch-shell:
     name: ${{ matrix.dep }} shell tests
     needs: batch
-    if: needs.batch.outputs.any == 'true'
+    if: ${{ !cancelled() && needs.batch.result == 'success' && needs.batch.outputs.any == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -627,7 +630,7 @@ jobs:
   batch-check:
     name: ${{ matrix.dep }} ${{ matrix.suite }}
     needs: batch
-    if: needs.batch.outputs.any == 'true' && needs.batch.outputs.checks != '[]'
+    if: ${{ !cancelled() && needs.batch.result == 'success' && needs.batch.outputs.any == 'true' && needs.batch.outputs.checks != '[]' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
@@ -698,7 +701,7 @@ jobs:
   batch-ui:
     name: ${{ matrix.dep }} ${{ matrix.suite }}
     needs: batch
-    if: needs.batch.outputs.any == 'true' && needs.batch.outputs.ui != '[]'
+    if: ${{ !cancelled() && needs.batch.result == 'success' && needs.batch.outputs.any == 'true' && needs.batch.outputs.ui != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -712,7 +715,7 @@ jobs:
   batch-ui-stack:
     name: ${{ matrix.dep }} ${{ matrix.suite }}
     needs: batch
-    if: needs.batch.outputs.any == 'true' && needs.batch.outputs.ui-stack != '[]'
+    if: ${{ !cancelled() && needs.batch.result == 'success' && needs.batch.outputs.any == 'true' && needs.batch.outputs.ui-stack != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -726,7 +729,7 @@ jobs:
   batch-kind:
     name: ${{ matrix.dep }} ${{ matrix.suite }}
     needs: batch
-    if: needs.batch.outputs.any == 'true' && needs.batch.outputs.suites != '[]'
+    if: ${{ !cancelled() && needs.batch.result == 'success' && needs.batch.outputs.any == 'true' && needs.batch.outputs.suites != '[]' }}
     strategy:
       fail-fast: false
       # one Kind cluster per runner, at most six runners at a time

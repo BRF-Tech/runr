@@ -11,6 +11,7 @@ Every change is a version you can deploy, compare and roll back. Blue-green and 
 [![Quick start](https://img.shields.io/badge/Quick_start-e63946?style=for-the-badge)](#quick-start)
 [![Documentation](https://img.shields.io/badge/Documentation-404040?style=for-the-badge)](https://runr.sh/docs/)
 [![runr.sh](https://img.shields.io/badge/runr.sh-0a0a0a?style=for-the-badge)](https://runr.sh)
+[![Live demo](https://img.shields.io/badge/Live_demo-f97316?style=for-the-badge)](https://demo.runr.sh)
 
 [![Release](https://img.shields.io/github/v/release/BRF-Tech/runr?color=e63946)](https://github.com/BRF-Tech/runr/releases)
 [![License: MIT](https://img.shields.io/github/license/BRF-Tech/runr?color=22c55e)](LICENSE)
@@ -20,6 +21,8 @@ Every change is a version you can deploy, compare and roll back. Blue-green and 
 [![Go module: cli](https://img.shields.io/badge/Go_reference-cli-404040?logo=go&logoColor=white)](https://pkg.go.dev/github.com/brf-tech/runr/cli)
 
 **English** · [Türkçe](README.tr.md)
+
+**Live demo:** [demo.runr.sh](https://demo.runr.sh) - read-only, reset every night; sign in with `demo@runr.sh` / `runr-demo`.
 
 <img src="landing/shots/projects-dark.png" alt="The RunR console: the projects of an organization" width="900">
 
@@ -111,7 +114,7 @@ helm status runr -n runr      # prints how to read the first administrator's pas
 
 The chart installs the gateway, UI, API, Horizon, scheduler and Reverb and - unless you point it at
 external services - PostgreSQL, Redis and Mailpit, with migration and bootstrap hooks that create the
-first administrator. To install a specific release, pin the chart version (`--version 0.7.2`); the
+first administrator. To install a specific release, pin the chart version (`--version 0.7.3`); the
 API and UI images follow it. `edition=multi-tenant` switches on the Tenancy and Auth Provider
 modules and the multi-tenant console image.
 

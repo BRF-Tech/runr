@@ -87,6 +87,28 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.7.2 → 0.7.3
+
+0.7.3 carries a fix of RunR's dependency test bot and a link to the live demo, and changes nothing
+an installation runs. There is no database migration, the images keep their names (those of 0.7.2,
+built again at 0.7.3), and nothing has to be set ([Procedure](#procedure)); the region Job moves the
+region agent and the event gateway to 0.7.3 ([Order of operations](#order-of-operations)).
+
+- **The live demo:** runr.sh and the README point to [demo.runr.sh](https://demo.runr.sh), a
+  read-only RunR that resets every night.
+- **The dependency test bot** tests its green bumps together even when another bump of the same
+  run went red ([development.md](development.md#dependency-test-bot)). Until 0.7.3 one red bump
+  made it skip the combined tests, so 0.7.2 released only the first green bump of each path.
+- **The API** returns the tenancy ticket list without a call of `array_values()` on a list, which
+  did nothing and which Larastan 3.15 reports as an error; the response is the same.
+- **GitHub Actions:** the release workflow's `docker/login-action` moves from v4.6.0 to v4.8.0.
+
+### Back to 0.7.2
+
+A `helm rollback` (`helm history runr -n runr` lists the revisions); nothing runs on the database,
+and the region Job of the rollback moves the region agent and the event gateway back to 0.7.2.
+**Never uninstall** to go back.
+
 ## 0.7.1 → 0.7.2
 
 0.7.2 is a dependency release of 0.7.1, made by the dependency test bot: it moves one dependency of

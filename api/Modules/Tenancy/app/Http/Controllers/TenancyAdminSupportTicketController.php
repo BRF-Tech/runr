@@ -228,7 +228,7 @@ class TenancyAdminSupportTicketController extends Controller
         $items = array_slice($allTickets, ($page - 1) * $perPage, $perPage);
 
         return response()->json([
-            'data' => array_values($items),
+            'data' => $items,
             'current_page' => $page,
             'per_page' => $perPage,
             'total' => $total,

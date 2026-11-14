@@ -13,6 +13,7 @@ Her değişiklik dağıtabileceğiniz, karşılaştırabileceğiniz ve geri alab
 [![Hızlı başlangıç](https://img.shields.io/badge/Quick_start-e63946?style=for-the-badge)](#hızlı-başlangıç)
 [![Dokümantasyon](https://img.shields.io/badge/Documentation-404040?style=for-the-badge)](https://runr.sh/docs/)
 [![runr.sh](https://img.shields.io/badge/runr.sh-0a0a0a?style=for-the-badge)](https://runr.sh)
+[![Canlı demo](https://img.shields.io/badge/Canl%C4%B1_demo-f97316?style=for-the-badge)](https://demo.runr.sh)
 
 [![Sürüm](https://img.shields.io/github/v/release/BRF-Tech/runr?color=e63946)](https://github.com/BRF-Tech/runr/releases)
 [![Lisans: MIT](https://img.shields.io/github/license/BRF-Tech/runr?color=22c55e)](LICENSE)
@@ -24,6 +25,8 @@ Her değişiklik dağıtabileceğiniz, karşılaştırabileceğiniz ve geri alab
 [English](README.md) · **Türkçe**
 
 <sub>Bu sayfa, [İngilizce README](README.md) dosyasının çevirisidir; ikisi arasında fark olduğunda İngilizce metin geçerlidir. Bağlantı verdiği belgeler İngilizcedir.</sub>
+
+**Canlı demo:** [demo.runr.sh](https://demo.runr.sh) - salt-okunur, her gece sıfırlanır; `demo@runr.sh` / `runr-demo` ile girin.
 
 <img src="landing/shots/projects-dark.png" alt="RunR konsolu: bir organizasyonun projeleri" width="900">
 
@@ -116,7 +119,7 @@ helm status runr -n runr      # ilk yöneticinin parolasının nasıl okunacağ�
 Chart gateway'i, UI'ı, API'yi, Horizon'u, zamanlayıcıyı ve Reverb'i, dış servislere
 yönlendirmediğiniz sürece PostgreSQL, Redis ve Mailpit'i kurar; migration ve bootstrap hook'ları
 ilk yöneticiyi oluşturur. Belirli bir sürümü kurmak için chart sürümünü sabitleyin
-(`--version 0.7.2`); API ve UI imajları onu izler. `edition=multi-tenant`, Tenancy ve Auth Provider
+(`--version 0.7.3`); API ve UI imajları onu izler. `edition=multi-tenant`, Tenancy ve Auth Provider
 modüllerini ve çok kiracılı konsol imajını açar.
 
 <details>
