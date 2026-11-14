@@ -17,6 +17,9 @@ did not change says so.
   github.com/cespare/xxhash/v2 v2.2.0 → v2.3.0, github.com/dgryski/go-rendezvous
   v0.0.0-20200823014737-9f7001d12a5f → none, github.com/redis/go-redis/v9 v9.7.3 → v9.23.0,
   go.uber.org/atomic none → v1.12.0, golang.org/x/sys none → v0.48.0.
+- **Terraform provider Go modules moved** (minor and patch updates, nothing a release image ships):
+  github.com/ProtonMail/go-crypto v1.4.1 → v1.5.2, github.com/hashicorp/go-plugin v1.7.0 → v1.8.0,
+  github.com/hashicorp/hc-install v0.9.4 → v0.10.0, golang.org/x/sys v0.48.0 → v0.50.0.
 
 ## [0.7.4] - 2026-11-14
 
