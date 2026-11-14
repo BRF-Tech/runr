@@ -8,6 +8,12 @@ did not change says so.
 
 ## [Unreleased]
 
+### Changed
+
+- **CLI Go modules moved** (minor and patch updates, nothing a release image ships):
+  github.com/spf13/cobra v1.8.1 → v1.10.2, github.com/spf13/pflag v1.0.5 → v1.1.0, golang.org/x/sys
+  v0.48.0 → v0.50.0, golang.org/x/term v0.32.0 → v0.48.0.
+
 ## [0.7.4] - 2026-11-14
 
 ### Upgrade notes
