@@ -192,6 +192,9 @@
   margin-inline: auto;
 }
 .hero-cta { display: flex; gap: 12px; justify-content: center; margin-top: 40px; flex-wrap: wrap; }
+/* The live demo's sign-in, under the hero's buttons */
+.hero-demo-note { margin-top: 14px; font-size: 13px; color: var(--text-dim); }
+.hero-demo-note code { font-size: 12px; color: var(--text-muted); }
 
 /* ── CARDS ──────────────────────────────────────────────── */
 .card {
