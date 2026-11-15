@@ -347,7 +347,7 @@ trait KnativeTraefikTrait
                 ],
             ],
             // the chart reads a Service's type from its spec (service.type it never read, and chart
-            // 42.3.1's schema refuses it)
+            // 42.4.0's schema refuses it)
             'service' => [
                 'enabled' => true, 'single' => true, 'spec' => ['type' => 'LoadBalancer'],
                 'additionalServices' => [PrivateIngress::SERVICE_KEY => PrivateIngress::serviceValues()],

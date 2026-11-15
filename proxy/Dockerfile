@@ -5,7 +5,7 @@ RUN go mod download
 COPY main.go ./
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o proxy .
 
-FROM ghcr.io/brf-tech/runr/reqs/alpine:3.21
+FROM ghcr.io/brf-tech/runr/reqs/alpine:3.22
 LABEL org.opencontainers.image.title="runr-sentry-proxy" \
       org.opencontainers.image.description="RunR development stack: the console's Sentry tunnel" \
       org.opencontainers.image.licenses="MIT" \

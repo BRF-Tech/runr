@@ -5,7 +5,10 @@
 # Detection (ci/check-package-releases.sh, daily in upstream-releases.yml) reads every row: the
 # minor and patch updates of one group found in one check are ONE finding and ONE bump
 # (ci/deps/bump-packages.sh); an update outside the manifest's constraint (a new major, a new 0.x
-# minor of a caret range, an exact pin) is a finding of its own that goes to a person.
+# minor of a caret range, an exact pin) is a finding of its own, under an id of its own
+# (<group>--<package>, deps_outside_id), which the bot attempts on its weekly run: it moves the
+# constraint mechanically (bump_outside) and runs the group's suites; one it cannot move or that
+# fails gets the label `next update required` and is tried again every week.
 #
 # A bump releases only when it changes what a RunR release ships: an image, the chart or the API's
 # code (PATH below). One that changes no shipped bytes lands on next only and ships with the next
@@ -211,14 +214,32 @@ DEPS_PINS_UNTRACKED=(
 # The holds: packages a person pinned on purpose, with the reason (detection and the bump leave them)
 DEPS_HOLDS_FILE="${DEPS_ROOT}/ci/deps/holds.txt"
 
-# deps_pkg_row NAME — the DEPS_PKG row of NAME; nothing for an unknown name
+# deps_pkg_row NAME — the DEPS_PKG row of NAME (of its group for an outside finding's id,
+# <group>--<package>); nothing for an unknown name
 deps_pkg_row() {
-  local row
+  local row group="${1%%--*}"
   for row in "${DEPS_PKG[@]}"; do
-    [ "${row%%|*}" = "$1" ] && { echo "$row"; return 0; }
+    [ "${row%%|*}" = "$group" ] && { echo "$row"; return 0; }
   done
   return 1
 }
+
+# deps_base_group ID — the group of a finding's id: an outside finding's <group>--<package> is its
+# group's, a group's own id is itself
+deps_base_group() { echo "${1%%--*}"; }
+
+# deps_outside_slug NAME — a package's name as an id takes it: lower case, every run of other
+# characters than a-z and 0-9 one -, none at either end (github.com/spinframework/spin-go-sdk/v3 →
+# github-com-spinframework-spin-go-sdk-v3)
+deps_outside_slug() {
+  local s="${1,,}"
+  s="$(sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' <<<"$s")"
+  echo "$s"
+}
+
+# deps_outside_id GROUP NAME — the id of a release of NAME outside GROUP's constraint: a finding,
+# a row of the weekly summary, a branch and a bump of its own (npm-vue--vite)
+deps_outside_id() { echo "${1}--$(deps_outside_slug "$2")"; }
 
 # deps_pkg_names [KIND] — the groups (of one kind)
 deps_pkg_names() {

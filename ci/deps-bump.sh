@@ -24,24 +24,34 @@ set -euo pipefail
 #               path            release | next: a package group's bump that ships nothing lands on
 #                               next only (a chart's is always release)
 #               unit            1 when PHPUnit runs on it (every chart's; a group's when its suites say)
+#               mirror          a chart whose image RunR pins from the reqs mirror, with a new app
+#                               version: "TARGET SOURCE" per image the mirror must have before the
+#                               suites run (the reqs mirror's traefik:<new app version> and Docker
+#                               Hub's docker.io/library/traefik:<new app version>); deps-test.yml
+#                               copies it
+#               major           1 when the chart's major moved (the changelog line says so)
 #               edits.log       every line edited or kept
 #   --values  RunR's values of the chart as a YAML file, instead of ci/deps/helm-values.php
 #   --no-render  no chart is downloaded or rendered (the shell tests)
 #   --run-url the workflow run, named in the commit message
 #
-# Exit status: 0 bumped, 2 needs a person (summary.md says why, nothing is left changed), 3 nothing
-# to do (the checkout pins VERSION or a newer one already), 1 the bump could not be checked.
+# Exit status: 0 bumped, 2 not mechanical (summary.md says why, nothing is left changed: the bot
+# labels it `next update required` and tries again every week), 3 nothing to do (the checkout pins
+# VERSION or a newer one already), 1 the bump could not be checked.
 #
-# A chart bump is mechanical only when the new chart takes RunR's values and renders what the
-# pinned one renders: the same objects (Kind, namespace and name) with RunR's values on Kubernetes
-# 1.30 and 1.37, the same CRDs (Helm never upgrades them), every value RunR sets still a key of the
-# chart, no new major, no other kubeVersion, and no new app version where RunR pins the image
-# from the reqs mirror. Then the pin moves, and with it every test and doc that names the pinned
-# version as the current one (ci/deps/lib.sh: deps_replace_version), and the changelog gets a
-# line under [Unreleased] → Changed. Anything else goes to a person.
-#
-# A value RunR sets that the new chart no longer reads (ci/deps/dead-values.php: its change renders
-# nothing) goes to a person too.
+# Every newer chart is attempted, a new major too: the suites decide. A chart bump is mechanical
+# when the new chart takes RunR's values on Kubernetes 1.30 and 1.37 (which also holds its
+# kubeVersion to RunR's), still has and reads every value RunR sets (ci/deps/dead-values.php: a
+# value whose change renders nothing is one the chart dropped), and, for kata-deploy (whose
+# DaemonSet RunR renders itself), renders the same objects; the console and the landing page must
+# not name the pin (the bot does not edit them). Then the pin moves, and with it every test and
+# doc that names the pinned version as the current one (ci/deps/lib.sh: deps_replace_version), the
+# image pin with a new app version (direct: from upstream; reqs: from the reqs mirror, whose copy
+# REPORT/mirror names), and the changelog gets a line under [Unreleased] → Changed that says what
+# an installed region does: a new major says so ("a new major version"), and CRDs of crds/ that
+# changed (Helm never upgrades them) get the command that applies them. Objects the new chart adds
+# or no longer renders, its templated CRDs and its kubeVersion are written down, not refused.
+# Anything that is not mechanical exits 2.
 #
 # Needs bash, git, GNU sed and awk, jq, curl, helm and, for the charts RunR passes values to, php
 # with the API's dependencies (composer install in api/).
@@ -100,7 +110,7 @@ fi
 [ -n "$report" ] || report="$(mktemp -d "${TMPDIR:-/tmp}/deps-bump-${dep}.XXXXXX")"
 mkdir -p "$report"
 : > "$report/edits.log"
-rm -f -- "$report/result" "$report/summary.md" "$report/commit-msg.txt" "$report/suites.json" "$report/path"
+rm -f -- "$report/result" "$report/summary.md" "$report/commit-msg.txt" "$report/suites.json" "$report/path" "$report/mirror" "$report/major"
 # a chart's bump is always a release, with PHPUnit (a package group's: ci/deps/bump-packages.sh)
 echo release > "$report/path"
 echo 1 > "$report/unit"
@@ -115,6 +125,8 @@ release="$(deps_field "$bot_row" 6)"
 suites="$(deps_field "$bot_row" 7)"
 reasons=()
 notes=()
+# what the changelog adds for an installed region (the CRDs a chart changed, the mirrored image)
+more=()
 
 # finish RESULT STATUS — the result file, the summary's end, and the exit status
 finish() {
@@ -126,7 +138,7 @@ finish() {
 # attention — every reason found: the summary, the checkout put back as it was, status 2
 attention() {
   {
-    echo "**${dep} ${version} needs a person: the bot does not move it by itself.**"
+    echo "**${dep} ${version} cannot be moved mechanically: it waits for its next update (\`next update required\`).**"
     echo ""
     printf -- '- %s\n' "${reasons[@]}"
     if [ "${#notes[@]}" -gt 0 ]; then
@@ -339,18 +351,11 @@ if [ "$render" = 1 ]; then
   kube_new="$(chart_field "$new_dir" kubeVersion)"
   notes+=("chart ${pin} → ${version}, app version ${app_old:-none} → ${app_new:-none}, kubeVersion ${kube_old:-none} → ${kube_new:-none}")
 
-  if [ "$(deps_major "$version")" != "$(deps_major "$pin")" ]; then
-    reasons+=("a new major release (${pin} → ${version}): its values or upgrade path may change (Traefik 41 renamed \`logs\`, which RunR's values and an installed region's had to follow); read its release notes and move it by hand")
-  fi
+  # the chart's kubeVersion must take RunR's Kubernetes: helm template refuses a --kube-version
+  # outside it, so the renders below hold it (a refusal is a reason there)
   if [ "$kube_old" != "$kube_new" ]; then
-    reasons+=("the chart's kubeVersion changed (\`${kube_old:-none}\` → \`${kube_new:-none}\`): RunR's minimum Kubernetes and the chart's must still agree")
+    notes+=("the chart's kubeVersion changed (\`${kube_old:-none}\` → \`${kube_new:-none}\`): it must render on Kubernetes ${DEPS_KUBE_VERSIONS// / and } (below)")
   fi
-  case "$image" in
-    reqs:*)
-      if [ "$app_old" != "$app_new" ]; then
-        reasons+=("the chart runs a new app version (${app_old} → ${app_new}) and RunR pins the image from the reqs mirror: mirror \`${image#reqs:}:${app_new}\` first (\`REQS_IMAGES\` of BRF-Tech/runr-runtimes \`lib/mirror.sh\`), then move the image pin with the chart")
-      fi ;;
-  esac
 
   # RunR's values: the file the install writes, and its --set-json values
   : > "$work/set-json"
@@ -381,12 +386,17 @@ if [ "$render" = 1 ]; then
     added="$(jq -r '.added | join(", ")' "$work/diff-${kube}.json")"
     removed="$(jq -r '.removed | join(", ")' "$work/diff-${kube}.json")"
     crds="$(jq -r '.crds | join(", ")' "$work/diff-${kube}.json")"
-    [ -z "$added" ] || reasons+=("on Kubernetes ${kube} chart ${version} renders objects ${pin} does not: ${added}")
-    [ -z "$removed" ] || reasons+=("on Kubernetes ${kube} chart ${version} no longer renders: ${removed}")
-    [ -z "$crds" ] || reasons+=("on Kubernetes ${kube} the chart's templated CRDs changed: ${crds}")
+    # new or gone objects and templated CRDs (Helm upgrades those): the suites decide; kata-deploy,
+    # whose DaemonSet RunR renders itself, cannot take them
+    [ -z "$added" ] || notes+=("on Kubernetes ${kube} chart ${version} renders objects ${pin} does not: ${added}")
+    [ -z "$removed" ] || notes+=("on Kubernetes ${kube} chart ${version} no longer renders: ${removed}")
+    [ -z "$crds" ] || notes+=("on Kubernetes ${kube} the chart's templated CRDs changed: ${crds}")
+    if [ "$dep" = kata-deploy ] && [ -n "${added}${removed}" ]; then
+      reasons+=("RunR renders kata-deploy's DaemonSet itself, after the chart's daemonset mode (KataManifestTrait): on Kubernetes ${kube} the chart's objects changed (${added:+added ${added}}${added:+${removed:+; }}${removed:+gone ${removed}}), which RunR's code must carry over")
+    fi
     changed="$(jq -r '.changed[] | "\(.id) (\(.paths | join(", ")))"' "$work/diff-${kube}.json" | paste -sd ';' - | sed 's/;/; /g')"
     if [ "$dep" = kata-deploy ] && [ -n "$changed" ]; then
-      reasons+=("RunR renders kata-deploy's DaemonSet itself, after the chart's daemonset mode (KataManifestTrait): the chart's objects changed on Kubernetes ${kube} beyond its version and image (${changed}), which a person carries over")
+      reasons+=("RunR renders kata-deploy's DaemonSet itself, after the chart's daemonset mode (KataManifestTrait): the chart's objects changed on Kubernetes ${kube} beyond its version and image (${changed}), which RunR's code must carry over")
     fi
     notes+=("Kubernetes ${kube}: $(jq -r '.old' "$work/diff-${kube}.json") objects with ${pin}, $(jq -r '.new' "$work/diff-${kube}.json") with ${version}; apart from version labels and images: ${changed:-nothing changes}")
   done
@@ -394,7 +404,12 @@ if [ "$render" = 1 ]; then
     php ci/deps/render-diff.php crds "$old_dir" "$new_dir" > "$work/crds.json"
     crd_change="$(jq -r '[.added[] | "added \(.)"] + [.removed[] | "removed \(.)"] + [.changed[] | "changed \(.)"] | join(", ")' "$work/crds.json")"
     if [ -n "$crd_change" ]; then
-      reasons+=("the chart's CRDs changed (${crd_change}): Helm installs a chart's crds/ once and never upgrades them, so an installed region needs a CRD step")
+      # Helm installs a chart's crds/ once and never upgrades them: the suites run on an installed
+      # region with the old ones (the upgrade suite), and the changelog says how to take the new ones
+      crd_names="$(jq -r '[.added[], .removed[], .changed[]] | unique | join(", ")' "$work/crds.json")"
+      notes+=("the chart's CRDs (crds/) changed: ${crd_change}")
+      if [ "$type" = oci ]; then crd_cmd="helm show crds oci://${repo} --version ${version}"; else crd_cmd="helm show crds ${chart} --repo ${repo} --version ${version}"; fi
+      more+=("Its CRDs changed (${crd_names}): Helm never upgrades a chart's CRDs, so an installed region keeps the old ones, with which the upgrade suite passed; to take the new ones, apply them on the region's cluster before that step: \`${crd_cmd} | kubectl apply --server-side --force-conflicts -f -\`.")
     else
       notes+=("CRDs (crds/): the same, labels and annotations aside")
     fi
@@ -427,11 +442,28 @@ fi
 # ── The bump ──
 deps_replace_version "$pin" "$version" "$names" "$report/edits.log" > /dev/null
 case "$image" in
-  direct:*)
+  direct:*|reqs:*)
     if [ -n "$app_new" ] && [ "$app_old" != "$app_new" ]; then
       deps_replace_version "${app_old#v}" "${app_new#v}" "$names" "$report/edits.log" > /dev/null
     fi ;;
 esac
+# the image from the reqs mirror: the copy the mirror needs before the suites (deps-test.yml makes
+# it; a dry run loads the upstream image under the mirror's name instead)
+case "$image" in
+  reqs:*)
+    if [ -n "$app_new" ] && [ "$app_old" != "$app_new" ]; then
+      mirror_repo="${image#reqs:}"
+      echo "${mirror_repo%%=*}:${app_new} ${mirror_repo#*=}:${app_new}" > "$report/mirror"
+      notes+=("the image moves to ${mirror_repo%%=*}:${app_new}, a copy of ${mirror_repo#*=}:${app_new} that the reqs mirror gets before the suites run")
+      more+=("Its image is \`${mirror_repo%%=*}:${app_new}\`, which the dependency test bot copied into the reqs mirror from \`${mirror_repo#*=}:${app_new}\`.")
+    fi ;;
+esac
+major=0
+if [ "$(deps_major "$version")" != "$(deps_major "$pin")" ]; then
+  major=1
+  echo 1 > "$report/major"
+  notes+=("a new major version (${pin} → ${version}): the suites decide; its release notes say what else changes")
+fi
 now="$(deps_read_pin "$pin_file" "$pin_constant")"
 if [ "$now" != "$version" ]; then
   echo "${dep}: ${pin_constant} of ${pin_file} reads '${now}' after the bump, not ${version}" >&2
@@ -439,8 +471,9 @@ if [ "$now" != "$version" ]; then
   exit 1
 fi
 
+more_text="${more[*]:-}"
 key_label="$(deps_changelog_line "$dep" "$pin" "$version" "$app_old" "$app_new" | sed -E 's/^(- \*\*[^0-9]*)[0-9].*/\1/')"
-deps_changelog_add CHANGELOG.md "$key_label" "$(deps_changelog_line "$dep" "$pin" "$version" "$app_old" "$app_new")"
+deps_changelog_add CHANGELOG.md "$key_label" "$(deps_changelog_line "$dep" "$pin" "$version" "$app_old" "$app_new" "$major" "$more_text")"
 echo "edit CHANGELOG.md: [Unreleased] → Changed" >> "$report/edits.log"
 
 tag="$(deps_last_release_tag HEAD || true)"
@@ -458,6 +491,7 @@ kept="$(grep '^kept ' "$report/edits.log" | sed 's/^kept /  - /' || true)"
 touched="$(git -C "$ROOT" diff --name-only | paste -sd ',' - | sed 's/,/, /g')"
 subject="fix(${scope}): ${label} ${version}"
 if [ "$dep" = zot ] && [ -n "$app_new" ]; then subject="${subject} (zot ${app_new})"; fi
+[ "$major" != 1 ] || subject="${subject} (a new major version)"
 {
   echo "$subject"
   echo ""
@@ -487,7 +521,7 @@ if [ "$dep" = zot ] && [ -n "$app_new" ]; then subject="${subject} (zot ${app_ne
   echo "$(suite_names)${run_url:+ (${run_url})}."
 } > "$report/commit-msg.txt"
 {
-  echo "**${dep} ${pin} → ${version}**${app_new:+ (app version ${app_old:-none} → ${app_new})}: a mechanical bump."
+  echo "**${dep} ${pin} → ${version}**${app_new:+ (app version ${app_old:-none} → ${app_new})}: a mechanical bump$([ "$major" = 1 ] && echo ", a new major version")."
   echo ""
   if [ "${#notes[@]}" -gt 0 ]; then
     echo "Rendered with RunR's values:"

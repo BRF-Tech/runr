@@ -18,8 +18,10 @@
 #     pushes nothing;
 #   - the images, the GitHub release and the chart are checked: a digest the registry does not
 #     serve, a failed run or another chart stops the release with the reason;
-#   - the issue gets what happened: released (label, comment, close), moved (tested again), failed
-#     (label, what is done, how to resume); one that waits gets a comment and no label; a row of the
+#   - the issue gets what happened: released (label, comment, close; a retried one loses next
+#     update required), moved (tested again), failed (label, what is done, how to resume); red, not
+#     mechanical or failed together: next update required, the failing suite named; one that waits
+#     gets a comment and no label; a row of the
 #     weekly summary (ref <summary>:<group>) gets no action of its own but its row (shipped, red split
 #     out to an issue, a failed release for the run's issue with its resume ref), and resume takes
 #     its ref;
@@ -143,7 +145,10 @@ next=0
 case "$dep" in
   traefik)
     grep -q "TRAEFIK = " api/pins.php || { printf -- '- the pin is gone\n' > "$report/summary.md"; echo attention > "$report/result"; exit 2; }
-    sed -i "s/TRAEFIK = '[^']*'/TRAEFIK = '${version}'/" api/pins.php; label="Region Traefik chart ${version}" ;;
+    sed -i "s/TRAEFIK = '[^']*'/TRAEFIK = '${version}'/" api/pins.php; label="Region Traefik chart ${version}"
+    # FAKE_MIRROR="TARGET SOURCE": the image the chart runs comes from the reqs mirror (its copy)
+    [ -z "${FAKE_MIRROR:-}" ] || echo "$FAKE_MIRROR" > "$report/mirror"
+    [ -z "${FAKE_MAJOR:-}" ] || major=", a new major version" ;;
   zot|loki-stack|kube-prometheus-stack|kata-deploy)
     if [ "${FAKE_MODE:-}" = batch ]; then
       c="$(tr 'a-z-' 'A-Z_' <<<"$dep")"
@@ -170,7 +175,7 @@ case "$dep" in
   *) echo "cannot read the chart repository"; exit 1 ;;
 esac
 # (as ci/deps/changelog.awk: after the last bullet of [Unreleased] → Changed, which is made first)
-awk -v line="- **${label}** (from the pinned one). New regions install it." '
+awk -v line="- **${label}** (from the pinned one${major:-}). New regions install it." '
   { l[NR] = $0 }
   END {
     for (i = 1; i <= NR; i++) if (l[i] == "## [Unreleased]") { u = i; break }
@@ -397,21 +402,31 @@ echo "- **xaas-python-3.15-http** [ready]: timed out" > "$dir/results/deps-resul
 echo "the end of the e2e log of traefik" > "$dir/results/deps-result-traefik-e2e/tail.txt"
 bash "$root/ci/deps-run.sh" outcome "$dir"
 bash "$root/ci/deps-run.sh" actions "$dir" https://example.test/run/1 1
-grep -qF "$(printf 'label\t20\tneeds attention')" "$dir/actions" && grep -qF 'xaas-python-3.15-http' "$dir/comments/20.md" \
+grep -qF "$(printf 'label\t20\tnext update required')" "$dir/actions" && grep -qF 'xaas-python-3.15-http' "$dir/comments/20.md" \
   && grep -qF 'the end of the e2e log of traefik' "$dir/comments/20.md" && grep -qF 'Nothing was released or pushed' "$dir/comments/20.md" \
+  && grep -qF '**Next update required: traefik 2.0.1 failed on v1.2.3:** `runtime/ci.sh e2e` ([run](https://example.test/run/1), its log below)' "$dir/comments/20.md" \
+  && grep -qF 'tries it again on every weekly run' "$dir/comments/20.md" \
   || fail "red: $(cat "$dir/actions"; cat "$dir/comments/20.md")"
+grep -qF "$(printf 'label\t20\tneeds attention')" "$dir/actions" && fail "red is labelled needs attention: $(cat "$dir/actions")"
 grep -qF "$(printf 'close\t15')" "$dir/actions" || fail "nothing to do: not closed"
 grep -qF "$(printf 'comment\t21\t')" "$dir/actions" && ! grep -qF "$(printf 'label\t21')" "$dir/actions" || fail "an error: a comment, no label"
-grep -qF "$(printf 'label\t8\tneeds attention')" "$dir/actions" && grep -qF 'a new major' "$dir/comments/8.md" || fail "attention: the reasons"
+grep -qF "$(printf 'label\t8\tnext update required')" "$dir/actions" && grep -qF 'a new major' "$dir/comments/8.md" \
+  && grep -qF 'tries it again on every weekly run' "$dir/comments/8.md" || fail "not mechanical: the reasons, next update required: $(cat "$dir/actions"; cat "$dir/comments/8.md")"
+# tried again (its issue labelled next update required) and still not mechanical: a short comment
+touch "$dir/bump/kube-prometheus-stack/retry"
+bash "$root/ci/deps-run.sh" actions "$dir" https://example.test/run/1 1
+grep -qF '**Next update required: kube-prometheus-stack 93.0.0 is still not mechanical on v1.2.3**' "$dir/comments/8.md" \
+  && grep -qF "$(printf 'label\t8\tnext update required')" "$dir/actions" || fail "a retried one still not mechanical: $(cat "$dir/comments/8.md")"
+rm -f "$dir/bump/kube-prometheus-stack/retry"
 # the same bumps as rows of the weekly summary (ref <summary>:<group>): no action of their own, a row
 # each for ci/deps-digest.sh (red: split out to an issue of its own with its report; nothing to
 # do: closed), an issue of its own both
 loki="$(cat "$dir/bump/loki-stack/issue")"
 echo 90:traefik > "$dir/bump/traefik/ref"; echo 90:loki-stack > "$dir/bump/loki-stack/ref"
 bash "$root/ci/deps-run.sh" actions "$dir" https://example.test/run/1 1
-! grep -qE "^[a-z]+	(20|${loki})(	|\$)" "$dir/actions" && grep -qF "$(printf 'label\t8\tneeds attention')" "$dir/actions" \
+! grep -qE "^[a-z]+	(20|${loki})(	|\$)" "$dir/actions" && grep -qF "$(printf 'label\t8\tnext update required')" "$dir/actions" \
   || fail "rows of the summary got actions of their own: $(cat "$dir/actions")"
-grep -qxF "$(printf '90:traefik\037chart\037traefik\0372.0.1\037red\037split\037failed on v1.2.3\037%s\037\037https://example.test/run/1' "$dir/comments/20-traefik.md")" "$dir/lines" \
+grep -qxF "$(printf '90:traefik\037chart\037traefik\0372.0.1\037next update required\037split\037failed on v1.2.3: `runtime/ci.sh e2e`\037%s\037\037https://example.test/run/1' "$dir/comments/20-traefik.md")" "$dir/lines" \
   && grep -qF 'xaas-python-3.15-http' "$dir/comments/20-traefik.md" \
   && grep -qxF "$(printf '90:loki-stack\037chart\037loki-stack\037%s\037closed\037line\037the last release has it\037\037\037https://example.test/run/1' "$(cat "$dir/bump/loki-stack/version")")" "$dir/lines" \
   && grep -qF "$(printf '8\037chart\037')" "$dir/lines" || fail "the rows: $(cat -v "$dir/lines")"
@@ -655,8 +670,16 @@ echo "ok - the GitHub release with the release commit's notes, the chart's publi
 bash "$root/ci/deps-run.sh" actions "$dir" https://example.test/run/1 1
 grep -qF "$(printf 'label\t20\tdeps: passed')" "$dir/actions" && grep -qF "$(printf 'close\t20')" "$dir/actions" || fail "released: $(cat "$dir/actions")"
 grep -qF '**Released: traefik 2.0.1 is RunR 1.2.4** ([release](https://example.test/releases/v1.2.4))' "$dir/comments/20.md" || fail "the released comment: $(cat "$dir/comments/20.md")"
-grep -qF "$(printf 'label\t14\tneeds attention')" "$dir/actions" || fail "attention: $(cat "$dir/actions")"
+grep -qF "$(printf 'label\t14\tnext update required')" "$dir/actions" || fail "not mechanical (its release cannot be made): $(cat "$dir/actions")"
+grep -qF "$(printf 'unlabel\t20')" "$dir/actions" && fail "a released issue that was not retried is unlabelled: $(cat "$dir/actions")"
 grep -q '^dispatch' "$dir/actions" && fail "a dispatch after a release"
+# one the bot tried again (labelled next update required) and released: it loses the label
+touch "$dir/bump/traefik/retry"
+bash "$root/ci/deps-run.sh" actions "$dir" https://example.test/run/1 1
+grep -qxF "$(printf 'unlabel\t20\tnext update required')" "$dir/actions" && grep -qF "$(printf 'label\t20\tdeps: passed')" "$dir/actions" \
+  && grep -qxF "$(printf 'close\t20')" "$dir/actions" || fail "a retried release: $(cat "$dir/actions")"
+rm -f "$dir/bump/traefik/retry"
+bash "$root/ci/deps-run.sh" actions "$dir" https://example.test/run/1 1
 grep -qF 'together with' "$dir/comments/20.md" && fail "the release of one bump names others: $(cat "$dir/comments/20.md")"
 grep -qxF "$(printf '20\037chart\037traefik\0372.0.1\037shipped\037line\037\037\037v1.2.4\037https://example.test/releases/v1.2.4')" "$dir/lines" \
   || fail "the row that mirrors a released issue: $(cat -v "$dir/lines")"
@@ -870,10 +893,10 @@ done
 grep -qF '**Released: traefik 2.0.1 is RunR 1.2.4**' "$d2/comments/11.md" && grep -qF 'together with #12 zot 0.2.0, #13 loki-stack 2.10.4' "$d2/comments/11.md" \
   && grep -qF 'with all 3 bumps together' "$d2/comments/11.md" && grep -qF '(`deps/batch`, ' "$d2/comments/11.md" || fail "the released comment: $(cat "$d2/comments/11.md")"
 grep -qF 'Landed on next: go-cli 0a1b2c3f' "$d2/comments/17.md" && grep -qF 'the 2 bumps of this run together' "$d2/comments/17.md" || fail "the landed comment: $(cat "$d2/comments/17.md")"
-grep -qF "$(printf 'label\t14\tneeds attention')" "$d2/actions" && ! grep -qF "$(printf 'close\t14')" "$d2/actions" || fail "the red bump: $(cat "$d2/actions")"
+grep -qF "$(printf 'label\t14\tnext update required')" "$d2/actions" && ! grep -qF "$(printf 'close\t14')" "$d2/actions" || fail "the red bump: $(cat "$d2/actions")"
 [ "$(grep -c "$(printf '\t15')" "$d2/actions")" = 1 ] && grep -qF 'the next full release brings it' "$d2/comments/15.md" || fail "the held group: $(cat "$d2/actions")"
 grep -q '^dispatch' "$d2/actions" && fail "a dispatch after the release of the batch"
-echo "ok - the release of three bumps: one release commit and one tag on the origin, one public commit; the two of next land in one fast-forward first; every released and landed issue closed, the red one needs attention, the unknown group waits without a label"
+echo "ok - the release of three bumps: one release commit and one tag on the origin, one public commit; the two of next land in one fast-forward first; every released and landed issue closed, the red one next update required, the unknown group waits without a label"
 
 # a bump whose re-make on the batch is not mechanical stops it: the bumps before it are released,
 # it needs attention, the ones after it wait
@@ -893,9 +916,9 @@ FAKE_REMAKE_ATTENTION=zot bash "$root/ci/deps-run.sh" batch "$d3" "$S/clone" > "
 grep -qF 'it is not mechanical' "$d3/role/zot.md" && grep -qF 'the bump needs a person on this tree' "$d3/role/zot.md" && grep -qF '#11 traefik 2.0.1' "$d3/role/zot.md" \
   && grep -qF 'stops before #12 zot 0.2.0' "$d3/role/loki-stack.md" || fail "the breaker's and the waiting one's reasons: $(cat "$d3/role/zot.md" "$d3/role/loki-stack.md")"
 bash "$root/ci/deps-run.sh" actions "$d3" https://example.test/run/8 1
-grep -qF "$(printf 'label\t12\tneeds attention')" "$d3/actions" && ! grep -qF "$(printf 'label\t13')" "$d3/actions" && grep -qF "$(printf 'comment\t13')" "$d3/actions" \
+grep -qF "$(printf 'label\t12\tnext update required')" "$d3/actions" && ! grep -qF "$(printf 'label\t13')" "$d3/actions" && grep -qF "$(printf 'comment\t13')" "$d3/actions" \
   && ! grep -q '^dispatch' "$d3/actions" || fail "the breaker's and the waiting one's actions: $(cat "$d3/actions")"
-echo "ok - a bump not made mechanically on the batch stops it: the bumps before it are released (one: its tree tested alone), it needs attention, the ones after it wait with no label"
+echo "ok - a bump not made mechanically on the batch stops it: the bumps before it are released (one: its tree tested alone), it gets next update required, the ones after it wait with no label"
 
 # the combined tree fails a suite: the largest prefix whose suites passed there is released
 fresh prefix
@@ -927,7 +950,7 @@ grep -qF 'failed together with the bumps before it' "$d4/role/loki-stack.md" && 
   || fail "the comments of the breaker and the one after it: $(cat "$d4/role/loki-stack.md" "$d4/role/kata-deploy.md")"
 printf 'origin v1.2.4 %s %s\npublic v1.2.4 %s\nimages v1.2.4 u 1\ngithub v1.2.4 https://example.test/releases/v1.2.4\nhelm 1.2.4 ok\n' "$prefix" "$prefix" "$prefix" > "$d4/release/steps"
 bash "$root/ci/deps-run.sh" actions "$d4" https://example.test/run/9 1
-grep -qF "$(printf 'close\t11')" "$d4/actions" && grep -qF "$(printf 'close\t12')" "$d4/actions" && grep -qF "$(printf 'label\t13\tneeds attention')" "$d4/actions" \
+grep -qF "$(printf 'close\t11')" "$d4/actions" && grep -qF "$(printf 'close\t12')" "$d4/actions" && grep -qF "$(printf 'label\t13\tnext update required')" "$d4/actions" \
   && ! grep -qF "$(printf 'label\t18')" "$d4/actions" && grep -qF 'has the first 2 of them' "$d4/comments/12.md" || fail "the prefix's actions: $(cat "$d4/actions")"
 # a suite of the first bump failed on the combined tree: the second breaks it, the first goes alone
 res "$d4" batch upgrade-3 success
@@ -984,6 +1007,102 @@ unset FAKE_ZOT_APP
 echo "ok - next that changed a Zot bump's lines: next's own bump makes it again without the chart, and the app version the tag's bump moved with it moves on next by next's own pin rules"
 unset FAKE_MODE
 echo "ok - a combined tree that failed a suite: the first bump from the second on whose suites with those before it include it breaks the batch, the largest prefix is released (made the same way, not tested again; the first alone is its own tree), the ones after it wait"
+
+# --- a reqs mirror copy a bump needs; a new major in the release's texts ---------------------------
+# crane: digest answers for the images of $MIRROR_HAS; copy adds the target there (logged), or fails
+# with $MIRROR_COPY_ERR
+mkdir -p "$tmp/mirrorbin"
+cat > "$tmp/mirrorbin/crane" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  digest) grep -qxF "$2" "$MIRROR_HAS" 2>/dev/null && { echo "sha256:$(printf '%064d' 1)"; exit 0; }
+          echo "Error: MANIFEST_UNKNOWN: manifest unknown" >&2; exit 1 ;;
+  copy) [ -z "${MIRROR_COPY_ERR:-}" ] || { echo "Error: ${MIRROR_COPY_ERR}" >&2; exit 1; }
+        echo "$3" >> "$MIRROR_HAS"; echo "$2 -> $3" >> "$MIRROR_LOG" ;;
+  *) echo "crane: unexpected $*" >&2; exit 2 ;;
+esac
+EOF
+chmod +x "$tmp/mirrorbin/crane"
+export MIRROR_HAS="$tmp/mirror-has" MIRROR_LOG="$tmp/mirror-log"
+: > "$MIRROR_HAS"
+: > "$MIRROR_LOG"
+# (the reqs references in variables: ci/check-reqs-mirror.sh does not check a variable tag)
+reqs=ghcr.io/brf-tech/runr/reqs
+mtag=v9.9.9
+target="${reqs}/traefik:${mtag}"
+msource="docker.io/library/traefik:${mtag}"
+fresh mirror
+d5="$S/deps"
+echo '[{"issue": 40, "dep": "traefik", "version": "3.0.0", "retry": true}]' > "$tmp/tests5.json"
+# mbumps DIR DRY — the bump of traefik 3.0.0 (a new major, its image from the reqs mirror)
+mbumps() {
+  FAKE_MIRROR="${target} ${msource}" FAKE_MAJOR=1 DEPS_DRY_RUN="$2" PATH="$tmp/mirrorbin:$PATH" \
+    bash "$root/ci/deps-run.sh" bumps "$tmp/tests5.json" "$S/clone" "$1" "$S/public.git" https://example.test/run/5 > "$S/bumps.log" 2>&1 \
+    || fail "the mirror's bumps: $(tail -n 20 "$S/bumps.log")"
+}
+mbumps "$d5" false
+[ -e "$d5/bump/traefik/retry" ] || fail "a retried issue's bump does not know it"
+[ "$(jq -c . "$d5/mirror.json")" = "$(jq -nc --arg t "$target" --arg s "$msource" '[{dep: "traefik", target: $t, source: $s}]')" ] \
+  || fail "the copies the mirror needs: $(cat "$d5/mirror.json")"
+[ "$(cat "$d5/bump/traefik/mirror-needed")" = "$target" ] && [ ! -e "$d5/bump/traefik/standins" ] \
+  && jq -e 'all(.[]; has("standins") | not)' "$d5/matrix-shell.json" >/dev/null && ! grep -q STANDINS "$d5/matrix-suites.json" \
+  || fail "a run that copies the image has stand-ins: $(cat "$d5/matrix-shell.json" "$d5/matrix-suites.json")"
+# the job Reqs mirror copies it; a second run leaves it
+PATH="$tmp/mirrorbin:$PATH" bash "$root/ci/deps-run.sh" mirror "$d5/mirror.json" "$d5/results/deps-result-mirror" > "$S/mirror.log" 2>&1 \
+  || fail "the mirror job: $(cat "$S/mirror.log")"
+grep -qE "^${target} copied sha256:0+1 from ${msource}\$" "$d5/results/deps-result-mirror/mirror" && grep -qxF "${msource} -> ${target}" "$MIRROR_LOG" \
+  || fail "the copy: $(cat "$d5/results/deps-result-mirror/mirror" "$MIRROR_LOG")"
+PATH="$tmp/mirrorbin:$PATH" bash "$root/ci/deps-run.sh" mirror "$d5/mirror.json" "$S/again" > /dev/null 2>&1 || fail "the mirror job again"
+[ "$(cat "$S/again/mirror")" = "${target} present" ] && [ "$(wc -l < "$MIRROR_LOG")" = 1 ] || fail "a copy the mirror has: $(cat "$S/again/mirror")"
+rc=0
+jq -nc --arg t "$target" '[{target: $t, source: "evil.example/x:1"}]' > "$S/bad.json"
+PATH="$tmp/mirrorbin:$PATH" bash "$root/ci/deps-run.sh" mirror "$S/bad.json" "$S/bad" > /dev/null 2>&1 || rc=$?
+[ "$rc" = 1 ] && grep -qF 'failed not a copy the bot makes' "$S/bad/mirror" || fail "a copy from another registry: exit ${rc}"
+# the outcome: the copy there, the suites decide; a copy that failed (or no result) holds the bump
+green_results "$d5" traefik unit shell e2e upgrade
+bash "$root/ci/deps-run.sh" outcome "$d5"
+[ "$(cat "$d5/outcome/traefik")" = green ] || fail "a bump whose copy was made: $(cat "$d5/outcome/traefik")"
+echo "${target} failed DENIED: permission_denied: write_package" > "$d5/results/deps-result-mirror/mirror"
+echo bumped > "$d5/bump/traefik/result"
+bash "$root/ci/deps-run.sh" outcome "$d5"
+[ "$(cat "$d5/outcome/traefik")" = held ] && grep -qF 'could not copy `'"${target}"'`: DENIED: permission_denied: write_package' "$d5/bump/traefik/held" \
+  && grep -qF 'packages/container/runr%2Freqs%2Ftraefik/settings → Manage Actions access → BRF-Tech/runr, role Write' "$d5/bump/traefik/held" \
+  || fail "a copy that failed: $(cat "$d5/outcome/traefik" "$d5/bump/traefik/held")"
+bash "$root/ci/deps-run.sh" actions "$d5" https://example.test/run/5 1
+grep -qF '**The bot cannot test traefik 3.0.0 now:** its image must be in the reqs mirror' "$d5/comments/40.md" \
+  && [ "$(cat "$d5/actions")" = "$(printf 'comment\t40\t%s' "$d5/comments/40.md")" ] || fail "the comment of a copy that failed: $(cat "$d5/actions" "$d5/comments/40.md")"
+rm -f "$d5/results/deps-result-mirror/mirror"
+echo bumped > "$d5/bump/traefik/result"
+bash "$root/ci/deps-run.sh" outcome "$d5"
+[ "$(cat "$d5/outcome/traefik")" = held ] && grep -qF 'left no result' "$d5/bump/traefik/held" || fail "no result of the mirror job: $(cat "$d5/bump/traefik/held")"
+# the new major: the release's upgrade notes, docs/upgrade.md's section and the GitHub release say so
+head5="$(cat "$d5/bump/traefik/head")"
+git -C "$S/clone" show "${head5}:CHANGELOG.md" | awk '/^  [^ ]/ { sub(/^  /, ""); printf " %s", $0; next } NR > 1 { print "" } { printf "%s", $0 } END { print "" }' > "$S/changelog"
+grep -qF -- '- **A new major version moves: Region Traefik chart 3.0.0.** RunR itself needs no step for it' "$S/changelog" \
+  || fail "the upgrade notes of a new major: $(sed -n '/## \[1.2.4\]/,/## \[1.2.3\]/p' "$S/changelog")"
+git -C "$S/clone" show "${head5}:docs/upgrade.md" | tr '\n' ' ' | grep -qF '**A new major version moves: Region Traefik chart 3.0.0.**' || fail "docs/upgrade.md of a new major"
+bash "$root/ci/deps-release.sh" notes "$S/clone" "$head5" "$S/notes" > /dev/null 2>&1 || fail "the notes of a new major"
+grep -qF '**A new major version moves: Region Traefik chart 3.0.0.** RunR itself needs no step for it' "$S/notes/notes.md" \
+  && grep -qF 'A new major version: Region Traefik chart 3.0.0.' <(tr '\n' ' ' < "$S/notes/tag-msg.txt") || fail "the release notes of a new major: $(cat "$S/notes/notes.md")"
+# a dry run copies nothing: no copy listed, the suites take the upstream image under the mirror's name
+: > "$MIRROR_HAS"
+mbumps "$S/dry" true
+[ "$(jq -c . "$S/dry/mirror.json")" = '[]' ] && [ ! -e "$S/dry/bump/traefik/mirror-needed" ] \
+  && [ "$(cat "$S/dry/bump/traefik/standins")" = "${target}=${msource}" ] \
+  && [ "$(jq -r '.[0].standins' "$S/dry/matrix-shell.json")" = "${target}=${msource}" ] \
+  && [ "$(jq -r '[.[] | .env | test("E2E_IMAGE_STANDINS=" + $s)] | all' --arg s "${target}=${msource}" "$S/dry/matrix-suites.json")" = true ] \
+  || fail "a dry run's stand-ins: $(cat "$S/dry/mirror.json" "$S/dry/matrix-shell.json" "$S/dry/matrix-suites.json")"
+grep -qF 'this dry run copied nothing' "$S/dry/bump/traefik/mirror.log" && [ "$(wc -l < "$MIRROR_LOG")" = 1 ] || fail "a dry run copied: $(cat "$MIRROR_LOG")"
+green_results "$S/dry" traefik unit shell e2e upgrade
+bash "$root/ci/deps-run.sh" outcome "$S/dry"
+[ "$(cat "$S/dry/outcome/traefik")" = green ] || fail "a dry run's bump is held for its copy"
+# the copy is there already (another run made it): nothing to copy, nothing to stand in for
+echo "$target" > "$MIRROR_HAS"
+mbumps "$S/has" false
+[ "$(jq -c . "$S/has/mirror.json")" = '[]' ] && [ ! -e "$S/has/bump/traefik/mirror-needed" ] && [ ! -e "$S/has/bump/traefik/standins" ] \
+  && grep -qF 'is in the reqs mirror already' "$S/has/bump/traefik/mirror.log" || fail "a copy the mirror has: $(cat "$S/has/mirror.json")"
+unset FAKE_MAJOR FAKE_MIRROR
+echo "ok - a bump whose image comes from the reqs mirror: the copy listed for the job Reqs mirror, which makes it (or leaves one there); a copy that failed or left no result holds the bump with the setting it needs; a dry run copies nothing and its suites take the upstream image; a new major is in the release's upgrade notes and texts"
 
 # --- the attribution rule ----------------------------------------------------------------------------
 ar="$tmp/attr"

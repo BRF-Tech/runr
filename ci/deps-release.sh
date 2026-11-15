@@ -204,6 +204,27 @@ unreleased_bullets() {
 # label BULLET — the bold head of a changelog bullet ("Region Traefik chart 42.3.1")
 label() { sed -nE 's/^- \*\*([^*]+)\*\*.*/\1/p' <<<"$1"; }
 
+# MAJOR_RE — the words a bump's changelog line has when it moved a dependency's major, or a
+# release outside its constraint (ci/deps/lib.sh deps_changelog_line, ci/deps/bump-packages.sh)
+MAJOR_RE='a new major version|outside the constraint'
+
+# major_labels BULLETS — the bold heads of the bullets that moved a major (or a constraint), "; "
+# between them; nothing when none did
+major_labels() {
+  local b
+  while IFS= read -r b; do
+    [ -n "$b" ] || continue
+    grep -qE "$MAJOR_RE" <<<"$b" || continue
+    label "$b"
+  done <<<"$1" | paste -sd ';' - | sed 's/;/; /g'
+}
+
+# major_sentence LABELS — what the upgrade notes say when a release moves a major: the release
+# itself needs no step, an installed region does what its line says
+major_sentence() {
+  echo "**A new major version moves: ${1}.** RunR itself needs no step for it; what an installed region does (the step that moves its chart or image, and anything else it must know) is in its line."
+}
+
 # suites_sentence REPORT — the suites of the release's bumps as one sentence: PHPUnit when one of
 # them needs it (REPORT/unit, 1 when there is none), runtime/test, the Kind suites and the checks
 suites_sentence() {
@@ -234,7 +255,7 @@ suites_lead() {
 
 cmd_prepare() {
   local tree="${1:?usage: ci/deps-release.sh prepare TREE BASE_TAG NEW_VERSION REPORT}" base_tag="${2:?}" new="${3:?}" report="${4:?}"
-  local prev base bump date cli bullets b labels run_url suites upgrade heading first rc work commits c trailers=() n
+  local prev base bump date cli bullets b labels majors run_url suites upgrade heading first rc work commits c trailers=() n
   [[ "$base_tag" =~ $TAG_RE ]] && [[ "$new" =~ $VERSION_RE ]] || die "prepare: BASE_TAG v<x.y.z>, NEW_VERSION x.y.z"
   prev="${base_tag#v}"
   base="$(git -C "$tree" rev-parse "${base_tag}^{commit}")"
@@ -262,6 +283,7 @@ cmd_prepare() {
   bullets="$(unreleased_bullets "$tree/CHANGELOG.md")"
   [ -n "$bullets" ] || attention "the bumps put no line under [Unreleased] of CHANGELOG.md: the release would have nothing to say"
   labels="$(while IFS= read -r b; do label "$b"; done <<<"$bullets" | paste -sd ';' - | sed 's/;/; /g')"
+  majors="$(major_labels "$bullets")"
 
   # 1. the chart's version
   if ! grep -qxF "version: ${prev}" "$tree/helm/Chart.yaml" || ! grep -qxF "appVersion: \"${prev}\"" "$tree/helm/Chart.yaml"; then
@@ -286,6 +308,7 @@ cmd_prepare() {
     echo ""
     echo "- **A dependency release of ${prev}: upgrading needs no step.** There is no database migration, the images keep their names and nothing has to be set; only $([ "$n" = 1 ] && echo "the dependency below changes" || echo "the ${n} dependencies below change"). The CLI, the Terraform provider and runr.sh stay those of ${cli}. See [docs/upgrade.md](docs/upgrade.md#${upgrade})." \
       | awk -v mode=wrap -f "$SECTIONS"
+    [ -z "$majors" ] || echo "- $(major_sentence "$majors")" | awk -v mode=wrap -f "$SECTIONS"
   } > "$work/notes.md"
   awk -v mode=release -v prev="$prev" -v new="$new" -v date="$date" -v notes="$work/notes.md" -f "$SECTIONS" "$tree/CHANGELOG.md" > "$work/CHANGELOG.md" 2>"$work/err" \
     || attention "CHANGELOG.md: $(cat "$work/err")"
@@ -300,6 +323,7 @@ cmd_prepare() {
     echo ""
     {
       echo "${new} is a dependency release of ${prev}, made by the dependency test bot: it moves $(if [ "$n" = 1 ]; then echo "one dependency of a region"; else deps_word "$n"; fi) and nothing else. There is no database migration, the images keep their names, and nothing has to be set ([Procedure](#procedure)). The CLI, the Terraform provider and runr.sh stay those of ${cli}."
+      if [ -n "$majors" ]; then echo ""; major_sentence "$majors"; fi
       echo ""
       cat <<<"$bullets"
       echo ""
@@ -351,8 +375,9 @@ app_moved() {
 }
 
 # app_on_next TREE DEP OLD NEW — next's own pin rules (its ci/deps/lib.sh: the DEPS_BOT row, which
-# says whether RunR pins the image itself, and deps_replace_version) move DEP's app version OLD →
-# NEW in TREE, as the tag's bump moved it with its chart
+# says whether RunR pins the image itself, from upstream or from the reqs mirror, and
+# deps_replace_version) move DEP's app version OLD → NEW in TREE, as the tag's bump moved it with
+# its chart
 app_on_next() {
   # shellcheck disable=SC2016 # the inner shell's expressions
   (cd "$1" && bash -c '
@@ -361,7 +386,7 @@ app_on_next() {
     source ci/deps/lib.sh
     row="$(deps_bot_row "$1" || true)"
     case "$(deps_field "$row" 5)" in
-      direct:*) deps_replace_version "${2#v}" "${3#v}" "$(deps_field "$row" 4)" ;;
+      direct:*|reqs:*) deps_replace_version "${2#v}" "${3#v}" "$(deps_field "$row" 4)" ;;
       *) echo "RunR does not pin $1'"'"'s image itself: nothing to move" ;;
     esac' deps-app "$2" "$3" "$4")
 }
@@ -493,7 +518,7 @@ cmd_merge_next() {
 # ── notes ────────────────────────────────────────────────────────────────────
 cmd_notes() {
   local repo="${1:?usage: ci/deps-release.sh notes REPO RELEASE DIR}" release="${2:?}" dir="${3:?}"
-  local new prev base_tag cli bullets labels suites run_url work n
+  local new prev base_tag cli bullets labels majors suites run_url work n
   mkdir -p "$dir"
   new="$(git -C "$repo" show "${release}:helm/Chart.yaml" | sed -n 's/^version: //p')"
   base_tag="$(git -C "$repo" describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "${release}^" 2>/dev/null)" || die "notes: no release tag before ${release}"
@@ -508,6 +533,7 @@ cmd_notes() {
     sec != "### Upgrade notes" && /^  [^ ]/ && cur != "" { sub(/^ +/, ""); cur = cur " " $0; next }
     cur != "" { print cur; cur = "" } END { if (cur != "") print cur }' "$work/changelog")"
   labels="$(while IFS= read -r b; do label "$b"; done <<<"$bullets" | paste -sd ';' - | sed 's/;/; /g')"
+  majors="$(major_labels "$bullets")"
   # the suites paragraph of the upgrade section, on one line
   suites="$(awk '/^The bot ran these suites/ { on = 1 } on && /^$/ { exit } on { printf "%s%s", (n++ ? " " : ""), $0 } END { print "" }' "$work/upgrade")"
   run_url="$(grep -oE '\[run\]\([^)]+\)' <<<"$suites" | sed -E 's/^\[run\]\((.*)\)$/\1/' | head -n 1 || true)"
@@ -519,6 +545,7 @@ cmd_notes() {
     echo ""
     echo "## Upgrading from ${prev}"
     echo ""
+    if [ -n "$majors" ]; then major_sentence "$majors"; echo ""; fi
     echo "No database migration, the images keep their names, and nothing has to be set ([${prev} → ${new}](${REPO_URL}/blob/v${new}/docs/upgrade.md#$(anchor "${prev} → ${new}")) in docs/upgrade.md):"
     echo ""
     echo '```bash'
@@ -547,7 +574,7 @@ cmd_notes() {
   {
     echo "RunR ${new}"
     echo ""
-    echo "A dependency release of ${prev}: ${labels}." | awk -v mode=wrap -v width=72 -f "$SECTIONS"
+    echo "A dependency release of ${prev}: ${labels}.${majors:+ A new major version: ${majors}.}" | awk -v mode=wrap -v width=72 -f "$SECTIONS"
     echo ""
     trailers_of "$repo" "$release" | sed "s/^/${DEPS_TRAILER}: /"
   } > "$dir/tag-msg.txt"

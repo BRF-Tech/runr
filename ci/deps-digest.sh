@@ -3,15 +3,19 @@ set -euo pipefail
 
 # ── The dependency bots' weekly summary ──────────────────────────────────────
 # One issue per ISO week with movement, "deps: week 2026-W46", lists what the dependency bots
-# found and did: one row per dependency (a package group's minor and patch updates, a Helm chart,
-# Knative) with its state, rendered from the data markers its body carries (ci/deps/digest.jq; the
-# format, shared with filex's bot, in docs/development.md → Dependency test bot → The weekly
-# summary). A security finding is a row like any other (Note "security: <advisory>", tested the
-# same day). A separate issue only when a person has to do something: a bump that went red (split
-# out of the summary by the test bot, its row's Item links it), a test run that needs a person
-# (one issue for its rows), one issue per group for its major versions ("deps: <group> major
-# versions need a decision"), a Knative minor without its row. A major a hold keeps
-# (ci/deps/holds.txt, with its reason) is a row "held (<reason>)", no issue.
+# found and did: one row per dependency (a package group's minor and patch updates, a release
+# outside a constraint as a finding of its own, <group>--<package>, a Helm chart, Knative) with its
+# state, rendered from the data markers its body carries (ci/deps/digest.jq; the format, shared
+# with filex's bot, in docs/development.md → Dependency test bot → The weekly summary). A security
+# finding is a row like any other (Note "security: <advisory>", tested the same day). The test bot
+# attempts every row on its weekly run; an update it cannot move mechanically, or whose suites
+# fail, is split out of the summary into an issue of its own labelled "next update required" (its
+# row's Item links it; the bot tests it there again every week) and listed in the summary's
+# section "Next update required", as is a major a hold keeps (ci/deps/holds.txt, with its reason:
+# a row "held (<reason>)", no issue). An issue labelled "needs attention" only where a person has
+# to act: a test run that needs a person (one issue for its rows), a Knative minor without its
+# row. The earlier bot's "deps: <group> major versions need a decision" issues are closed with a
+# pointer to the summary.
 #
 # A week opens its summary only when it has movement (a new finding, a test result, a release):
 # the open rows of the last one carry over into it and the last one closes ("Continued in #N.");
@@ -24,16 +28,19 @@ set -euo pipefail
 #       upstream-releases.yml: the findings of ci/check-*-releases.sh (FINDINGS_DIR: their *.md,
 #       held/*.json and checked) against every issue (ISSUES.json: gh issue list --state all --json
 #       number,title,state,labels,body,createdAt); prints the operations (JSON). The findings filed
-#       as issues of their own before the summary (open, not labelled "needs attention") fold into
-#       it ("Folded into the weekly summary #N: …"); the issues of single releases outside a
-#       constraint into their group's major versions issue. A finding a read group (checked) no
-#       longer reports: landed → shipped in the last release (DEPS_RELEASE_VERSION, default
-#       helm/Chart.yaml's appVersion), open → closed.
+#       as issues of their own before the summary (open, not labelled "needs attention" or "next
+#       update required") fold into it ("Folded into the weekly summary #N: …"); an open major
+#       versions issue, and a single "… released (outside …)" issue no person labelled "next update
+#       required", close with a pointer to the summary. A finding a read group (checked; a
+#       <group>--<package> row's group) no longer reports: landed → shipped in the last release
+#       (DEPS_RELEASE_VERSION, default helm/Chart.yaml's appVersion), open → closed.
 #   bash ci/deps-digest.sh report DIR ISSUES.json DATE
 #       deps-test.yml: what ci/deps-run.sh actions wrote (DIR/actions: the issues of their own;
 #       DIR/lines: the rows, fields separated by \x1f: REF KIND GROUP VERSION STATE MODE NOTE FILE
-#       RELEASE URL) against the open issues; prints the operations (JSON). DEPS_DISPATCH_REF: the
-#       branch a dispatch runs the workflow on.
+#       RELEASE URL) against the open issues; prints the operations (JSON). A split row (STATE next
+#       update required; red and needs attention of the earlier bot) gets its issue of its own
+#       labelled "next update required", an incident row one issue for the run labelled "needs
+#       attention". DEPS_DISPATCH_REF: the branch a dispatch runs the workflow on.
 #   bash ci/deps-digest.sh apply OPS.json
 #       the operations with gh (GH_REPO or GITHUB_REPOSITORY): create (its number for {{key}}),
 #       alias, edit, reopen, comment, label, unlabel, close, dispatch, in order; exit 1 when one
@@ -201,5 +208,5 @@ case "$command" in
   report) cmd_report "$@" ;;
   apply) cmd_apply "$@" ;;
   week) week_json "${1:?DATE}" ;;
-  *) sed -n '4,44p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '4,51p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

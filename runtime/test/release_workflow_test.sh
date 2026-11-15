@@ -13,7 +13,9 @@
 #     index as an annotation, and the anonymous checks look for both;
 #   - the image tars are the amd64 images it pushes (their own layouts, by digest), with the chart and
 #     SHA256SUMS, as the local release rounds named them;
-#   - no other workflow builds or pushes an image, and there is no other CI (.gitlab-ci.yml).
+#   - no other workflow builds or pushes an image (deps-test.yml's job Reqs mirror copies a
+#     third-party image into the reqs mirror, nothing of RunR's), and there is no other CI
+#     (.gitlab-ci.yml).
 #
 #   bash runtime/test/release_workflow_test.sh
 # shellcheck source-path=SCRIPTDIR
@@ -149,6 +151,13 @@ for other in "$root"/.github/workflows/*.yml; do
   [ "$other" = "$wf" ] && continue
   others=$((others + 1))
   pushes="$(grep -vE '^[[:space:]]*#' "$other" | grep -nE 'docker (image )?push|push=true|--push|docker login|docker/login-action|packages: write|imagetools create|crane (push|copy|cp)|skopeo copy|buildah push|podman push' || true)"
+  # deps-test.yml's job Reqs mirror copies the third-party image a dependency bump moved to into the
+  # reqs mirror (ci/deps-run.sh mirror; runtime/test/ci_workflows_test.sh holds it to that job): its
+  # packages: write, and nothing of RunR's own images
+  if [ "$(basename "$other")" = deps-test.yml ]; then
+    [ "$(grep -cE '^ +packages: write$' "$other")" -le 1 ] || fail "deps-test.yml: packages: write in more than its mirror job"
+    pushes="$(grep -vE '^[0-9]+: +packages: write$' <<<"$pushes" || true)"
+  fi
   [ -z "$pushes" ] || fail "$(basename "$other") builds or pushes an image: ${pushes}"
 done
 [ "$others" -gt 0 ] || fail "no workflow next to release-images.yml (.github/workflows/ci.yml)"

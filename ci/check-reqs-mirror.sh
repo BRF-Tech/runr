@@ -19,6 +19,10 @@ set -euo pipefail
 # does not resolve is checked again on every run. A network error (no answer, 429, 5xx) fails the
 # check with its own message, apart from the references that do not exist.
 #
+# A dry run of the dependency test bot copies nothing into the mirror: REQS_MIRROR_STANDINS
+# (TARGET=SOURCE,…, ci/deps-run.sh) names the references its bump needs before a real run copies
+# them; each counts as there (the suites load SOURCE under TARGET's name), and the check says so.
+#
 # Also counted: ${REGISTRY}/reqs/… and "/reqs/…" string literals (code that prefixes the
 # registry). References with a variable tag (${VERSION}, {version}) are not checked, except a
 # Dockerfile FROM whose ARGs have defaults (resolved with them); a Helm
@@ -221,9 +225,23 @@ if [ -r "$CACHE" ]; then
   done < "$CACHE"
 fi
 
-missing=0 unreachable=0 checked=0 from_cache=0
+# a dry run's stand-ins: TARGET=SOURCE,… (the references relative to the mirror)
+declare -A standin=()
+standins_list="${REQS_MIRROR_STANDINS:-}"
+for pair in ${standins_list//,/ }; do
+  [[ "$pair" == "${MIRROR}/"*=* ]] || { echo "✗ REQS_MIRROR_STANDINS: '${pair}' is not ${MIRROR}/<image>:<tag>=<source>"; exit 1; }
+  target="${pair%%=*}"
+  standin["${target#"${MIRROR}"/}"]="${pair#*=}"
+done
+
+missing=0 unreachable=0 checked=0 from_cache=0 standins=0
 declare -A resolved=()
 for ref in $(printf '%s\n' "${!seen[@]}" | sort); do
+  if [ -n "${standin[$ref]:-}" ]; then
+    echo "~ ${MIRROR}/${ref}: not checked, a stand-in of the dependency test bot's dry run (${standin[$ref]} under this name; a run copies it into the mirror first)"
+    standins=$((standins + 1))
+    continue
+  fi
   if [ -n "${cached[$ref]:-}" ]; then
     resolved["$ref"]="${cached[$ref]}"
     from_cache=$((from_cache + 1))
@@ -260,4 +278,6 @@ if [ "$unreachable" -gt 0 ]; then
 fi
 [ "$missing" -eq 0 ] && [ "$unreachable" -eq 0 ] && [ "$third_party" -eq 0 ] || exit 1
 
-echo "✓ ${#seen[@]} reqs images referenced, all resolve anonymously on ghcr.io (${checked} checked, ${from_cache} from the cache ${CACHE}); no test or CI tool image from a third-party registry"
+note=""
+[ "$standins" = 0 ] || note=", ${standins} a dry run's stand-in"
+echo "✓ ${#seen[@]} reqs images referenced, all resolve anonymously on ghcr.io (${checked} checked, ${from_cache} from the cache ${CACHE}${note}); no test or CI tool image from a third-party registry"

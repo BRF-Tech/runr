@@ -14,13 +14,18 @@
 # checked against the registry, the GitHub release (its notes list every bump) is made and the
 # chart's publish on helm.brf.sh dispatched and checked. A row gets its state in the summary's
 # body (ci/deps-digest.sh report: green → shipped in vX.Y.Z, green, …; the bot writes no comment
-# there); an issue of its own is closed with label "deps: passed". Red, a bump that is not
-# mechanical or that breaks the combination: the row moves to an issue of its own with what failed
-# (labels deps, needs attention; its Item links it); an issue of its own gets the label and a
-# comment; a release that cannot be made: its rows "needs attention" and one issue for the run
-# with what was done and how to resume; nothing pushed. A held row or issue is tested again when
-# the workflow is run with its ref; a newer release of the dependency supersedes it. `dry_run`
-# makes and checks everything and pushes, creates, edits and labels nothing.
+# there); an issue of its own is closed with label "deps: passed". Every finding is attempted: a
+# new major and a release outside a constraint too (the constraint moved mechanically; a chart whose
+# image comes from the reqs mirror gets its copy there first, the job Reqs mirror). Red, a bump that
+# is not mechanical or that breaks the combination: the row moves to an issue of its own with what
+# failed (labels deps, next update required; its Item links it, the summary lists it under Next
+# update required); an issue of its own gets the label and a comment. Every weekly run tries them
+# again (a newer release may fix them): green, they ship, lose the label and close. A hold
+# (ci/deps/holds.txt) is never attempted; the summary lists it with its reason. A release that
+# cannot be made: its rows "needs attention" and one issue for the run with what was done and how
+# to resume; nothing pushed. `dry_run` makes and checks everything and pushes, creates, edits,
+# labels and mirrors nothing (a reqs image a bump needs is its upstream under the mirror's name in
+# the suites).
 #
 # The package groups of ci/check-package-releases.sh (Composer, npm, Go modules, Actions pins,
 # Dockerfile bases; ci/deps/packages.sh) go the same way; the bumps of theirs that change nothing
@@ -128,9 +133,9 @@ jobs:
             echo "resume="
           } >> "$GITHUB_OUTPUT"
           jq -r '.tests[] | "- #\(.ref): \(.dep) \(.version)"' "$RUNNER_TEMP/plan.json" | sed '1i ### Tested in this run' >> "$GITHUB_STEP_SUMMARY"
-      # the labels (created once), superseded issues closed, re-triggered ones unlabelled, the
-      # summary's rows of this run "testing" (no movement: a run that starts opens no summary; not
-      # in a dry run)
+      # the labels (created once), superseded issues closed, an update issue still labelled "needs
+      # attention" (before next update required existed) relabelled, the summary's rows of this run
+      # "testing" (no movement: a run that starts opens no summary; not in a dry run)
       - name: Issues
         if: env.DRY_RUN != 'true' && env.RESUME == ''
         env:
@@ -145,6 +150,8 @@ jobs:
             --description "The dependency test bot holds it: a person decides" 2>/dev/null || true
           gh label create "deps: passed" --repo "$GITHUB_REPOSITORY" --color 0e8a16 \
             --description "The dependency test bot tested and released it" 2>/dev/null || true
+          gh label create "next update required" --repo "$GITHUB_REPOSITORY" --color fbca04 \
+            --description "The dependency test bot could not move it or it failed: it tries again every week" 2>/dev/null || true
           mkdir -p "$RUNNER_TEMP/marks"
           jq -r --arg run "$RUN_URL" '.tests[] | select(.ref | test(":"))
             | [.ref, "", .dep, .version, "testing", "quiet", "", "", "", $run] | join("\u001f")' \
@@ -158,9 +165,8 @@ jobs:
             gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --reason "not planned" \
               --comment "Superseded by #${by} (${version}): the dependency test bot tests the newest release only ([run](${RUN_URL}))."
           done
-          jq -r '.retrigger[]' "$RUNNER_TEMP/plan.json" | while read -r issue; do
-            gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label "needs attention"
-            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "Tested again by the dependency test bot ([run](${RUN_URL}))."
+          jq -r '.relabel[]' "$RUNNER_TEMP/plan.json" | while read -r issue; do
+            gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label "needs attention" --add-label "next update required"
           done
           jq -c '.attention[]' "$RUNNER_TEMP/plan.json" | while read -r a; do
             issue=$(jq -r .issue <<< "$a"); reason=$(jq -r .reason <<< "$a")
@@ -185,20 +191,31 @@ jobs:
       unit: ${{ steps.bumps.outputs.unit }}
       shell: ${{ steps.bumps.outputs.shell }}
       any: ${{ steps.bumps.outputs.any }}
+      mirror: ${{ steps.bumps.outputs.mirror }}
     env:
       # the helm of the API image (api/Dockerfile.prod)
       HELM_VERSION: v4.3.2
       HELM_SHA256: d1c0278d46beab79582d7e50f5b3dc206944ba8e577cde618513fd07daa53983
+      # whether the reqs mirror has the image a bump moved to (anonymously)
+      CRANE_VERSION: v0.22.1
+      CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install helm (pinned, checksum verified)
+      - name: Install helm and crane (pinned, checksums verified)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           curl -fsSL --retry 4 --retry-all-errors -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
           echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
+          crane="go-containerregistry_Linux_x86_64.tar.gz"
+          curl -fsSL --retry 4 --retry-all-errors -o /tmp/crane.tar.gz "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/${crane}" \
+            || gh release download "$CRANE_VERSION" -R google/go-containerregistry -p "$crane" -O /tmp/crane.tar.gz --clobber
+          echo "${CRANE_SHA256}  /tmp/crane.tar.gz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/bin"
           tar -xzf /tmp/helm.tar.gz -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
+          tar -xzf /tmp/crane.tar.gz -C "$RUNNER_TEMP/bin" crane
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       # over SSH with the deploy key, in a 0600 file the step after the next removes: main, next and
       # the tags; the bumps start from the last release tag
@@ -254,6 +271,8 @@ jobs:
             echo "unit=$(jq -c . "$RUNNER_TEMP/deps/matrix-unit.json")"
             echo "shell=$(jq -c . "$RUNNER_TEMP/deps/matrix-shell.json")"
             echo "any=$(jq -r 'length > 0' "$RUNNER_TEMP/deps/matrix-shell.json")"
+            # the copies the reqs mirror needs before the suites (none in a dry run: stand-ins)
+            echo "mirror=$(jq -c . "$RUNNER_TEMP/deps/mirror.json")"
           } >> "$GITHUB_OUTPUT"
           # the origin's main and next, the release candidates (deps/<dep>) and the tags, for the
           # test jobs and the release
@@ -274,10 +293,64 @@ jobs:
           path: ${{ runner.temp }}/deps/
           retention-days: 14
 
+  # the images the bumps moved to that the reqs mirror (ghcr.io/brf-tech/runr/reqs, published by
+  # BRF-Tech/runr-runtimes) does not have yet: copied there with this job's GITHUB_TOKEN before any
+  # suite runs (ci/deps-run.sh mirror); each package must grant this repository write access
+  # (Package settings → Manage Actions access). Never in a dry run (the bump job lists none: the
+  # suites take the upstream image under the mirror's name). Its result (deps-result-mirror) is
+  # what the outcome reads: a copy that failed holds its bump with the reason.
+  mirror:
+    name: Reqs mirror
+    needs: bump
+    if: needs.bump.outputs.mirror != '' && needs.bump.outputs.mirror != '[]' && inputs.dry_run != true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      CRANE_VERSION: v0.22.1
+      CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install crane (pinned, checksum verified)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          crane="go-containerregistry_Linux_x86_64.tar.gz"
+          curl -fsSL --retry 4 --retry-all-errors -o /tmp/crane.tar.gz "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/${crane}" \
+            || gh release download "$CRANE_VERSION" -R google/go-containerregistry -p "$crane" -O /tmp/crane.tar.gz --clobber
+          echo "${CRANE_SHA256}  /tmp/crane.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf /tmp/crane.tar.gz -C "$RUNNER_TEMP/bin" crane
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: ci/deps-run.sh mirror
+        env:
+          MIRROR: ${{ needs.bump.outputs.mirror }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GH_TOKEN" | crane auth login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          echo "$MIRROR" > "$RUNNER_TEMP/mirror.json"
+          bash ci/deps-run.sh mirror "$RUNNER_TEMP/mirror.json" "$RUNNER_TEMP/result"
+      - name: Result
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/result"
+          touch "$RUNNER_TEMP/result/mirror"
+          rm -f "$HOME/.docker/config.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deps-result-mirror
+          path: ${{ runner.temp }}/result/
+          retention-days: 7
+
   unit:
     name: ${{ matrix.dep }} unit
-    needs: bump
-    if: needs.bump.outputs.any == 'true' && needs.bump.outputs.unit != '[]'
+    needs: [bump, mirror]
+    if: ${{ !cancelled() && needs.bump.result == 'success' && needs.bump.outputs.any == 'true' && needs.bump.outputs.unit != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -290,8 +363,8 @@ jobs:
 
   shell:
     name: ${{ matrix.dep }} shell tests
-    needs: bump
-    if: needs.bump.outputs.any == 'true'
+    needs: [bump, mirror]
+    if: ${{ !cancelled() && needs.bump.result == 'success' && needs.bump.outputs.any == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -310,8 +383,11 @@ jobs:
           git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" .
           git checkout -q --detach "refs/remotes/origin/${REF}"
       # runtime/ci.sh without Docker (the Kind preload, the pinned images, …) and every reqs image
-      # the bump references, as ci.yml's build-scripts and reqs-mirror jobs run them
+      # the bump references, as ci.yml's build-scripts and reqs-mirror jobs run them (a dry run's
+      # stand-ins: the images a run copies into the mirror first)
       - name: runtime/test and the reqs mirror check
+        env:
+          REQS_MIRROR_STANDINS: ${{ matrix.standins || '' }}
         run: |
           set -o pipefail
           { for t in runtime/test/*_test.sh; do echo "── $t"; bash "$t" || exit 1; done; bash ci/check-reqs-mirror.sh; } 2>&1 | tee "$RUNNER_TEMP/shell.log"
@@ -334,8 +410,8 @@ jobs:
   # builds, actionlint; each reads its result file, not only its exit status
   check:
     name: ${{ matrix.dep }} ${{ matrix.suite }}
-    needs: bump
-    if: needs.bump.outputs.any == 'true' && needs.bump.outputs.checks != '[]'
+    needs: [bump, mirror]
+    if: ${{ !cancelled() && needs.bump.result == 'success' && needs.bump.outputs.any == 'true' && needs.bump.outputs.checks != '[]' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
@@ -409,8 +485,8 @@ jobs:
   # each reads its report, not only its exit status (ci/ui-results.sh)
   ui:
     name: ${{ matrix.dep }} ${{ matrix.suite }}
-    needs: bump
-    if: needs.bump.outputs.any == 'true' && needs.bump.outputs.ui != '[]'
+    needs: [bump, mirror]
+    if: ${{ !cancelled() && needs.bump.result == 'success' && needs.bump.outputs.any == 'true' && needs.bump.outputs.ui != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -423,8 +499,8 @@ jobs:
 
   ui-stack:
     name: ${{ matrix.dep }} ${{ matrix.suite }}
-    needs: bump
-    if: needs.bump.outputs.any == 'true' && needs.bump.outputs.ui-stack != '[]'
+    needs: [bump, mirror]
+    if: ${{ !cancelled() && needs.bump.result == 'success' && needs.bump.outputs.any == 'true' && needs.bump.outputs.ui-stack != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -435,10 +511,12 @@ jobs:
       ref: ${{ matrix.ref }}
       result-name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}
 
+  # (the jobs of the first phase wait for the reqs mirror's copies; a mirror job that failed or was
+  # skipped does not stop them: the outcome holds the bump whose copy is missing)
   kind:
     name: ${{ matrix.dep }} ${{ matrix.suite }}
-    needs: bump
-    if: needs.bump.outputs.any == 'true' && needs.bump.outputs.suites != '[]'
+    needs: [bump, mirror]
+    if: ${{ !cancelled() && needs.bump.result == 'success' && needs.bump.outputs.any == 'true' && needs.bump.outputs.suites != '[]' }}
     strategy:
       fail-fast: false
       # one Kind cluster per runner, at most six runners at a time
@@ -462,7 +540,7 @@ jobs:
   # (deps/batch-next); two or more of a path go to the second test phase below
   batch:
     name: The green bumps together
-    needs: [plan, bump, unit, shell, check, ui, ui-stack, kind]
+    needs: [plan, bump, mirror, unit, shell, check, ui, ui-stack, kind]
     if: ${{ always() && needs.bump.result == 'success' && needs.bump.outputs.any == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -609,6 +687,8 @@ jobs:
           git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" .
           git checkout -q --detach "refs/remotes/origin/${REF}"
       - name: runtime/test and the reqs mirror check
+        env:
+          REQS_MIRROR_STANDINS: ${{ matrix.standins || '' }}
         run: |
           set -o pipefail
           { for t in runtime/test/*_test.sh; do echo "── $t"; bash "$t" || exit 1; done; bash ci/check-reqs-mirror.sh; } 2>&1 | tee "$RUNNER_TEMP/shell.log"

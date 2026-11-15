@@ -11,10 +11,10 @@ trait KnativePrometheusTrait
     use KnativeCAdvisorTrait;
 
     /**
-     * Pinned kube-prometheus-stack chart (Prometheus Operator v0.94.2): the version installs
+     * Pinned kube-prometheus-stack chart (Prometheus Operator v0.95.2): the version installs
      * resolved and were tested with. A new chart release can change values or CRDs.
      */
-    public const PROMETHEUS_CHART_VERSION = '92.22.0';
+    public const PROMETHEUS_CHART_VERSION = '93.3.0';
 
     /**
      * Install kube-prometheus-stack + standalone cAdvisor with 1s housekeeping.

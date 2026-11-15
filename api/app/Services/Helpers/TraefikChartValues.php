@@ -14,7 +14,7 @@ use stdClass;
  * cannot cross that version. The rest of what RunR gives the chart keeps its meaning up to the
  * pinned one: with these keys moved it renders the same container arguments, RBAC and Services.
  *
- * Keys RunR gave the chart where it never read them move to the ones it reads (chart 42.3.1's
+ * Keys RunR gave the chart where it never read them move to the ones it reads (chart 42.4.0's
  * schema refuses some of them): a Service's `type` into its `spec` (service and
  * service.additionalServices.*; the chart wrote the same type there or none, which Kubernetes made
  * ClusterIP), deployment.livenessProbe / readinessProbe to the root keys the chart takes the

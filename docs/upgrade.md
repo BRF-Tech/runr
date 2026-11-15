@@ -87,6 +87,82 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.7.4 → 0.7.5
+
+0.7.5 moves the region Traefik to v3.7.18 and kube-prometheus-stack to 93.3.0, builds the region
+agent, the queue consumer and the supply-chain image on alpine 3.22, and builds the `runr` CLI and
+the Terraform provider with newer Go modules. There is no database migration and nothing has to be
+set ([Procedure](#procedure)). The region Job moves the region agent and the event gateway to 0.7.5
+([Order of operations](#order-of-operations)); a region that pulls through a mirror of its own needs
+`agent:0.7.5`, `queue-consumer:0.7.5`, `supply-chain:1.1.2` and
+`ghcr.io/brf-tech/runr/reqs/traefik:v3.7.18` there before the upgrade.
+
+- **Traefik v3.7.18** (chart 42.3.1 → 42.4.0): `region:reconcile` moves the Traefik of every
+  region by itself (step `traefik-chart`, one pod at a time). Its image comes from the reqs mirror;
+  with `knative.traefikImage` set, the region keeps that image on the new chart. Only the Traefik
+  Hub CRDs change (an optional `caSecretName`), which RunR does not use: no CRD step. v3.7.18 fixes
+  five upstream advisories, four of them high: path-parameter dot-segments that bypassed
+  path-based authorization (GHSA-cp28-5662-543f), ForwardAuth with NTLM through
+  `Proxy-Authorization` (GHSA-p956-6gvv-mxqp), memory exhaustion by the Compress middleware's zstd
+  encoder (GHSA-x5pf-cqh3-2gv8) and the Ingress-NGINX provider's client certificates
+  (GHSA-ccgh-9g52-6vwg); and BasicAuth passwords of any length (GHSA-rr42-h8r2-f28g, medium). With
+  them it changes what they touched ([Traefik's migration
+  notes](https://doc.traefik.io/traefik/v3.7/migrate/v3/#v3718)): with `sanitizePath`, which
+  RunR's entry points enable, a request for `/a/..;x/b` reaches the function as `/b`; BasicAuth
+  refuses passwords over 1024 bytes.
+- **kube-prometheus-stack 93.3.0** (from 92.22.0, a new major version; Prometheus Operator v0.94.2
+  → v0.95.2) does not reach an installed region by itself: `php artisan cluster:patch-observability
+  [REGION-ID]` moves it when it suits the region (the Prometheus Operator, Prometheus and
+  node-exporter restart once); regions set up from now on run it. Prometheus v3.16.0,
+  kube-state-metrics and node-exporter keep their versions; the operator's ClusterRole follows
+  upstream's v0.95 (`alertmanagerconfigs/status` added, `delete` on pods gone). No CRD step is
+  needed: the operator's new CRDs only add optional fields and validations of fields RunR does not
+  set, and an installed region keeps its CRDs (Helm never upgrades them).
+
+  Optional, for monitoring objects of your own (ServiceMonitors, PrometheusRules,
+  AlertmanagerConfigs) that use what v0.95.2 adds: apply the chart's CRDs on the region's cluster
+  first. `--force-conflicts` is needed because Helm created the installed CRDs and owns their
+  fields (without it the apply stops on a conflict and changes nothing):
+
+  ```sh
+  helm show crds kube-prometheus-stack --repo https://prometheus-community.github.io/helm-charts \
+    --version 93.3.0 | kubectl apply --server-side --force-conflicts -f -
+  ```
+- **Base images:** the region agent and the queue consumer 0.7.5 and the supply-chain image 1.1.2
+  (from 1.1.1, the image of a region's supply-chain Jobs) build on alpine 3.22 (from 3.21). The
+  Spin shim stays `containerd-shim-spin:v0.27.2-runr.1` on alpine 3.21: built on 3.22 it failed
+  the WebAssembly suite, so its move waits as `next update required` (#80).
+- **The CLI 0.7.5**, the first since 0.7.3: github.com/spf13/cobra v1.8.1 → v1.10.2,
+  github.com/spf13/pflag v1.0.5 → v1.1.0, golang.org/x/sys v0.48.0 → v0.50.0, golang.org/x/term
+  v0.32.0 → v0.48.0. Its commands and flags are those of 0.7.3; its help writes a boolean flag as
+  `--debug[=true|false]`, and `runr completion bash` / `powershell` print cobra 1.10's scripts.
+- **The Terraform provider 0.7.5**, the first since 0.7.3: github.com/ProtonMail/go-crypto
+  v1.4.1 → v1.5.2, github.com/hashicorp/go-plugin v1.7.0 → v1.8.0,
+  github.com/hashicorp/hc-install v0.9.4 → v0.10.0, golang.org/x/sys v0.48.0 → v0.50.0, and the CLI
+  module v0.7.5. Its resources and data sources are those of 0.6.10; `version = "~> 0.6"` takes it
+  on the next `terraform init -upgrade`.
+- **The dependency test bot attempts every update**
+  ([development.md](development.md#dependency-test-bot)): a new major, a release outside a
+  manifest's constraint or exact pin and a chart's new major are tested on its weekly run like any
+  other version. What it cannot move mechanically, or what fails its suites, gets the label `next
+  update required` with the failing suite and is tried again every week until it passes; holds
+  (`ci/deps/holds.txt`) are never attempted and are listed with their reasons in the weekly
+  summary.
+- **CI tool pins:** RunR's workflows run helm v4.3.2 (the release workflow packages the chart with
+  it, the helm of the API image since 0.7.4), terraform 1.17.2 and govulncheck v1.9.0.
+- **Examples and the development stack:** the PyTorch weights example takes transformers 5.23.0;
+  the Sentry tunnel of the root `docker-compose.yml` (`proxy/`, no release image) moves
+  github.com/redis/go-redis/v9 to v9.23.0 and github.com/cespare/xxhash/v2 to v2.3.0, and builds on
+  alpine 3.22 like the end-to-end tests' nginx-test image.
+
+### Back to 0.7.4
+
+A `helm rollback` (`helm history runr -n runr` lists the revisions); nothing runs on the database,
+and the region Job of the rollback moves the region agent and the event gateway back to 0.7.4. The
+region Traefik stays on chart 42.4.0 (v3.7.18): 0.7.4's `region:reconcile` moves no Traefik to an
+older chart and warns that it stays. A region moved to kube-prometheus-stack 93.3.0 stays on it.
+**Never uninstall** to go back.
+
 ## 0.7.3 → 0.7.4
 
 0.7.4 is a dependency release of 0.7.3, made by the dependency test bot: it moves 5 dependencies and

@@ -28,9 +28,11 @@ DEPS_ROOT="${DEPS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 #   NAMES    a lower-case ERE: a line names the dependency when it, or a line within three of it,
 #            or its file's path matches (where a pin is "the current one", see deps_replace_version)
 #   IMAGE    what follows the chart's appVersion:
-#              reqs:REPO    RunR pins REPO:<appVersion> from the reqs mirror: a new appVersion
-#                           needs the mirror first (BRF-Tech/runr-runtimes), so it is no
-#                           mechanical bump
+#              reqs:REPO=SOURCE  RunR pins REPO:<appVersion> from the reqs mirror, a copy of
+#                           SOURCE:<appVersion> (BRF-Tech/runr-runtimes mirrors it): a new appVersion
+#                           moves the pin with the chart, and the bump names the copy the mirror
+#                           needs first (REPORT/mirror: "REPO:<new> SOURCE:<new>"), which
+#                           deps-test.yml makes before any suite runs
 #              direct:REPO  RunR pins REPO:v<appVersion> (pulled from upstream): moved with the chart
 #              same         the pin is the image's version too (kata-deploy)
 #              none         RunR pins no image of the chart
@@ -39,7 +41,7 @@ DEPS_ROOT="${DEPS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 #   SUITES   the suites a bump must pass, in the order the issue comment lists them
 #            (deps_suite_command)
 DEPS_BOT=(
-  "traefik|regions|traefik chart|traefik|reqs:ghcr.io/brf-tech/runr/reqs/traefik|knative-serving/traefik|unit e2e network upgrade"
+  "traefik|regions|traefik chart|traefik|reqs:ghcr.io/brf-tech/runr/reqs/traefik=docker.io/library/traefik|knative-serving/traefik|unit e2e network upgrade"
   "kube-prometheus-stack|regions|kube-prometheus-stack chart|prometheus|none|observability/knative|unit e2e observability upgrade-observability"
   "loki-stack|regions|loki-stack chart|loki|none|observability/loki-stack|unit e2e observability upgrade-observability"
   "zot|regions|zot chart|zot|direct:ghcr.io/project-zot/zot|runr-registry/runr-zot|unit e2e upgrade-zot"
@@ -178,15 +180,25 @@ deps_revert() {
   [ "${#files[@]}" -eq 0 ] || git -C "$DEPS_ROOT" checkout -q -- "${files[@]}"
 }
 
-# deps_changelog_line NAME OLD NEW APP_OLD APP_NEW — the CHANGELOG line of a bump, in the words of
-# the changelog's own lines: what moves, what an installed region does
+# deps_changelog_line NAME OLD NEW APP_OLD APP_NEW [MAJOR] [MORE] — the CHANGELOG line of a bump, in
+# the words of the changelog's own lines: what moves, what an installed region does. MAJOR 1: the
+# chart's major moved, which the line says in the words the release's upgrade notes look for ("a
+# new major version"); MORE: sentences of what else an installed region must know (its CRDs)
 deps_changelog_line() {
-  local name="$1" old="$2" new="$3" app_old="$4" app_new="$5" app=""
+  local name="$1" old="$2" new="$3" app_old="$4" app_new="$5" major="${6:-0}" more="${7:-}" app="" line
   if [ -n "$app_new" ] && [ "$app_new" != "$app_old" ]; then
     app="${app_old:+${app_old} → }${app_new}"
   elif [ -n "$app_new" ]; then
     app="${app_new}, as before"
   fi
+  [ "$major" != 1 ] || old="${old}, a new major version"
+  line="$(deps_changelog_text "$name" "$old" "$new" "$app")"
+  echo "${line}${more:+ ${more}}"
+}
+
+# deps_changelog_text NAME OLD NEW APP — deps_changelog_line's sentence of each dependency
+deps_changelog_text() {
+  local name="$1" old="$2" new="$3" app="$4"
   case "$name" in
     traefik)
       echo "- **Region Traefik chart ${new}** (from ${old}${app:+; Traefik ${app}}). New regions install it; \`region:reconcile\` moves the Traefik of an existing region to it (step \`traefik-chart\`), one pod at a time." ;;

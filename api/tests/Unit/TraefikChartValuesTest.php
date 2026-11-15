@@ -16,7 +16,7 @@ use Symfony\Component\Yaml\Yaml;
  */
 class TraefikChartValuesTest extends TestCase
 {
-    private const IMAGE = 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17';
+    private const IMAGE = 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.18';
 
     /** What `helm get values -o json` prints for a release of chart 40, as RunR installs it. */
     private const CHART_40_LOGS = <<<'JSON'
@@ -182,8 +182,8 @@ class TraefikChartValuesTest extends TestCase
     }
 
     /**
-     * Keys RunR gave the chart that it never read (dead in charts 42.3.0 and 42.3.1, some refused by
-     * 42.3.1's schema): a Service's type beside its spec, the probes' timing under deployment, and
+     * Keys RunR gave the chart that it never read (dead in charts 42.3.0 and 42.4.0, some refused by
+     * 42.4.0's schema): a Service's type beside its spec, the probes' timing under deployment, and
      * tlsOptions' preferServerCipherSuites. A release installed before keeps them in its values;
      * the move gives it the keys the chart reads, with the same values.
      */
@@ -211,7 +211,7 @@ class TraefikChartValuesTest extends TestCase
 
     /**
      * Every value a new region gives the chart is one the chart reads (ci/deps/dead-values.php
-     * against charts 42.3.0 and 42.3.1: these keys rendered nothing): a Service's type is in its spec, the
+     * against charts 42.3.0 and 42.4.0: these keys rendered nothing): a Service's type is in its spec, the
      * probes' timing at the root, no preferServerCipherSuites.
      */
     public function test_a_new_region_gives_the_chart_keys_it_reads(): void
@@ -257,7 +257,7 @@ class TraefikChartValuesTest extends TestCase
         $values = $this->migrated('{"image": {"registry": "docker.io", "repository": "traefik", "tag": "v3.7.4", "pullPolicy": "Always"}}');
 
         $this->assertSame(
-            '{"registry":"ghcr.io","repository":"brf-tech/runr/reqs/traefik","tag":"v3.7.17","pullPolicy":"Always"}',
+            '{"registry":"ghcr.io","repository":"brf-tech/runr/reqs/traefik","tag":"v3.7.18","pullPolicy":"Always"}',
             $this->json($values->image),
         );
 

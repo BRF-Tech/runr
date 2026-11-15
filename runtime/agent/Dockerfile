@@ -5,7 +5,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /agent ./cmd/main.go
 
-FROM ghcr.io/brf-tech/runr/reqs/alpine:3.21
+FROM ghcr.io/brf-tech/runr/reqs/alpine:3.22
 # version, revision and created: the release build (ci.sh --push)
 LABEL org.opencontainers.image.title="runr-agent" \
       org.opencontainers.image.description="RunR region agent: monitoring and the internal network's authorization" \

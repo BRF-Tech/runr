@@ -6,10 +6,13 @@
 # Each finding is listed once, as a line of the week's digest issue "deps: week <ISO week>"
 # (ci/deps-digest.sh; docs/development.md → Dependency test bot → The weekly digest): a finding a
 # digest line or an issue already has, open or closed, is not listed again, and a quiet week opens
-# no digest. An issue of its own only where a person acts: a finding with a security advisory
-# (label "security", tested by the dependency test bot the same day: deps-test.yml with its issue
-# number, not on Saturday), one issue per group for its releases outside the constraint (one a
-# hold keeps with its reason is a digest line "held" instead), a Knative minor without its row.
+# no digest. A finding with a security advisory (Note "security: …") is tested by the dependency
+# test bot the same day (deps-test.yml with its row, not on Saturday). A release outside a
+# manifest's constraint (a new major, an exact pin) is a row of its own (<group>--<package>), which
+# the bot attempts on its weekly run like any other; one a hold keeps is a digest line "held" with
+# its reason instead. An issue of its own only where a person acts or the bot retries: an update
+# it could not move or that failed (label "next update required", made by deps-test.yml), a
+# Knative minor without its row.
 name: Upstream releases
 
 on:
@@ -91,8 +94,9 @@ jobs:
         run: bash ci/check-package-releases.sh
       # the week's summary and the few issues where a person has to do something (ci/deps-digest.sh
       # file): a finding no row and no issue had yet becomes a row (a security one is tested today:
-      # the bot's own run, one release at a time); a group's major versions are one issue; the
-      # findings filed as issues of their own before the summary fold into it
+      # the bot's own run, one release at a time), a release outside a constraint too; the findings
+      # filed as issues of their own before the summary fold into it, and the old major versions
+      # issues close with a pointer to it
       - name: The weekly summary and the issues
         if: ${{ !cancelled() }}
         env:
@@ -106,6 +110,8 @@ jobs:
             --description "A security advisory: the dependency test bot tests it the same day" 2>/dev/null || true
           gh label create "needs attention" --repo "$GITHUB_REPOSITORY" --color d93f0b \
             --description "The dependency test bot holds it: a person decides" 2>/dev/null || true
+          gh label create "next update required" --repo "$GITHUB_REPOSITORY" --color fbca04 \
+            --description "The dependency test bot could not move it or it failed: it tries again every week" 2>/dev/null || true
           mkdir -p "$RELEASES_REPORT_DIR"
           gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 1000 \
             --json number,title,state,labels,body,createdAt > "$RUNNER_TEMP/issues.json"

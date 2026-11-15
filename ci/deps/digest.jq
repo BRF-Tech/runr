@@ -10,30 +10,53 @@
 #     constraint that a hold keeps;
 #   - a bot's marker (summary, major versions, a run's issue) counts only as the body's last line:
 #     one quoted in a person's text is none, and none of them is the deps-bot data marker;
-#   - State: new | testing | green | green → shipped in vX.Y.Z | red | needs attention | held
-#     (<reason>) | closed; Item: the issue a person acts in (#N), else the last run or release;
-#     Note: security: <advisory ids> for a finding with an advisory, else why;
+#   - State: new | testing | green | green → shipped in vX.Y.Z | next update required | needs
+#     attention | held (<reason>) | closed (red: the earlier word for next update required); Item:
+#     the issue a person acts in (#N), else the last run or release; Note: security: <advisory
+#     ids> for a finding with an advisory, else why;
+#   - after the table, when it has any, a section "### Next update required": one line per update
+#     the bot could not move mechanically or whose suites failed (its issue of its own is labelled
+#     "next update required"; the bot tries it again on every weekly run) and one line per major a
+#     hold keeps, with its reason;
 #   - closing: "Continued in #N." (open rows carried over), "Closed at the end of the week: nothing
 #     was left open."; a folded issue: "Folded into the weekly summary #N: the bot opens a separate
 #     issue only when a person has to do something.";
-#   - one issue per group for its major versions: "deps: <group> major versions need a decision",
-#     <!-- runr-deps:majors:<group> -->, "Dependency | Pinned | Newest major | allow".
+#   - a release outside a constraint (a major, an exact pin, a new Go major path) is a package
+#     group's finding of its own, id <group>--<package> (npm-vue--vite; its updates "outside":
+#     true), a row like any other that the test bot attempts; the "deps: <group> major versions need
+#     a decision" issues of the earlier bot are closed with a pointer to the summary, and so is a
+#     single "deps: <group> <name> <line> released (outside …)" issue unless it is labelled "next
+#     update required" (a person marked it: the bot leaves it).
 # The bot edits bodies, it writes no comment on a summary. RunR keeps each row's data (its updates,
 # fingerprint, found date, …) in one hidden <!-- deps-bot {…} --> per row above the summary's
 # marker: {id, kind, group, version, state, …}
-#   kind     group (a package group's minor and patch updates: version its fingerprint, updates,
-#            urgent, advisories), chart (version), knative (version: its newest minor), held
-#            (name, line, from, to, note: the hold's reason)
+#   kind     group (a package group's minor and patch updates, or one release outside a constraint
+#            under <group>--<package>: version its fingerprint, updates, urgent, advisories), chart
+#            (version), knative (version: its newest minor), held (name, line, from, to, note: the
+#            hold's reason)
 #   state    new | testing | green | landed (green, on next: ships with the next release) |
-#            shipped (release, url) | red | needs attention | held | closed
-#   issue    the issue the row lives in: item_kind "issue" (a finding a person acts on: a red bump,
-#            its tests run there) or "incident" (a run that needs a person: the row waits)
+#            shipped (release, url) | next update required (red: the earlier word) | needs
+#            attention | held | closed
+#   issue    the issue the row lives in: item_kind "issue" (an update the bot could not move or
+#            that failed, labelled "next update required": the bot tests it there every week) or
+#            "incident" (a run that needs a person: the row waits)
 
 def final_states: ["shipped", "closed"];
 def is_final: (.state // "new") as $s | final_states | index($s) != null;
 # a row someone (the bot or a person) still acts on
 def is_open: (is_final | not) and .state != "held";
 def lkey: "\(.id)|\(.version)";
+# the package group a row's group belongs to: npm-vue of npm-vue--vite (a release outside a
+# constraint is a finding of its own; the check reads, and lists as checked, its group)
+def base_group: tostring | split("--")[0];
+# an update the bot tries again every week; a run-level problem a person acts on
+def next_label: "next update required";
+def attention_label: "needs attention";
+# a row that waits for a newer release (or a fix): the earlier bot's red and needs attention rows
+# of an issue of their own too
+def is_next_required: .state == "next update required" or ((.state | IN("red", "needs attention")) and .item_kind == "issue");
+# the state of a row whose issue of its own carries LABELS
+def issue_state($labels): if ($labels | any(.[]; IN(next_label, attention_label))) then "next update required" else "new" end;
 def ikey: "\(.name) \(.line)";
 
 def markers: [(. // "") | scan("<!-- deps-bot (\\{[^\n]*\\}) -->") | .[0] | fromjson? // empty];
@@ -89,19 +112,19 @@ def parse_issue:
       | .separate = (($ms[0].separate // false) == true)
       # a finding filed as an issue of its own before the weekly summary: folded into it
       | .loose = (.state == "OPEN" and (.separate | not) and (.kind | IN("group", "chart", "knative"))
-                  and ([.labels[] | select(IN("needs attention", "deps: passed"))] | length == 0))
+                  and ([.labels[] | select(IN(attention_label, next_label, "deps: passed"))] | length == 0))
     else . end;
 
 # ── findings (RELEASES_REPORT_DIR: {title, body} of each *.md) ───────────────
 def parse_finding:
   .title as $t | (.body | markers) as $ms | ($ms[0] // {}) as $m | .body as $b
-  | if ($m.kind // "") == "outside" then {type: "outside", item: ($m | del(.kind))}
+  # a release outside a constraint as an earlier check filed it: none (the check files it as a
+  # package group's finding of its own, <group>--<package>)
+  | if ($m.kind // "") == "outside" then empty
     elif ($t | test("^deps: [a-z0-9-]+ \\[[0-9a-f]{8}\\]: ")) then
       ($t | capture("^deps: (?<group>[a-z0-9-]+) \\[(?<version>[0-9a-f]{8})\\]: "))
       + {type: "finding", kind: "group", title: $t, body: $b, updates: ($m.updates // []), urgent: ($m.urgent // false), advisories: ($m.advisories // [])}
-    elif ($t | test("^deps: [a-z0-9-]+ .+ [^ ]+ released \\(outside .*\\)$")) then
-      ($t | capture("^deps: (?<group>[a-z0-9-]+) (?<name>.+) (?<line>[^ ]+) released \\(outside (?<constraint>.*)\\)$"))
-      | {type: "outside", item: .}
+    elif ($t | test("^deps: [a-z0-9-]+ .+ [^ ]+ released \\(outside .*\\)$")) then empty
     elif ($t | test("^deps: [a-z0-9-]+ v?[0-9][0-9A-Za-z.-]* released$")) then
       ($t | capture("^deps: (?<group>[a-z0-9-]+) (?<version>v?[0-9][0-9A-Za-z.-]*) released$")) + {type: "finding", kind: "chart", title: $t, body: $b}
     elif ($t | test("^Knative 1\\.[0-9]+(, 1\\.[0-9]+)* released: update KNATIVE_K8S_COMPAT$")) then
@@ -136,19 +159,16 @@ def appended($text):
 
 def cell: tostring | gsub("\\|"; "\\|") | gsub("[\r\n]+"; " ");
 
-# ── the issue of a group's major versions ───────────────────────────────────
-def majors_title($g): "deps: \($g) major versions need a decision";
-def majors_body($g; $items):
-  "Major versions of **\($g)** (releases outside the constraint of its manifest or pin) need a decision: the dependency bot does not move them. For each one a person either moves it by hand with the code it needs (the bot then takes its minor and patch updates), or holds it with a written reason in `ci/deps/holds.txt` (it then leaves this list and the weekly summary shows it as `held (<reason>)`). The bot edits this list every day and closes the issue when it is empty; while the list is not empty, it reopens the issue when it is closed by hand.\n\n"
-  + "| Dependency | Pinned | Newest major | allow |\n|---|---|---|---|\n"
-  + ([$items | sort_by(.name)[] | "| `\(.name | cell)` | \(.from // "" | cell) | \(.to // .line | cell) | `\(.constraint // "" | cell)` |"] | join("\n"))
-  + "\n\n`allow`: what the manifest or pin allows (its constraint). Reported by ci/check-package-releases.sh, kept by ci/deps-digest.sh (docs/development.md → Dependency test bot).\n\n"
-  + ({group: $g, kind: "outside", items: ($items | sort_by(ikey))} | marker_text) + "\n"
-  + "<!-- runr-deps:majors:\($g) -->\n";
+# ── the earlier bot's issues of major versions, retired ─────────────────────
+# the text an open "major versions need a decision" issue (or a single "released (outside …)" one)
+# gets when it closes: the test bot attempts every release outside a constraint now. Without a
+# summary to point at (none open, none opened by this run), the number is left out (retired_text)
+def retire_text: "The dependency test bot now attempts every release outside a constraint on its weekly run: each one is a row of the weekly summary #{{digest}}; one it cannot move or that fails its suites gets `next update required` there.";
+def retire_unpointed: gsub("the weekly summary #\\{\\{digest\\}\\}"; "the weekly summary");
 
 # ── the summary's body ───────────────────────────────────────────────────────
 def rank:
-  {"red": 0, "needs attention": 0, "new": 1, "testing": 1, "green": 1, "landed": 2, "held": 3, "shipped": 4, "closed": 5}[.state // "new"] // 1;
+  {"red": 0, "needs attention": 0, "next update required": 0, "new": 1, "testing": 1, "green": 1, "landed": 2, "held": 3, "shipped": 4, "closed": 5}[.state // "new"] // 1;
 
 def version_cell($max):
   if .kind == "group" then
@@ -174,13 +194,35 @@ def item_cell:
   elif (.url // "") != "" then "[\(if .state == "shipped" then (.release // "release") else "run" end)](\(.url))"
   else "" end;
 
+# the section "Next update required" (sorted rows; none when nothing is in it): a line per update the
+# bot could not move or whose suites failed, a line per major a hold keeps
+def oneline: tostring | gsub("[\r\n]+"; " ") | sub("\\s+$"; "");
+def next_section($ls; $max):
+  [$ls[] | select(is_next_required)] as $n
+  | [$ls[] | select(.kind == "held" and .state == "held")] as $h
+  | if ($n | length) + ($h | length) == 0 then ""
+    else "### Next update required\n\n"
+      + ([$n[] | "- `\(.id)` \(version_cell($max) | oneline)"
+                 + (if (.note // "") != "" then ": \(.note | oneline)" else "" end)
+                 + ([(if .issue != null then "#\(.issue)" else empty end), (if (.url // "") != "" then "[run](\(.url))" else empty end)]
+                    | if length > 0 then " (" + join(", ") + ")" else "" end)]
+         + [$h[] | "- `\(.id)` \(version_cell($max) | oneline): held, \(.note // "no reason written" | oneline)"]
+         | join("\n"))
+      + "\n\n"
+      + ([(if ($n | length) > 0 then "The bot tries these updates again on every weekly run (a newer release may fix them): once one passes, it ships, loses the label `next update required` and its issue closes." else empty end),
+          (if ($h | length) > 0 then "A held one is a person's decision (`ci/deps/holds.txt`, with its reason): the bot leaves it until the hold is removed." else empty end)]
+         | join(" "))
+      + "\n" end;
+
 def render($meta; $lines; $max; $closing):
   ($lines | sort_by(rank, .id)) as $ls
-  | "What the dependency bots found and did in **\($meta.week)** (\($meta.monday // "?") to \($meta.sunday // "?"), UTC), one row per dependency. The bots edit this issue as they work and do not comment on it: `upstream-releases.yml` adds each finding once (daily), `deps-test.yml` tests the open rows (Saturdays; a security finding the same day) and writes here what became of them. A row links the issue where a person acts (a bump that went red, a test run that needs a person); a group's major versions have an issue of their own. Rows still open when a later week has movement move to that week's summary. To test again: **Actions → Dependency tests → Run workflow** with `issue` = this issue's number (its open rows) or `<number>:<id>` (one row). docs/development.md → Dependency test bot.\n\n"
+  | next_section($ls; $max) as $next
+  | "What the dependency bots found and did in **\($meta.week)** (\($meta.monday // "?") to \($meta.sunday // "?"), UTC), one row per dependency. The bots edit this issue as they work and do not comment on it: `upstream-releases.yml` adds each finding once (daily), `deps-test.yml` attempts every open row (Saturdays; a security finding the same day), majors and releases outside a constraint too, and writes here what became of them. An update the bot cannot move mechanically, or whose suites fail, gets `next update required` (an issue of its own, which its row links) and is listed under **Next update required** below: the bot tries it again every week. A row also links the issue of a test run that needs a person. Rows still open when a later week has movement move to that week's summary. To test again now: **Actions → Dependency tests → Run workflow** with `issue` = this issue's number (its open rows) or `<number>:<id>` (one row). docs/development.md → Dependency test bot.\n\n"
   + (if $meta.previous != null then "Continued from #\($meta.previous).\n\n" else "" end)
   + (if ($ls | length) == 0 then "Nothing is open.\n"
      else "| Dependency | Version | State | Item | Note |\n|---|---|---|---|---|\n"
        + ([$ls[] | "| `\(.id | cell)` <!-- runr-deps:row:\(.id) --> | \(version_cell($max) | cell) | \(state_cell | cell) | \(item_cell | cell) | \(note_cell | cell) |"] | join("\n")) + "\n" end)
+  + (if $next != "" then "\n" + $next else "" end)
   + "\n" + ([$ls[] | marker_text] | join("\n")) + "\n"
   + (if $closing != null then "\n\($closing)\n" else "" end)
   + "\n<!-- runr-deps:digest:\($meta.week) -->\n";
@@ -276,8 +318,11 @@ def file_main:
   | ([$in.findings[] | parse_finding]) as $parsed
   | ([$parsed[] | select(.type == "finding")] | unique_by(lkey)) as $F
   | ([$F[] | .id]) as $fids
-  | ([$parsed[] | select(.type == "outside") | .item] | unique_by("\(.group) \(ikey)")) as $O
   | ($in.held // []) as $H
+  # the earlier bot's issues of major versions: an open "major versions need a decision" issue, and a
+  # single "released (outside …)" one that no person labelled next update required
+  | ([$all[] | select(.state == "OPEN" and (.kind == "majors" or (.kind == "outside-legacy" and ((.labels | index(next_label)) == null))))]
+     | sort_by(.number)) as $retire
   | ([$F[] | select((lkey | IN($known[])) | not)]) as $new
   | run_state($cur; $others)
 
@@ -318,7 +363,7 @@ def file_main:
       | if $s != null then
           (if has_key($k) then .
            else drop_id($f.id) | .lines += [$f | line_new($date) | .issue = $s.number | .item_kind = "issue"
-                  | .state = (if ($s.labels | index("needs attention")) != null then "red" else "new" end)] end)
+                  | .state = issue_state($s.labels)] end)
         elif has_key($k) or ($k | IN($known[])) then .
         elif $f.kind == "knative-missing" then
           .ops += [{op: "create", key: "knative-\($f.version)", title: $f.title, labels: ["deps", "needs attention"],
@@ -330,34 +375,13 @@ def file_main:
           | if $f.kind == "group" and $f.urgent then .dispatch += ["{{digest}}:\($f.id)"] else . end
         end)
 
-  # 4. a group's major versions (releases outside the constraint no hold keeps): one issue per
-  #    group, its list edited every day, closed when empty, reopened when closed by hand while the
-  #    list is not empty; the issues of single releases folded into it
-  | ([$O[].group] + [$all[] | select(.kind == "majors" and .state == "OPEN") | .group]
-     + [$all[] | select(.kind == "outside-legacy" and .state == "OPEN") | .group] | unique) as $og
-  | reduce $og[] as $g (.;
-      ([$O[] | select(.group == $g)]) as $today
-      | ([$all[] | select(.kind == "majors" and .group == $g)] | sort_by(.number) | reverse | .[0] // null) as $mi
-      | ([$all[] | select(.kind == "outside-legacy" and .state == "OPEN" and .group == $g)] | sort_by(.number)) as $lg
-      | ($checked | index($g) != null) as $chk
-      | (($today + (if $chk then [] else (($mi.items // []) + [$lg[] | .items[]]) end)) | unique_by(ikey)) as $want
-      | ("majors-\($g)") as $key
-      | (if $mi != null then $mi.number else "{{\($key)}}" end) as $target
-      | (if ($want | length) == 0 then
-           (if $mi != null and $mi.state == "OPEN" then .late += [{op: "close", issue: $mi.number, reason: "completed"}] else . end)
-         elif $mi == null then
-           .ops += [{op: "create", key: $key, title: majors_title($g), labels: ["deps", "needs attention"], body: majors_body($g; $want)}]
-         else
-           (if $mi.state != "OPEN" then .ops += [{op: "reopen", issue: $mi.number}] else . end)
-           | (if ($want | sort_by(ikey) | map({name, line, from, to, constraint})) != ($mi.items | sort_by(ikey) | map({name, line, from, to, constraint}))
-                 or $mi.title != majors_title($g) then
-                .ops += [{op: "edit", issue: $mi.number, title: majors_title($g), body: majors_body($g; $want)}] else . end)
-         end)
-      | reduce $lg[] as $l (.;
-          .late += [{op: "edit", issue: $l.number, title: $l.title,
-                     body: ($l.body | appended(if ($want | length) > 0 then "Folded into #\($target): the bot keeps one issue per group for its major versions, and opens a separate issue only when a person has to do something."
-                                               else "No longer found by the check of \($date): moved by hand or held." end))},
-                    {op: "close", issue: $l.number, reason: "not planned"}]))
+  # 4. the earlier bot's issues of major versions, retired: the test bot attempts every release
+  #    outside a constraint (the check files each as a group's finding of its own, a row above);
+  #    each open one is closed with a pointer to the summary (a single one labelled next update
+  #    required is a person's and stays)
+  | reduce $retire[] as $r (.;
+      .late += [{op: "edit", issue: $r.number, title: $r.title, body: ($r.body | appended(retire_text))},
+                {op: "close", issue: $r.number, reason: "not planned"}])
 
   # 5. a major a hold keeps (with its reason): a row "held (<reason>)" and no issue; one of a
   #    checked group the check no longer reports leaves; a hold the summaries had is no movement
@@ -368,11 +392,12 @@ def file_main:
       | ($nl | lkey) as $k
       | if has_id($nl.id) then .lines |= map(if .id == $nl.id then . + $nl else . end)
         else .lines += [$nl] | (if ($k | IN($known[])) then . else .move = true | touch($k) end) end)
-  | .lines |= map(select(.kind != "held" or (.group | IN($checked[]) | not) or (.id | IN($hids[]))))
+  | .lines |= map(select(.kind != "held" or (.group | base_group | IN($checked[]) | not) or (.id | IN($hids[]))))
 
-  # 6. a finding the check of a read group no longer reports: landed on next and now in a release
-  #    → shipped in it; one nobody acts on yet → closed
-  | reduce (.lines[] | select((.kind | IN("group", "chart")) and .issue == null and (.group | IN($checked[])) and ((.id | IN($fids[])) | not))) as $r (.;
+  # 6. a finding the check of a read group no longer reports (a release outside a constraint: its
+  #    group read, npm-vue for npm-vue--vite): landed on next and now in a release → shipped in it;
+  #    one nobody acts on yet → closed
+  | reduce (.lines[] | select((.kind | IN("group", "chart")) and .issue == null and (.group | base_group | IN($checked[])) and ((.id | IN($fids[])) | not))) as $r (.;
       if $r.state == "landed" then
         .lines |= map(if .id == $r.id then .state = "shipped" | .release = "v\($in.release)" | del(.note, .url) else . end)
         | .move = true | touch($r | lkey)
@@ -380,21 +405,27 @@ def file_main:
         .lines |= map(if .id == $r.id then .state = "closed" | .note = "no longer found by the check of \($date)" else . end)
       else . end)
 
-  # 7. a row whose issue was closed: closed (an incident's: back to new); an open issue of a
+  # 7. a row whose issue was closed: closed (an incident's: back to new); the earlier bot's red and
+  #    needs attention row of an open issue of its own: next update required; an open issue of a
   #    finding without its row: pointed at; an incident none points at: closed
   | . as $st
+  | ([$all[] | select(.state == "OPEN" and (.labels | any(.[]; IN(next_label, attention_label)))) | .number]) as $labelled
   | .lines |= map(if (.issue | type) == "number" and ((.issue | IN($open[])) | not) and (.issue | IN($st.gone[]) | not) then
                     if .item_kind == "incident" then .state = "new" | .note = "#\(.issue) was closed" | del(.issue, .item_kind)
                     elif is_final then . else .state = "closed" | .note = "#\(.issue) was closed" end
+                  elif .item_kind == "issue" and (.state | IN("red", "needs attention")) and (.issue | IN($labelled[])) then
+                    .state = "next update required"
                   else . end)
   | reduce ($sep[] | select(.kind != "knative-missing" and ((.number | IN($st.gone[])) | not))) as $s (.;
       if any(.lines[]; .issue == $s.number) or has_id($s.id) then .
       else .lines += [{id: $s.id, kind: $s.kind, group: $s.group, version: $s.version, title: $s.title, issue: $s.number, item_kind: "issue",
-                       found: $s.created, state: (if ($s.labels | index("needs attention")) != null then "red" else "new" end)}
+                       found: $s.created, state: issue_state($s.labels)}
                       + (if $s.kind == "group" then {updates: ($s.marker.updates // []), urgent: ($s.marker.urgent // false), advisories: ($s.marker.advisories // [])} else {} end)] end)
   | close_incidents($all)
 
   | publish($cur; $others; $in.week)
+  # no summary to point at: the retired issues' text without its number
+  | (if any(.digest[]; .key == "digest") then . else .late |= map(if .body? then .body |= retire_unpointed else . end) end)
   | all_ops(null);
 
 # ── report: what the dependency test bot did, into the summary (deps-test.yml) ─
@@ -426,14 +457,18 @@ def report_main:
             | if .note == null then del(.note) else . end | if .url == null then del(.url) else . end
             | if .state != "needs attention" and .item_kind == "incident" then del(.issue, .item_kind) else . end)
           | touch(.lines[$idx] | lkey)
+          # split: an update the bot could not move or that failed (next update required; the
+          # earlier bot's red and needs attention lines too) gets an issue of its own, labelled
+          # next update required: the plan tests it there on every weekly run. Its row keeps the
+          # run, which the section Next update required links
           | if $u.mode == "split" and $dl then
               ("split-\($u.group)") as $key
               | (.lines[$idx]) as $line
               | .ops += [{op: "create", key: $key, title: ($line.title // "deps: \($u.group) \($u.version) released"),
-                          labels: (["deps", "needs attention"] + (if $line.urgent == true then ["security"] else [] end)),
-                          body: ((($u.body // "") + "\n\nFrom the weekly summary of \($in.week.week): a person has to do something.")
+                          labels: (["deps", next_label] + (if $line.urgent == true then ["security"] else [] end)),
+                          body: ((($u.body // "") + "\n\nFrom the weekly summary of \($in.week.week): `next update required`. The dependency test bot tries it again on every weekly run (a newer release may fix it); once it passes, it ships and this issue closes.")
                                  | with_marker($line | sep_marker($in.date)))}]
-              | .lines[$idx] |= (.issue = "{{\($key)}}" | .item_kind = "issue" | del(.url))
+              | .lines[$idx] |= (.issue = "{{\($key)}}" | .item_kind = "issue")
             elif $u.mode == "incident" and $dl then
               .incident = (.incident + [$u.body // ""] | unique)
               | .lines[$idx] |= (.issue = "{{incident}}" | .item_kind = "incident")

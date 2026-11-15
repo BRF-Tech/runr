@@ -7,7 +7,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /queue-consumer .
 
-FROM ghcr.io/brf-tech/runr/reqs/alpine:3.21
+FROM ghcr.io/brf-tech/runr/reqs/alpine:3.22
 # version, revision and created: the release build (ci.sh --push)
 LABEL org.opencontainers.image.title="runr-queue-consumer" \
       org.opencontainers.image.description="RunR event gateway and queue consumer: Redis streams to Knative sinks" \

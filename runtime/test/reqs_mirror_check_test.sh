@@ -81,8 +81,14 @@ out=$(check 2>&1) && fail "a missing image passed: $out"
 [[ "$out" == *"✗ ghcr.io/brf-tech/runr/reqs/tinygo:0.42.0 does not resolve anonymously (HTTP 404): app/Dockerfile:FROM"* ]] || fail "missing: $out"
 [[ "$out" == *"lib/mirror.sh of https://github.com/BRF-Tech/runr-runtimes"* ]] || fail "no hint where to add it: $out"
 grep -q '^tinygo:' "$REQS_MIRROR_CACHE" && fail "a missing reference was cached"
+# the dependency test bot's dry run: a reference its bump moved to, which only a real run copies
+# into the mirror, is its upstream under that name (REQS_MIRROR_STANDINS): not asked, said so
+out=$(REQS_MIRROR_STANDINS="ghcr.io/brf-tech/runr/reqs/tinygo:0.42.0=docker.io/tinygo/tinygo:0.42.0" check 2>&1) || fail "a dry run's stand-in: $out"
+[[ "$out" == *"~ ghcr.io/brf-tech/runr/reqs/tinygo:0.42.0: not checked, a stand-in of the dependency test bot's dry run (docker.io/tinygo/tinygo:0.42.0 under this name"*   && "$out" == *"1 a dry run's stand-in)"* ]] || fail "a dry run's stand-in: $out"
+grep -q 'tinygo/manifests' "$FAKE_GHCR/calls" && fail "a stand-in was asked"
+out=$(REQS_MIRROR_STANDINS="alpine:3.21=docker.io/library/alpine:3.21" check 2>&1) && fail "a stand-in that is no reference of the mirror passed: $out"
 : > "$FAKE_GHCR/missing"
-echo "ok - a reference that does not resolve fails with its place and what to do, and is not cached"
+echo "ok - a reference that does not resolve fails with its place and what to do, and is not cached; a dry run's stand-in is not asked"
 
 # --- no answer -----------------------------------------------------------------------------------------------
 rm -f -- "$REQS_MIRROR_CACHE"

@@ -6,6 +6,6 @@ WORKDIR /src
 COPY go.mod *.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /q .
 
-FROM ghcr.io/brf-tech/runr/reqs/alpine:3.21
+FROM ghcr.io/brf-tech/runr/reqs/alpine:3.22
 COPY --from=build /q /usr/local/bin/q
 ENTRYPOINT ["/usr/local/bin/q"]

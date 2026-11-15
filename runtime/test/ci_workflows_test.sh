@@ -33,7 +33,10 @@
 #     release job's steps that need them; every dependency it knows has a pin or a Knative table to
 #     move, and every suite a command (a Kind suite, a check of ci/deps-check.sh or the console's
 #     workflows, in both test phases); its green bumps go together (the batch job, with no key)
-#     and their combined tree is tested before the release job;
+#     and their combined tree is tested before the release job; the reqs mirror's copies a bump
+#     needs are made by one job of their own (packages: write, the GITHUB_TOKEN alone, never in a
+#     dry run) before the first test phase, which runs whatever became of it; an update issue
+#     still labelled needs attention is relabelled next update required;
 #   - every workflow: contents: read by default, GITHUB_TOKEN as its only secret (deps-test.yml:
 #     and the deploy key, the App's and the signing key), every action pinned to a full commit SHA with its version (a
 #     reusable workflow of this repository by its path), every download checked against a pinned
@@ -437,7 +440,36 @@ done
 for j in batch-unit batch-shell batch-check batch-ui batch-ui-stack batch-kind; do
   has "$(job "$deps" "$j")" "if: \${{ !cancelled() && needs.batch.result == 'success' && " "deps-test.yml: ${j} is skipped after a red bump of the first phase (its if has no !cancelled())"
 done
-has "$(job "$deps" batch)" 'needs: [plan, bump, unit, shell, check, ui, ui-stack, kind]' "deps-test.yml puts the bumps together before each is tested"
+has "$(job "$deps" batch)" 'needs: [plan, bump, mirror, unit, shell, check, ui, ui-stack, kind]' "deps-test.yml puts the bumps together before each is tested"
+# the reqs mirror's copies: one job with packages: write (no other job of any workflow but the
+# runtimes' own repository has it), never in a dry run, through ci/deps-run.sh mirror with the
+# GITHUB_TOKEN alone; its result is the artifact the outcome reads; the first phase waits for it and
+# runs whatever became of it (a skipped or failed mirror job must not skip the other bumps' tests)
+mirror_job="$(job "$deps" mirror)"
+has "$mirror_job" 'bash ci/deps-run.sh mirror "$RUNNER_TEMP/mirror.json" "$RUNNER_TEMP/result"' "deps-test.yml does not copy into the reqs mirror through ci/deps-run.sh mirror"
+has "$mirror_job" "inputs.dry_run != true" "deps-test.yml's mirror job runs in a dry run"
+has "$mirror_job" 'name: deps-result-mirror' "deps-test.yml's mirror job does not leave its result for the outcome"
+has "$mirror_job" "MIRROR: \${{ needs.bump.outputs.mirror }}" "deps-test.yml's mirror job does not take the bump job's copies"
+has "$(job "$deps" bump)" 'mirror: ${{ steps.bumps.outputs.mirror }}' "deps-test.yml's bump job does not list the reqs mirror's copies"
+[ "$(grep -cE '^ +packages: write$' "$deps")" = 1 ] && grep -qE '^ +packages: write$' <<<"$mirror_job" \
+  || fail "deps-test.yml: packages: write outside the mirror job"
+for wf in "$wfdir"/*.yml; do
+  [ "$wf" = "$deps" ] || [ "$(basename "$wf")" = release-images.yml ] || ! grep -qE '^ +packages: write$' "$wf" || fail "$(basename "$wf"): packages: write"
+done
+nontoken < <(printf '%s\n' "$mirror_job") | grep -qx 0 || fail "deps-test.yml: a secret other than the GITHUB_TOKEN in the mirror job"
+grep -qE '^ +environment:' <<<"$mirror_job" && fail "deps-test.yml: the mirror job in an environment"
+for j in unit shell check ui ui-stack kind; do
+  has "$(job "$deps" "$j")" 'needs: [bump, mirror]' "deps-test.yml: ${j} does not wait for the reqs mirror's copies"
+  has "$(job "$deps" "$j")" "if: \${{ !cancelled() && needs.bump.result == 'success' && needs.bump.outputs.any == 'true'" "deps-test.yml: ${j} is skipped when the mirror job is skipped or failed"
+done
+for j in shell batch-shell; do
+  has "$(job "$deps" "$j")" "REQS_MIRROR_STANDINS: \${{ matrix.standins || '' }}" "deps-test.yml: ${j} does not give the reqs mirror check a dry run's stand-ins"
+done
+# an update issue still labelled needs attention (before next update required) is relabelled; the
+# label exists
+has "$(job "$deps" plan)" "jq -r '.relabel[]' \"\$RUNNER_TEMP/plan.json\"" "deps-test.yml does not relabel the plan's old needs attention issues"
+has "$(job "$deps" plan)" '--remove-label "needs attention" --add-label "next update required"' "deps-test.yml does not relabel to next update required"
+has "$(job "$deps" plan)" 'gh label create "next update required"' "deps-test.yml does not create the label next update required"
 has "$release_job" 'needs: [plan, bump, batch, batch-unit, batch-shell, batch-check, batch-ui, batch-ui-stack, batch-kind]' "deps-test.yml releases before the combined tree is tested"
 has "$release_job" "bash ci/deps-run.sh pick \"\$RUNNER_TEMP/deps\" \"\$RUNNER_TEMP/repo\"" "deps-test.yml does not pick the run's release through ci/deps-run.sh pick"
 # the weekly summary: the rows' results, the run's start (testing) and a bump job that failed go

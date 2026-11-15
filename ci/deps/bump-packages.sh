@@ -14,12 +14,14 @@
 #   pins      the version at every place of the pin (DEPS_PINS), and with it the checksums: the
 #             published ones of the old version become the new one's (a checksum not published,
 #             or not where the files pin it, sends the bump to a person)
-#   pypi, cargo  nothing: without a lockfile only a release outside the constraint is a finding,
-#             which a person moves
+#   pypi, cargo  nothing: without a lockfile only a release outside the constraint is a finding
+# A release outside the constraint (its finding's id <group>--<package>, one update with "outside":
+# true) moves the constraint itself first, mechanically (bump_outside, below), then the kind's tool.
 # The lockfile must come out the same when the bump is made twice (a scratch worktree of HEAD,
-# then this checkout), the manifest's constraints must stay as they are, and a held package must
-# not move; anything else goes to a person. The path follows what moved (DEPS_PKG's PATH): a bump
-# that changes nothing a release ships lands on next only.
+# then this checkout), the manifest's constraints must stay as they are (but the one an update
+# outside it moves), and a held package must not move; anything else goes to a person. The path
+# follows what moved (DEPS_PKG's PATH): a bump that changes nothing a release ships lands on next
+# only.
 
 pkg_kind="$(deps_field "$pkg_row" 2)"
 pkg_dir="$(deps_field "$pkg_row" 3)"
@@ -27,6 +29,9 @@ pkg_scope="$(deps_field "$pkg_row" 4)"
 pkg_label="$(deps_field "$pkg_row" 5)"
 pkg_path="$(deps_field "$pkg_row" 6)"
 pkg_suites="$(deps_field "$pkg_row" 7)"
+# the group: the finding's id is the group itself, or <group>--<package> for a release outside the
+# constraint (the holds and the pins are the group's)
+pkg_group="$(deps_base_group "$dep")"
 # what the bump changed, "name old → new" per line; whether it ships; the images whose own version moves
 moved=()
 shipped=0
@@ -38,7 +43,12 @@ pkg_safe() {
   jq -e 'type == "array" and length > 0 and all(.[];
       (.name | type == "string" and test("^[A-Za-z0-9@][A-Za-z0-9@._/-]*$"))
       and (.to | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*$"))
-      and ((.from // "") | test("^[A-Za-z0-9._+-]*$"))
+      and ((.outside // false) | type == "boolean")
+      and (if .outside == true then
+             ((.from // "") | type == "string" and test("^[A-Za-z0-9._+^~<>=!,*| -]*$"))
+             and ((.constraint // "") | type == "string" and test("^[A-Za-z0-9._+^~<>=!,*|@/ -]*$"))
+             and all((.line // ""), (.why // ""), (.where // ""); type == "string" and (test("[[:cntrl:]`$]") | not))
+           else ((.from // "") | test("^[A-Za-z0-9._+-]*$")) end)
       and ((.sha // "") | test("^([0-9a-f]{40})?$")) and ((.old_sha // "") | test("^([0-9a-f]{40})?$"))
       and ((.digest // "") | test("^(sha256:[0-9a-f]{64})?$")) and ((.old_digest // "") | test("^(sha256:[0-9a-f]{64})?$"))
       and ((.files // []) | all(.[]; test("^[A-Za-z0-9._/-]+$") and (test("[.][.]") | not))))' "$updates_file" >/dev/null
@@ -59,6 +69,7 @@ bump_composer() {
   local lock="$pkg_dir/composer.lock" again="$work/again"
   cp "$lock" "$work/lock.old"
   git -C "$ROOT" worktree add -q --detach "$again" HEAD
+  outside_hook "$again"
   [ ! -d "$ROOT/$pkg_dir/vendor" ] || ln -s "$ROOT/$pkg_dir/vendor" "$again/$pkg_dir/vendor"
   composer_run "$again" || { reasons+=("\`composer update\` failed: $(tail -n 3 "$work/composer-again.log" | tr '\n' ' ')"); pkg_attention; }
   composer_run "$ROOT" || { reasons+=("\`composer update\` failed: $(tail -n 3 "$work/composer-$(basename "$ROOT").log" | tr '\n' ' ')"); pkg_attention; }
@@ -81,7 +92,12 @@ npm_run() {
   (
     cd "$1/$pkg_dir" || exit 1
     # a failed update fails the bump (its log says why)
-    if [ "${#pkgs[@]}" -gt 0 ]; then npm update "${pkgs[@]}" --package-lock-only --ignore-scripts --no-audit --no-fund || exit 1; fi
+    if [ "${outside_mode:-0}" = 1 ]; then
+      # a range outside the old one (bump_outside moved it): the lockfile resolves it again
+      npm install --package-lock-only --ignore-scripts --no-audit --no-fund || exit 1
+    elif [ "${#pkgs[@]}" -gt 0 ]; then
+      npm update "${pkgs[@]}" --package-lock-only --ignore-scripts --no-audit --no-fund || exit 1
+    fi
     # an advisory: the fixes within the ranges of the tree (never --force)
     if [ "$(jq -r '.urgent // false' "$updates_meta" 2>/dev/null || echo false)" = true ] || jq -e 'any(.[]; .to == "fixed")' "$updates_file" >/dev/null; then
       npm audit fix --package-lock-only --ignore-scripts --no-fund || true
@@ -99,6 +115,7 @@ bump_npm() {
   [ "${npm_major:-0}" -ge 11 ] 2>/dev/null || { reasons+=("npm ${npm_major:-none} cannot make the bump: npm 11 or newer (npm install -g npm@11); npm 10 fails on the console's tree"); pkg_attention; }
   cp "$lock" "$work/lock.old"
   git -C "$ROOT" worktree add -q --detach "$again" HEAD
+  outside_hook "$again"
   npm_run "$again" || { reasons+=("\`npm update\` failed: $(tail -n 3 "$work/npm-again.log" | tr '\n' ' ')"); pkg_attention; }
   npm_run "$ROOT" || { reasons+=("\`npm update\` failed: $(tail -n 3 "$work/npm-$(basename "$ROOT").log" | tr '\n' ' ')"); pkg_attention; }
   cmp -s "$again/$lock" "$ROOT/$lock" || reasons+=("package-lock.json does not come out the same when the update is made twice: the resolution is not reproducible")
@@ -128,6 +145,7 @@ bump_go() {
   goline="$(grep -E '^(go|toolchain) ' "$mod" | sort)"
   go_requires "$pkg_dir" > "$work/req.old"
   git -C "$ROOT" worktree add -q --detach "$again" HEAD
+  outside_hook "$again"
   go_run "$again" || { reasons+=("\`go get\` failed: $(tail -n 3 "$work/go-again.log" | tr '\n' ' ')"); pkg_attention; }
   go_run "$ROOT" || { reasons+=("\`go get\` failed: $(tail -n 3 "$work/go-$(basename "$ROOT").log" | tr '\n' ' ')"); pkg_attention; }
   { cmp -s "$again/$mod" "$ROOT/$mod" && cmp -s "$again/$pkg_dir/go.sum" "$ROOT/$pkg_dir/go.sum"; } \
@@ -300,8 +318,8 @@ bump_pins() {
   n="$(jq length "$updates_file")"
   for ((i = 0; i < n; i++)); do
     name="$(jq -r ".[$i].name" "$updates_file")"; from="$(jq -r ".[$i].from" "$updates_file")"; to="$(jq -r ".[$i].to" "$updates_file")"
-    row="$(deps_pin_row "$dep" "$name" || true)"
-    [ -n "$row" ] || { reasons+=("${name} is no pin of ${dep} (ci/deps/packages.sh, DEPS_PINS)"); continue; }
+    row="$(deps_pin_row "$pkg_group" "$name" || true)"
+    [ -n "$row" ] || { reasons+=("${name} is no pin of ${pkg_group} (ci/deps/packages.sh, DEPS_PINS)"); continue; }
     line="$(deps_field "$row" 4)"
     path="$(deps_field "$row" 5)"
     case "$line" in person|toolchain-*) reasons+=("${name}: every newer release of it is a person's (DEPS_PINS: ${line})"); continue ;; esac
@@ -432,6 +450,367 @@ own_version_bump() {
   notes+=("${image} ${old} → ${new}: ${total} line(s)")
 }
 
+# ── outside the constraint (bump_outside) ──
+# A release outside the manifest's constraint (ci/check-package-releases.sh outside(): its id
+# <group>--<package>, one update with "outside": true) moves the constraint itself, mechanically,
+# and then goes through the kind's own bump as any update: composer and npm a caret, tilde or exact
+# version to the new release's, Go a new major path (go.mod and the imports), an Actions pin to the
+# new tag's commit (a floating major to the new major), a Dockerfile base to the new tag (and its
+# digest), a pin of a major line to the new version with its checksums, a Python specifier (==,
+# ~=, an upper bound, a floor alone) and a Cargo requirement to the new release. Anything else, a
+# Go toolchain line, a new kubectl minor of the API image's set, a toolchain the code is written
+# for or a patched upstream needs the code or a person's decision: the bump refuses it with the
+# reason (the issue gets `next update required` and the bot tries it again every week).
+outside_mode=0
+o_name=""
+o_from=""
+o_to=""
+o_constraint=""
+o_new=""
+o_where=""
+o_kind=""
+
+# outside_refuse REASON — the bump cannot move it: the reason, nothing left changed, status 2
+outside_refuse() {
+  reasons+=("$1")
+  pkg_attention
+}
+
+# outside_error MESSAGE — the bump could not be checked (a registry did not answer): status 1, the
+# next run tries again
+outside_error() {
+  echo "${dep}: $1" >&2
+  pkg_cleanup
+  deps_revert_all
+  exit 1
+}
+
+# outside_num TEXT — the first version number of TEXT (^7.1.0 → 7.1.0, >=1.12,<2 → 1.12, v3 → 3)
+outside_num() { grep -oE '[0-9]+(\.[0-9]+)*' <<<"$1" | head -n 1 || true; }
+
+# outside_kind — "a new major version" when TO opens a newer major than FROM (a Go module's new
+# major path always), else "outside the constraint" (an exact pin, a 0.x minor, an upper bound)
+outside_kind() {
+  local f t
+  if [ "$pkg_kind" = go ]; then echo "a new major version"; return 0; fi
+  f="$(outside_num "$o_from")"
+  t="$(outside_num "$o_to")"
+  if [ -n "$f" ] && [ -n "$t" ] && [ "${t%%.*}" -gt "${f%%.*}" ] 2>/dev/null && [ "${t%%.*}" -ge 1 ]; then
+    echo "a new major version"
+  else
+    echo "outside the constraint"
+  fi
+}
+
+# outside_on_line VERSION — VERSION is on the line of TO: its major (a 0.x version: its minor)
+outside_on_line() {
+  local v="${1#v}" t="${o_to#v}"
+  [ -n "$v" ] || return 1
+  if [ "${t%%.*}" = 0 ]; then
+    [ "$(cut -d. -f1-2 <<<"$v")" = "$(cut -d. -f1-2 <<<"$t")" ]
+  else
+    [ "${v%%.*}" = "${t%%.*}" ]
+  fi
+}
+
+# outside_semver STYLE CONSTRAINT TO — the constraint a caret, tilde or exact version becomes
+# (composer: ^major.minor, ^0.minor for 0.x, ~major.minor; npm: ^TO, ~TO; an exact one: TO);
+# nothing for any other form (||, a range, >=, *, dev-…)
+outside_semver() {
+  local style="$1" c="$2" to="${3#v}" op="" maj min
+  maj="${to%%.*}"
+  min="$(cut -d. -f2 <<<"${to}.0")"
+  case "$c" in
+    '^'*|'~'*) op="${c:0:1}"; [[ "${c:1}" =~ ^v?[0-9]+(\.[0-9]+){0,2}$ ]] || return 0 ;;
+    *) [[ "$c" =~ ^v?[0-9]+(\.[0-9]+){0,3}$ ]] || return 0 ;;
+  esac
+  if [ -z "$op" ]; then
+    if [[ "$c" == v* ]]; then echo "v${to}"; else echo "$to"; fi
+  elif [ "$style" = composer ]; then
+    if [ "$maj" = 0 ]; then echo "${op}0.${min}"; else echo "${op}${maj}.${min}"; fi
+  else
+    echo "${op}${to}"
+  fi
+}
+
+# outside_json_edit TREE FILE — NAME's constraint o_constraint → o_new in a JSON manifest of TREE
+# (composer.json, package.json: the text, its format kept); status 1 when it names none
+outside_json_edit() {
+  local count
+  count="$(NAME="$o_name" OLD="$o_constraint" NEW="$o_new" perl -i -ne 'BEGIN { $n = 0 }
+    $n += s/("\Q$ENV{NAME}\E"\s*:\s*")\Q$ENV{OLD}\E(")/$1$ENV{NEW}$2/g; print; END { print STDERR "$n\n" }' "$1/$2" 2>&1 >/dev/null | tail -n 1)"
+  [ "${count:-0}" -gt 0 ] 2>/dev/null
+}
+
+# outside_go_edit TREE — the old major path (o_constraint) becomes the new one (o_name) at o_to:
+# its require line of go.mod, and every import of it (and of its packages) in the module's .go
+# files; status 1 when go.mod requires no old path
+outside_go_edit() {
+  local tree="$1" count rest="" f
+  count="$(OLD="$o_constraint" NEW="$o_name" V="$o_to" perl -i -ne 'BEGIN { $n = 0 }
+    $n += s/^(\s*(?:require\s+)?)\Q$ENV{OLD}\E\s+v\S+/$1$ENV{NEW} $ENV{V}/; print; END { print STDERR "$n\n" }' \
+    "$tree/$pkg_dir/go.mod" 2>&1 >/dev/null | tail -n 1)"
+  [ "${count:-0}" -gt 0 ] 2>/dev/null || return 1
+  # a new path under the old one (example.com/m → example.com/m/v2): an import of it already is not
+  # rewritten again
+  [[ "$o_name" != "$o_constraint"/* ]] || rest="${o_name#"$o_constraint"}"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    OLD="$o_constraint" NEW="$o_name" REST="$rest" perl -i -pe '
+      if ($ENV{REST} ne "") { s{"\Q$ENV{OLD}\E(?=["/])(?!\Q$ENV{REST}\E["/])}{"$ENV{NEW}}g }
+      else { s{"\Q$ENV{OLD}\E(?=["/])}{"$ENV{NEW}}g }' "$tree/$f"
+  done < <(git -C "$tree" ls-files -- "$pkg_dir/*.go")
+  return 0
+}
+
+# outside_edit TREE — the manifest's constraint moved in TREE (composer, npm, go)
+outside_edit() {
+  case "$pkg_kind" in
+    composer) outside_json_edit "$1" "$pkg_dir/composer.json" ;;
+    npm) outside_json_edit "$1" "$pkg_dir/package.json" ;;
+    go) outside_go_edit "$1" ;;
+  esac
+}
+
+# outside_hook TREE — before a kind's bump runs its tool in its scratch worktree TREE and in the
+# checkout: the constraint moves in both (the bump is made twice and must come out the same)
+outside_hook() {
+  [ "$outside_mode" = 1 ] || return 0
+  if ! outside_edit "$1" || ! outside_edit "$ROOT"; then
+    outside_refuse "${o_where} no longer names ${o_name} as \`${o_constraint}\`: it moved since the check, which files the release again"
+  fi
+  echo "edit ${o_where}: ${o_name} \`${o_constraint}\` → \`${o_new}\`" >> "$report/edits.log"
+}
+
+# outside_ghcr_digest PATH TAG — the digest a ghcr.io tag names, anonymously (a HEAD request)
+outside_ghcr_digest() {
+  local ghcr="${DEPS_GHCR:-https://ghcr.io}" token
+  token="$(curl -fsS --max-time 20 "${ghcr}/token?scope=repository:$1:pull" | jq -r .token)" || return 1
+  curl -fsSI --max-time 20 -H "Authorization: Bearer ${token}" \
+    -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+    "${ghcr}/v2/$1/manifests/$2" | tr -d '\r' | sed -n 's/^[Dd]ocker-[Cc]ontent-[Dd]igest: *//p' | grep -E '^sha256:[0-9a-f]{64}$'
+}
+
+outside_composer() {
+  local v
+  o_where="$pkg_dir/composer.json"
+  jq -e --arg n "$o_name" --arg c "$o_constraint" '((.require // {})[$n] // (."require-dev" // {})[$n]) == $c' "$o_where" >/dev/null 2>&1 \
+    || outside_refuse "${o_where} no longer requires ${o_name} as \`${o_constraint}\`: it moved since the check, which files the release again"
+  o_new="$(outside_semver composer "$o_constraint" "$o_to")"
+  [ -n "$o_new" ] || outside_refuse "${o_name}'s constraint \`${o_constraint}\` (${o_where}) is no caret, tilde or exact version the bot moves mechanically: the code or a person writes the new one"
+  bump_composer
+  v="$(jq -r --arg n "$o_name" '[(.packages // [])[], (."packages-dev" // [])[] | select(.name == $n) | .version][0] // empty' "$pkg_dir/composer.lock")"
+  outside_on_line "$v" || reasons+=("after the update composer.lock has ${o_name} ${v:-none}, not the ${o_to} line: another package holds it back, which the code or a person changes")
+}
+
+outside_npm() {
+  local v
+  o_where="$pkg_dir/package.json"
+  jq -e --arg n "$o_name" --arg c "$o_constraint" '((.dependencies // {})[$n] // (.devDependencies // {})[$n]) == $c' "$o_where" >/dev/null 2>&1 \
+    || outside_refuse "${o_where} no longer names ${o_name} as \`${o_constraint}\`: it moved since the check, which files the release again"
+  o_new="$(outside_semver npm "$o_constraint" "$o_to")"
+  [ -n "$o_new" ] || outside_refuse "${o_name}'s range \`${o_constraint}\` (${o_where}) is no caret, tilde or exact version the bot moves mechanically: the code or a person writes the new one"
+  if [ -f "$pkg_dir/package-lock.json" ]; then
+    bump_npm
+    v="$(jq -r --arg n "$o_name" '.packages["node_modules/" + $n].version // empty' "$pkg_dir/package-lock.json")"
+    outside_on_line "$v" || reasons+=("after the update package-lock.json has ${o_name} ${v:-none}, not the ${o_to} line: another package holds it back, which the code or a person changes")
+  else
+    # no lockfile (a library, an example): the range is all that moves
+    outside_hook_root
+    moved+=("${o_name} ${o_constraint} → ${o_new}")
+  fi
+}
+
+# outside_hook_root — the constraint moved in the checkout alone (a manifest without a lockfile)
+outside_hook_root() {
+  outside_edit "$ROOT" || outside_refuse "${o_where} no longer names ${o_name} as \`${o_constraint}\`: it moved since the check, which files the release again"
+  echo "edit ${o_where}: ${o_name} \`${o_constraint}\` → \`${o_new}\`" >> "$report/edits.log"
+}
+
+outside_go() {
+  local old="$o_constraint" new="$o_name" m keep=()
+  o_where="$pkg_dir/go.mod"
+  o_new="$new"
+  [[ "$old" =~ ^[A-Za-z0-9][A-Za-z0-9._/~-]*$ ]] && [ "$old" != "$new" ] \
+    || outside_refuse "${new} ${o_to}: the finding names no module path it replaces (\`${old}\`)"
+  OLD="$old" perl -ne '$f = 1 if /^\s*(?:require\s+)?\Q$ENV{OLD}\E\s+v\S+/; END { exit($f ? 0 : 1) }' "$o_where" \
+    || outside_refuse "${o_where} no longer requires ${old}: it moved since the check, which files the release again"
+  if [ -f "$pkg_dir/go.sum" ]; then
+    bump_go
+    # one line for the new path: the old one went, the new one came
+    for m in "${moved[@]}"; do
+      case "${m%% *}" in "$old"|"$new") ;; *) keep+=("$m") ;; esac
+    done
+    moved=("${old} ${o_from} → ${new} ${o_to}" ${keep[@]+"${keep[@]}"})
+  else
+    # no go.sum (a module the region's build resolves): go.mod and the imports only
+    outside_hook_root
+    moved+=("${old} ${o_from} → ${new} ${o_to}")
+  fi
+}
+
+outside_actions() {
+  local slug tags sha maj file count total=0 gh=0 other=0
+  o_where=".github/workflows, actions/"
+  [[ "$o_to" =~ ^v?[0-9]+(\.[0-9]+)*$ ]] || outside_refuse "${o_name} ${o_to} is no release tag the bot pins"
+  slug="$(cut -d/ -f1-2 <<<"$o_name")"
+  tags="$(git ls-remote --tags "${DEPS_GITHUB_URL:-https://github.com}/${slug}" 2>"$work/ls.err")" \
+    || outside_error "git ls-remote ${slug}: $(tail -n 1 "$work/ls.err")"
+  sha="$(awk -v t="refs/tags/${o_to}" '$2 == t "^{}" { p = $1 } $2 == t { q = $1 } END { print (p != "" ? p : q) }' <<<"$tags")"
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || outside_refuse "${slug} has no tag ${o_to} (any more)"
+  maj="$(deps_major "$o_to")"
+  [[ "$o_from" != v* ]] || maj="v${maj}"
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    # a pin (name@<commit> # <from>) moves to the new tag's commit; a floating major (name@v4) to
+    # the new major
+    count="$(NAME="$o_name" FROM="$o_from" SHA="$sha" TO="$o_to" MAJ="$maj" perl -i -ne 'BEGIN { $n = 0 }
+      $n += s/(\Q$ENV{NAME}\E@)[0-9a-f]{40}(\s+#\s+)\Q$ENV{FROM}\E(?![0-9A-Za-z._-])/$1$ENV{SHA}$2$ENV{TO}/g;
+      $n += s/(\Q$ENV{NAME}\E@)\Q$ENV{FROM}\E(?![0-9A-Za-z._-])/$1$ENV{MAJ}/g if $ENV{FROM} =~ /^v?[0-9]+$/;
+      print; END { print STDERR "$n\n" }' "$file" 2>&1 >/dev/null | tail -n 1)"
+    [ "${count:-0}" -gt 0 ] 2>/dev/null || continue
+    total=$((total + count))
+    echo "edit ${file}: ${o_name} ${o_from} → ${o_to}" >> "$report/edits.log"
+    case "$file" in .github/*) gh=1 ;; *) other=1 ;; esac
+  done < <(git -C "$ROOT" grep -l -F -e "${o_name}@" -- '.github/workflows/*.yml' 'actions/*/action.yml' 2>/dev/null || true)
+  [ "$total" -gt 0 ] || outside_refuse "no workflow pins ${o_name} ${o_from} any more: it moved since the check, which files the release again"
+  if [ "$other" = 1 ] && [ "$gh" = 1 ]; then outside_refuse "the pins of ${o_name} move in .github/ and in actions/ at once: the release takes actions/ and never .github/; a person splits them"; fi
+  [ "$other" = 0 ] || shipped=1
+  o_new="${o_to} (${sha:0:12})"
+  moved+=("${o_name} ${o_from} → ${o_to}")
+}
+
+outside_docker() {
+  local file old="" new="" d
+  o_where="$(jq -r '.[0].files // [] | join(" ")' "$updates_file")"
+  o_new="$o_to"
+  case "$o_name" in
+    */golang) outside_refuse "${o_name}:${o_to} opens a new Go toolchain line: every go.mod's go line, the workflows' go-version and the golang base images move together, which the code (and a person) does" ;;
+  esac
+  [ -n "$o_where" ] || outside_refuse "the finding names no Dockerfile of ${o_name}:${o_from}"
+  # a base pinned by digest gets the new tag's
+  for file in $o_where; do
+    d="$(IMG="${o_name}:${o_from}" perl -ne 'print "$1\n" if /\Q$ENV{IMG}\E\@(sha256:[0-9a-f]{64})/' "$file" 2>/dev/null | head -n 1)"
+    [ -z "$d" ] || old="$d"
+  done
+  if [ -n "$old" ]; then
+    [[ "$o_name" == ghcr.io/* ]] || outside_refuse "${o_name} is pinned by digest and not on ghcr.io: the bot reads digests of ghcr.io only"
+    new="$(outside_ghcr_digest "${o_name#ghcr.io/}" "$o_to")" || outside_error "the digest of ${o_name}:${o_to} (ghcr.io did not answer)"
+  fi
+  jq -c --arg d "$new" --arg od "$old" '[.[0] | {name, from, to, files, digest: $d, old_digest: $od}]' "$updates_file" > "$work/outside-updates.json"
+  updates_file="$work/outside-updates.json"
+  bump_docker
+}
+
+outside_pins() {
+  local row line
+  row="$(deps_pin_row "$pkg_group" "$o_name" || true)"
+  [ -n "$row" ] || outside_refuse "${o_name} is no pin of ${pkg_group} (ci/deps/packages.sh, DEPS_PINS)"
+  line="$(deps_field "$row" 4)"
+  o_where="$(deps_field "$row" 7 | tr ' ' '\n' | cut -d'~' -f1 | paste -sd ' ' -)"
+  o_new="$o_to"
+  case "$line" in
+    toolchain-*)
+      if [ "$o_name" = go ]; then
+        outside_refuse "Go ${o_to} is a new line of the toolchain the code is written for: every go.mod's go line, the workflows' go-version and the golang base images move together, which the code (and a person) does"
+      fi
+      outside_refuse "${o_name} ${o_to} is a new line of a toolchain the code is written for (DEPS_PINS: ${line}): the workflows' ${o_name}-version moves with the code, which a person does" ;;
+    person) outside_refuse "${o_name} ${o_to}: RunR builds this upstream with patches of its own (DEPS_PINS: person), so a person moves it with them" ;;
+    minor)
+      [ "$pkg_group" != pins-images ] || outside_refuse "${o_name} ${o_to} is a new Kubernetes minor: the API image carries one kubectl for every second minor, so a new minor is a new row of the set (its ARG, its checksums in both API Dockerfiles, its DEPS_PINS row, the docs that list the set), which a person adds" ;;
+  esac
+  jq -c '[.[0] | {name, from, to, files}]' "$updates_file" > "$work/outside-updates.json"
+  updates_file="$work/outside-updates.json"
+  bump_pins
+}
+
+# outside_pep440 SPEC TO — the specifier a Python requirement moves to: ==X → ==TO, ~=X.Y →
+# ~=major.minor, a floor alone >=X → >=TO, an upper bound <N → <(major + 1) (its floor kept);
+# status 1 for any other form
+outside_pep440() {
+  local spec="$1" to="$2" maj min c out="" lt=0
+  local -a cl=()
+  maj="${to%%.*}"
+  min="$(cut -d. -f2 <<<"${to}.0")"
+  [[ "$to" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
+  IFS=',' read -r -a cl <<<"$spec"
+  if [ "${#cl[@]}" = 1 ]; then
+    case "$spec" in
+      '=='*) [[ "${spec#==}" =~ ^[0-9]+(\.[0-9]+)*$ ]] && { echo "==${to}"; return 0; } ;;
+      '~='*) [[ "${spec#\~=}" =~ ^[0-9]+(\.[0-9]+)+$ ]] && { echo "~=${maj}.${min}"; return 0; } ;;
+      '>='*) [[ "${spec#>=}" =~ ^[0-9]+(\.[0-9]+)*$ ]] && { echo ">=${to}"; return 0; } ;;
+      '<'[0-9]*) [[ "${spec#<}" =~ ^[0-9]+(\.[0-9]+)*$ ]] && { echo "<$((maj + 1))"; return 0; } ;;
+    esac
+    return 1
+  fi
+  for c in "${cl[@]}"; do
+    case "$c" in
+      '<'[0-9]*) [[ "${c#<}" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1; out="${out:+${out},}<$((maj + 1))"; lt=1 ;;
+      '>='[0-9]*|'>'[0-9]*|'!='[0-9]*) out="${out:+${out},}${c}" ;;
+      *) return 1 ;;
+    esac
+  done
+  [ "$lt" = 1 ] || return 1
+  echo "$out"
+}
+
+outside_pypi() {
+  local count
+  o_where="$(jq -r '.[0].files[0] // empty' "$updates_file")"
+  [ -n "$o_where" ] && [ -f "$o_where" ] || outside_refuse "the finding names no manifest of ${o_name} (${pkg_dir})"
+  o_new="$(outside_pep440 "$o_constraint" "${o_to#v}")" \
+    || outside_refuse "${o_name}'s specifier \`${o_constraint}\` (${o_where}) is no exact pin, ~=, floor or upper bound the bot moves mechanically: the code or a person writes the new one"
+  # the requirement as the file writes it (blanks between its parts are allowed): its specifier
+  count="$(NAME="$o_name" OLD="$o_constraint" NEW="$o_new" perl -0 -i -pe 'BEGIN { $n = 0 }
+    s{(?<![A-Za-z0-9._-])(\Q$ENV{NAME}\E\s*(?:\[[^\]\n]*\])?\s*)([<>=!~][^"\x27#;\n]*?)(?=\s*(?:["\x27#;\]]|$))}{
+      my ($a, $b) = ($1, $2); (my $s = $b) =~ s/\s+//g;
+      if ($s eq $ENV{OLD}) { $n++; $a . $ENV{NEW} } else { $a . $b } }gme;
+    END { print STDERR "$n\n" }' "$o_where" 2>&1 >/dev/null | tail -n 1)"
+  [ "${count:-0}" -gt 0 ] 2>/dev/null || outside_refuse "${o_where} no longer names ${o_name}${o_constraint}: it moved since the check, which files the release again"
+  echo "edit ${o_where}: ${o_name} \`${o_constraint}\` → \`${o_new}\`" >> "$report/edits.log"
+  moved+=("${o_name} ${o_constraint} → ${o_new}")
+}
+
+outside_cargo() {
+  local count
+  o_where="$(jq -r '.[0].files[0] // empty' "$updates_file")"
+  [ -n "$o_where" ] && [ -f "$o_where" ] || outside_refuse "the finding names no Cargo.toml of ${o_name} (${pkg_dir})"
+  [[ "$o_constraint" =~ ^([~^=]?)([0-9]+(\.[0-9]+){0,2})$ ]] \
+    || outside_refuse "${o_name}'s requirement \`${o_constraint}\` (${o_where}) is no version the bot moves mechanically: the code or a person writes the new one"
+  o_new="${BASH_REMATCH[1]}${o_to#v}"
+  [[ "${o_to#v}" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || outside_refuse "${o_name} ${o_to} is no version Cargo's requirement takes"
+  # the crate's line ("name = …", or one that renames it: package = "name")
+  count="$(NAME="$o_name" OLD="$o_constraint" NEW="$o_new" perl -i -ne 'BEGIN { $n = 0 }
+    if (/^\s*\Q$ENV{NAME}\E\s*=/ || /package\s*=\s*"\Q$ENV{NAME}\E"/) { $n += s/"\Q$ENV{OLD}\E"/"$ENV{NEW}"/g }
+    print; END { print STDERR "$n\n" }' "$o_where" 2>&1 >/dev/null | tail -n 1)"
+  [ "${count:-0}" -gt 0 ] 2>/dev/null || outside_refuse "${o_where} no longer requires ${o_name} \"${o_constraint}\" on its line: it moved since the check, which files the release again"
+  echo "edit ${o_where}: ${o_name} \`${o_constraint}\` → \`${o_new}\`" >> "$report/edits.log"
+  moved+=("${o_name} ${o_constraint} → ${o_new}")
+}
+
+# bump_outside — the finding's one update outside the constraint, moved as above (deps-run.sh asks a
+# release's bump-packages.sh for this function: a release without it cannot move a constraint)
+bump_outside() {
+  [ "$(jq length "$updates_file")" = 1 ] || { echo "${dep}: an update outside the constraint is a finding of its own, one update" >&2; exit 1; }
+  outside_mode=1
+  o_name="$(jq -r '.[0].name' "$updates_file")"
+  o_from="$(jq -r '.[0].from // ""' "$updates_file")"
+  o_to="$(jq -r '.[0].to' "$updates_file")"
+  o_constraint="$(jq -r '.[0].constraint // ""' "$updates_file")"
+  o_kind="$(outside_kind)"
+  case "$pkg_kind" in
+    composer) outside_composer ;;
+    npm) outside_npm ;;
+    go) outside_go ;;
+    actions) outside_actions ;;
+    docker) outside_docker ;;
+    pins) outside_pins ;;
+    pypi) outside_pypi ;;
+    cargo) outside_cargo ;;
+    *) echo "${dep}: unknown kind ${pkg_kind}" >&2; exit 1 ;;
+  esac
+}
+
 # pkg_attention — every reason found: the checkout put back (the tools' files too), status 2
 pkg_attention() {
   pkg_cleanup
@@ -483,20 +862,29 @@ bump_packages() {
   pkg_safe || { echo "${dep}: the updates name a package, a version, a digest or a file the bot does not take as is" >&2; exit 1; }
   # a held package is never moved, whatever the finding says
   while IFS=$'\t' read -r name after; do
-    held_reason="$(deps_held "$dep" "$name" "$after")" && reasons+=("${name} ${after} is held: ${held_reason}")
+    held_reason="$(deps_held "$pkg_group" "$name" "$after")" && reasons+=("${name} ${after} is held: ${held_reason}")
   done < <(jq -r '.[] | [.name, .to] | @tsv' "$updates_file")
+  # a Go module's new major path: the hold names the path it replaces
+  while IFS=$'\t' read -r name after; do
+    [ -n "$name" ] || continue
+    held_reason="$(deps_held "$pkg_group" "$name" "$after")" && reasons+=("${name} ${after} is held: ${held_reason}")
+  done < <(jq -r '.[] | select(.outside == true and (.constraint // "") != "" and (.constraint | test("^[A-Za-z0-9][A-Za-z0-9._/~-]*$"))) | [.constraint, .to] | @tsv' "$updates_file")
   [ "${#reasons[@]}" -eq 0 ] || pkg_attention
 
-  case "$pkg_kind" in
-    composer) bump_composer ;;
-    npm) bump_npm ;;
-    go) bump_go ;;
-    actions) bump_actions ;;
-    docker) bump_docker ;;
-    pins) bump_pins ;;
-    pypi|cargo) bump_no_lock ;;
-    *) echo "${dep}: unknown kind ${pkg_kind}" >&2; exit 1 ;;
-  esac
+  if jq -e 'any(.[]; .outside == true)' "$updates_file" >/dev/null; then
+    bump_outside
+  else
+    case "$pkg_kind" in
+      composer) bump_composer ;;
+      npm) bump_npm ;;
+      go) bump_go ;;
+      actions) bump_actions ;;
+      docker) bump_docker ;;
+      pins) bump_pins ;;
+      pypi|cargo) bump_no_lock ;;
+      *) echo "${dep}: unknown kind ${pkg_kind}" >&2; exit 1 ;;
+    esac
+  fi
 
   # only the manifest's lockfile (and the pins of its kind) changed: no constraint moved
   touched="$(git -C "$ROOT" diff --name-only)"
@@ -506,11 +894,19 @@ bump_packages() {
     go) list="$(grep -vxE "${pkg_dir//./\\.}/go\\.(mod|sum)" <<<"$touched" || true)" ;;
     *) list="" ;;
   esac
+  # an update outside the constraint moves its manifest (and a Go major path the module's imports)
+  if [ "$outside_mode" = 1 ] && [ -n "$list" ]; then
+    case "$pkg_kind" in
+      composer) list="$(grep -vxF "$pkg_dir/composer.json" <<<"$list" || true)" ;;
+      npm) list="$(grep -vxF "$pkg_dir/package.json" <<<"$list" || true)" ;;
+      go) list="$(grep -vE "^${pkg_dir//./\\.}/.+\\.go\$" <<<"$list" || true)" ;;
+    esac
+  fi
   [ -z "$list" ] || reasons+=("the update changed more than the lockfile ($(paste -sd ' ' <<<"$list")): a constraint moved, which a person decides")
   # the holds: a held package that moved with another one's dependencies
   for n in ${moved[@]+"${moved[@]}"}; do
     name="${n%% *}"; after="${n##* }"
-    held_reason="$(deps_held "$dep" "$name" "$after")" && reasons+=("${name} moved to ${after} with the others, and it is held: ${held_reason}")
+    held_reason="$(deps_held "$pkg_group" "$name" "$after")" && reasons+=("${name} moved to ${after} with the others, and it is held: ${held_reason}")
   done
   [ "${#moved[@]}" -gt 0 ] || { [ "${#reasons[@]}" -gt 0 ] || { echo "the last release has every update of ${dep} already (nothing moved)." > "$report/summary.md"; deps_revert_all; finish current 3; }; }
 
@@ -532,7 +928,17 @@ bump_packages() {
   key="- **${pkg_label^} "
   label_line="$(printf '%s\n' "${moved[@]}" | head -n 8 | paste -sd ';' - | sed 's/;/, /g')"
   [ "$n" -le 8 ] || label_line="${label_line} and $((n - 8)) more"
-  if [ "$path" = release ]; then
+  if [ "$outside_mode" = 1 ]; then
+    # one line per release outside the constraint (its own key: the group's line stays), which says
+    # it is a new major version and what an installed region does
+    key="- **${pkg_label^}: ${o_name} "
+    line="${key}${o_to}** (${o_kind}: ${o_name} ${o_from} → ${o_to}, outside \`${o_constraint}\` before; now \`${o_new}\` in ${o_where}). "
+    if [ "$path" = release ]; then
+      line="${line}$( [ "$pkg_kind" = docker ] && echo "The images build on the new base" || echo "The release's images carry it"); an installed region needs no step."
+    else
+      line="${line}Nothing a release image ships changes: it lands on next."
+    fi
+  elif [ "$path" = release ]; then
     line="${key}moved** (minor and patch updates): ${label_line}. $( [ "$pkg_kind" = docker ] && echo "The images build on the new bases." || echo "The release's images carry them.")"
   else
     line="${key}moved** (minor and patch updates, nothing a release image ships): ${label_line}."
@@ -549,6 +955,10 @@ bump_packages() {
   pkg_suites_json "$tag" || { deps_revert_all; exit 1; }
 
   edited="$(git -C "$ROOT" diff --name-only | paste -sd ',' - | sed 's/,/, /g')"
+  if [ "$outside_mode" = 1 ]; then
+    outside_texts
+    finish bumped 0
+  fi
   {
     echo "fix(${pkg_scope}): ${pkg_label} (${n} update$([ "$n" = 1 ] || echo s))"
     echo ""
@@ -569,6 +979,32 @@ bump_packages() {
     echo "Edited: ${edited}."
   } > "$report/summary.md"
   finish bumped 0
+}
+
+# outside_texts — the commit message and the summary of a release outside the constraint
+outside_texts() {
+  {
+    echo "fix(${pkg_scope}): ${pkg_label} (${o_name} ${o_to}, ${o_kind})"
+    echo ""
+    echo "${o_name} ${o_from} → ${o_to} is outside ${pkg_group}'s constraint \`${o_constraint}\` (${o_kind}): the"
+    echo "dependency test bot moved the constraint mechanically (\`${o_constraint}\` → \`${o_new}\` in ${o_where})"
+    echo "and made the group's bump$([ "$path" = release ] && echo ", released as a patch release" || echo ", on next only: nothing a release ships changes"):"
+    printf -- '- %s\n' "${moved[@]}"
+    if [ "${#notes[@]}" -gt 0 ]; then echo ""; printf -- '- %s\n' "${notes[@]}"; fi
+    echo ""
+    echo "Changed: ${edited}."
+    echo ""
+    echo "The dependency test bot ran its suites on this commit before it landed: $(jq -r '[.[].command] | join(", ")' "$report/suites.json")$([ -s "$report/unit" ] && echo ", PHPUnit, Pint, Larastan and the API reference"), runtime/test${run_url:+ (${run_url})}."
+  } > "$report/commit-msg.txt"
+  {
+    echo "**${dep}: ${o_name} ${o_from} → ${o_to}** (${o_kind}; $([ "$path" = release ] && echo "a patch release: it changes what a release ships" || echo "lands on next only: nothing a release ships changes"))."
+    echo ""
+    echo "The constraint moved mechanically: \`${o_constraint}\` → \`${o_new}\` in ${o_where}; then the group's bump:"
+    echo ""
+    printf -- '- %s\n' "${moved[@]}"
+    echo ""
+    echo "Edited: ${edited}."
+  } > "$report/summary.md"
 }
 
 # deps_revert_all — the checkout as it was (every tracked file the bump changed)

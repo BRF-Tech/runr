@@ -8,6 +8,41 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-11-15
+
+### Upgrade notes
+
+- **No migration, no new Helm value.** The region Job moves the region agent and the event
+  gateway (`agent`, `queue-consumer`) to 0.7.5 as in every release; both images and the
+  supply-chain image 1.1.2 (from 1.1.1) build on alpine 3.22. A region that pulls through a mirror
+  of its own needs `agent:0.7.5`, `queue-consumer:0.7.5` and `supply-chain:1.1.2` there first
+  ([0.7.4 → 0.7.5 in upgrade.md](docs/upgrade.md#074--075)).
+- **kube-prometheus-stack 93.3.0 does not reach an installed region by itself:**
+  `php artisan cluster:patch-observability [REGION-ID]` moves it when it suits the region (the
+  Prometheus Operator, Prometheus and node-exporter restart once). No CRD step is needed.
+- **Your own monitoring objects:** RunR needs no CRD step. If you create Prometheus Operator
+  objects of your own (ServiceMonitors, PrometheusRules, AlertmanagerConfigs) with fields that
+  v0.95.2 adds, apply the chart's CRDs on the region's cluster first; `--force-conflicts` is needed
+  because Helm created the installed CRDs and owns their fields:
+  `helm show crds kube-prometheus-stack --repo https://prometheus-community.github.io/helm-charts
+  --version 93.3.0 | kubectl apply --server-side --force-conflicts -f -`.
+- **The region Traefik moves to v3.7.18 by itself** (`region:reconcile`, step `traefik-chart`). A
+  region whose nodes pull through a mirror of their own needs
+  `ghcr.io/brf-tech/runr/reqs/traefik:v3.7.18` there first; with `knative.traefikImage` set, the
+  region keeps that image on the new chart.
+- **Traefik v3.7.18 fixes five upstream advisories** (four high, among them a bypass of
+  path-based authorization through path-parameter dot-segments, GHSA-cp28-5662-543f, on entry
+  points with `sanitizePath`, which RunR's regions enable) and changes what they touched: a request
+  for `/a/..;x/b` reaches the function as `/b`, and BasicAuth refuses passwords over 1024 bytes
+  ([Traefik's migration notes](https://doc.traefik.io/traefik/v3.7/migrate/v3/#v3718)).
+- **CLI and Terraform provider 0.7.5** are the first since 0.7.3 (0.7.4, a dependency release,
+  shipped neither): the code of 0.7.3, built with the CLI's and the provider's Go modules below.
+  Their commands, flags, resources and data sources stay those of 0.7.3; the CLI's help writes a
+  boolean flag as `--debug[=true|false]`.
+- **Back to 0.7.4 is a `helm rollback`**; nothing runs on the database. The region Traefik stays
+  on chart 42.4.0 (0.7.4's `region:reconcile` moves no Traefik to an older chart and warns that it
+  stays), and a region moved to kube-prometheus-stack 93.3.0 stays on it.
+
 ### Changed
 
 - **CLI Go modules moved** (minor and patch updates, nothing a release image ships):
@@ -22,6 +57,46 @@ did not change says so.
   github.com/hashicorp/hc-install v0.9.4 → v0.10.0, golang.org/x/sys v0.48.0 → v0.50.0.
 - **CI tool pins moved** (minor and patch updates, nothing a release image ships): helm v4.3.1 →
   v4.3.2, terraform 1.13.3 → 1.17.2, govulncheck v1.1.4 → v1.9.0.
+- **The dependency test bot attempts every update by itself.** A new major, a release outside a
+  manifest's constraint or exact pin (the constraint moves mechanically: `^7` → `^8`, `==X` → `==Y`,
+  a Go module's new major path with its imports, an Actions pin's new major) and a chart's new major
+  are tested on the weekly run like any other version; a Traefik chart with a new app version gets
+  its image copied into the reqs mirror (`ghcr.io/brf-tech/runr/reqs/traefik`) by the job Reqs
+  mirror before its suites. What the bot cannot move mechanically, or what fails its suites, gets
+  the label `next update required` (instead of `needs attention`), with the failing suite and its
+  log, and a line in the weekly summary's own section *Next update required*; every weekly run tries
+  it again, and once it passes it ships, loses the label and closes. Holds (`ci/deps/holds.txt`)
+  are never attempted and are listed there with their reasons. The major versions issues are closed
+  with a pointer to the summary.
+- **A release of the bot says when a major moved**: its upgrade notes, `docs/upgrade.md` and the
+  GitHub release say *A new major version moves: …*, and the dependency's line says what an
+  installed region does (the step that moves its chart, and for a chart whose CRDs changed the
+  command that applies them). A dry run copies nothing into the reqs mirror: its suites take the
+  upstream image under the mirror's name.
+- **Dockerfile base images moved** (minor and patch updates): ghcr.io/brf-tech/runr/reqs/alpine 3.21
+  → 3.22, ghcr.io/brf-tech/runr/reqs/alpine 3.20 → 3.22, supply-chain image 1.1.1 → 1.1.2 (its own
+  version: release-images.yml builds it). The images build on the new bases; the Spin shim's stays
+  on 3.21 (#80).
+- **Hugging Face weights example packages moved** (outside the constraint `==5.22.2`, an exact pin
+  moved by hand; nothing a release image ships): transformers 5.22.2 → 5.23.0 in
+  `examples/ai/hf-python/weights`. 5.23.0 changes nothing the example uses (`AutoTokenizer` and
+  `AutoModel` loading a mounted snapshot offline); its handler answers on exec-pytorch's torch
+  2.14.1 (CPU).
+- **Region Traefik chart 42.4.0** (from 42.3.1; Traefik v3.7.17 → v3.7.18). New regions install it;
+  `region:reconcile` moves the Traefik of an existing region to it (step `traefik-chart`), one pod
+  at a time. Its image comes from the reqs mirror (`ghcr.io/brf-tech/runr/reqs/traefik:v3.7.18`);
+  with `knative.traefikImage` set, the region keeps that image. Only the Traefik Hub CRDs change (an
+  optional `caSecretName` in `APIAuth` and `APIPortalAuth`), which RunR does not use: an installed
+  region needs no CRD step.
+- **kube-prometheus-stack 93.3.0** (from 92.22.0, a new major version; Prometheus Operator v0.94.2 →
+  v0.95.2). Regions installed from now on run it; an installed region keeps its chart until `php
+  artisan cluster:patch-observability`, a change back to RunR's own monitoring or a new Serving
+  install moves it. Prometheus (v3.16.0), kube-state-metrics and node-exporter keep their versions;
+  the operator's ClusterRole follows upstream's of v0.95 (`alertmanagerconfigs/status` added,
+  `delete` on pods gone). On that move the operator, Prometheus (its config reloader) and
+  node-exporter restart once. The operator's new CRDs only add optional fields and validations of
+  fields RunR does not set: an installed region keeps its CRDs (Helm does not upgrade them) and
+  needs no CRD step.
 
 ## [0.7.4] - 2026-11-14
 
@@ -4782,7 +4857,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.4...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.5...main
+[0.7.5]: https://github.com/brf-tech/runr/releases/tag/v0.7.5
 [0.7.4]: https://github.com/brf-tech/runr/releases/tag/v0.7.4
 [0.7.3]: https://github.com/brf-tech/runr/releases/tag/v0.7.3
 [0.7.2]: https://github.com/brf-tech/runr/releases/tag/v0.7.2

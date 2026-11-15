@@ -19,12 +19,19 @@
 #     outside the constraint is a finding; a go.mod without go.sum only its majors;
 #   - detection: the minor and patch updates of a group are one finding with its marker and
 #     fingerprint (the same set: the same title), an update outside the constraint (a major, a 0.x
-#     minor, an exact pin, a new Go major path, a toolchain image line) is a finding of its own per
-#     release line (with its marker), an advisory makes the finding urgent (security) and adds its
-#     package, a hold is left with its reason (a major it keeps written for the weekly summary's held
-#     row), the Go toolchain is one finding for every module, the groups read are listed;
-#   - the plan takes a group's newest finding with its updates and supersedes the older ones; an
-#     update outside its constraint only gets the label;
+#     minor, an exact pin, a new Go major path, a toolchain image line) is a finding of its own in
+#     the same form under the id <group>--<package> (one update, "outside": true, its constraint),
+#     an advisory makes the finding urgent (security) and adds its package, a hold is left with its
+#     reason (a major it keeps written for the weekly summary's held row), the Go toolchain is one
+#     finding for every module (the workflows' pin's, pins-ci--go), the groups read are listed;
+#   - the plan takes a group's newest finding with its updates and supersedes the older ones; a
+#     release outside the constraint is tested under its id, the old form of one is skipped;
+#   - a release outside the constraint is attempted: the constraint moves mechanically (npm and
+#     composer ranges, a Go major path with its imports, a Python specifier, a Cargo requirement, an
+#     Actions pin or floating major, a Dockerfile base, a pin of a major line with its checksums) and
+#     the kind's bump follows; a form the bot does not move, a Go toolchain line, a new kubectl minor
+#     of the API image's set, a held path or a lockfile that does not take the new line are refused
+#     with the reason, nothing left changed;
 #   - the bumps: composer and npm move only their lockfile and decide release or next from what
 #     moved (composer.lock's packages, the npm packages the bundle takes), a lockfile that does not
 #     come out the same twice, a moved constraint or a held package goes to a person with nothing
@@ -197,7 +204,7 @@ case "$1" in
   audit)
     [ "$2" = fix ] && exit 0
     cat "$FAKE/npm-audit.json" 2>/dev/null || echo '{}' ;;
-  update)
+  update|install)
     while read -r p v; do
       jq --arg p "$p" --arg v "$v" '.packages[$p].version = $v' package-lock.json > l.tmp && mv l.tmp package-lock.json
     done < "$FAKE/npm-versions" ;;
@@ -277,6 +284,10 @@ for d in runtime/agent runtime/queue-consumer runtime/gateway-auth runtime/image
   printf 'module example.com/%s\n\ngo 1.26.9\n\nrequire (\n\tgithub.com/a/lib v1.2.0\n\tgithub.com/b/old v1.0.0 // indirect\n)\n' "${d//\//-}" > "$repo/$d/go.mod"
   echo "github.com/a/lib v1.2.0 h1:x=" > "$repo/$d/go.sum"
 done
+# the agent's imports of the module, one of its packages and another module of a longer name
+printf 'package main\n\nimport (\n\t"github.com/a/lib"\n\t"github.com/a/lib/sub"\n\t"github.com/a/libx"\n)\n' > "$repo/runtime/agent/main.go"
+# a hold on the path a new major replaces (the bump of the new path keeps it)
+echo 'go-proxy github.com/a/lib * a test hold: the path a new major replaces stays' >> "$repo/ci/deps/holds.txt"
 # a module without go.sum (the TinyGo example: the region's build resolves it)
 mkdir -p "$repo/examples/wasm/go"
 printf 'module runr-function\n\ngo 1.22\n\nrequire github.com/a/lib v1.2.0\n' > "$repo/examples/wasm/go/go.mod"
@@ -290,7 +301,7 @@ echo 'runr-workflows>=0.1.0' > "$repo/examples/workflows/python/requirements.txt
 echo 'transformers==5.20.0' > "$repo/examples/ai/hf-python/weights/requirements.txt"
 printf '[package]\nname = "runr-function"\n\n[dependencies]\nanyhow = "1"\nspin-sdk = "5.2.0"\n' > "$repo/examples/wasm/rust/Cargo.toml"
 echo '{"devDependencies": {"@spinframework/build-tools": "^2.1.3"}}' > "$repo/examples/wasm/js/package.json"
-echo '{"dependencies": {}}' > "$repo/examples/mcp/node/package.json"
+echo '{"dependencies": {"express": ">=4.0.0 <6"}}' > "$repo/examples/mcp/node/package.json"
 echo '{"dependencies": {"@runr/workflows": "^0.1.0"}}' > "$repo/examples/workflows/node/package.json"
 
 # the pins (DEPS_PINS): every place of every row, at the version the tests below take or the one
@@ -462,71 +473,81 @@ web pypi.org/pypi/uvicorn/json <<<'{"releases": {"0.30.0": [{}], "0.38.0": [{}]}
 web pypi.org/pypi/transformers/json <<<'{"releases": {"5.20.0": [{}], "5.21.0": [{}]}}'
 web index.crates.io/sp/in/spin-sdk <<<$'{"vers": "5.2.0", "yanked": false}\n{"vers": "6.0.0", "yanked": false}\n{"vers": "7.0.0", "yanked": true}'
 web index.crates.io/an/yh/anyhow <<<'{"vers": "1.0.99", "yanked": false}'
-printf '%s\n' '@spinframework/build-tools 3.0.0' >> "$FAKE/npm-latest"
-printf '%s\n' '@spinframework/build-tools@^2.1.3 2.1.5' >> "$FAKE/npm-wanted"
+printf '%s\n' '@spinframework/build-tools 3.0.0' 'express 6.1.0' >> "$FAKE/npm-latest"
+printf '%s\n' '@spinframework/build-tools@^2.1.3 2.1.5' 'express@>=4.0.0 <6 5.2.1' >> "$FAKE/npm-wanted"
 
 out="$(bash "$repo/ci/check-package-releases.sh" --known 2>&1)" || fail "the fixture's manifests and pins are not known: ${out}"
 rd="$tmp/releases"
 RELEASES_REPORT_DIR="$rd" bash "$repo/ci/check-package-releases.sh" > "$tmp/detect.log" 2>&1 || fail "detection: $(tail -n 20 "$tmp/detect.log")"
 titles="$(for f in "$rd"/*.md; do head -n 1 "$f"; done | sort)"
 marker() { sed -n 's/.*<!-- deps-bot \(.*\) -->.*/\1/p' "$(grep -l -F -- "$1" "$rd"/*.md | head -n 1)"; }
+# ot GROUP NAME TO CONSTRAINT — the title of a release outside the constraint: a finding of its own
+# under the id <group>--<package>, its fingerprint the name and version's
+ot() { echo "deps: $(deps_outside_id "$1" "$2") [$(printf '%s@%s\n' "$2" "$3" | deps_fingerprint)]: 1 update: $2 $3 (outside $4)"; }
 c="$(marker 'deps: composer-api [')"
 [ "$(jq -c '[.updates[] | [.name, .to]]' <<<"$c")" = '[["laravel/framework","v12.3.2"],["phpunit/phpunit","11.5.9"],["transitive/prod","1.0.4"]]' ] \
   && [ "$(jq -r .urgent <<<"$c")" = true ] || fail "composer's finding: ${c}"
-grep -qxF 'deps: composer-api laravel/framework v13.x released (outside ^12.0)' <<<"$titles" \
-  && grep -qxF 'deps: composer-api dedoc/scramble v0.13.x released (outside ^0.12)' <<<"$titles" || fail "composer's majors: ${titles}"
+grep -qxF "$(ot composer-api laravel/framework v13.42.0 '^12.0')" <<<"$titles" \
+  && grep -qxF "$(ot composer-api dedoc/scramble v0.13.53 '^0.12')" <<<"$titles" || fail "composer's majors: ${titles}"
 grep -qE '^deps: composer-api \[[0-9a-f]{8}\]: 3 updates: laravel/framework v12\.3\.2, phpunit/phpunit 11\.5\.9 and 1 more \(security\)$' <<<"$titles" || fail "composer's title: ${titles}"
 n="$(marker 'deps: npm-vue [')"
 [ "$(jq -c '[.updates[] | [.name, .to]]' <<<"$n")" = '[["axios","1.21.1"],["eslint","10.5.0"],["vite","6.4.9"],["follow-redirects","fixed"]]' ] || fail "npm's finding: ${n}"
-grep -qxF 'deps: npm-vue lucide-vue-next 1.x released (outside ^0.577.0)' <<<"$titles" && grep -qxF 'deps: npm-vue vite 8.x released (outside ^6.4.5)' <<<"$titles" \
+grep -qxF "$(ot npm-vue lucide-vue-next 1.0.0 '^0.577.0')" <<<"$titles" && grep -qxF "$(ot npm-vue vite 8.3.8 '^6.4.5')" <<<"$titles" \
   || fail "npm's majors: ${titles}"
 grep -q 'cronstrue' <<<"$titles" && fail "a held package was filed: ${titles}"
 grep -qF 'held: cronstrue 3.39.0 (pinned exactly' "$tmp/detect.log" || fail "the hold is not named"
-grep -qxF 'deps: npm-sdk-workflows typescript 7.x released (outside ^5.5.0)' <<<"$titles" || fail "the SDK without a lockfile: ${titles}"
+grep -qxF "$(ot npm-sdk-workflows typescript 7.0.2 '^5.5.0')" <<<"$titles" || fail "the SDK without a lockfile: ${titles}"
 g="$(marker 'deps: go-agent [')"
 [ "$(jq -c '[.updates[] | [.name, .from, .to]]' <<<"$g")" = '[["github.com/a/lib","v1.2.0","v1.3.0"]]' ] || fail "go's finding (no indirect): ${g}"
-grep -qxF 'deps: go-agent github.com/a/lib/v2 v2.x released (outside github.com/a/lib)' <<<"$titles" || fail "go's new major path: ${titles}"
-[ "$(grep -c '^deps: go-toolchain go v1.26.11 released (outside go 1.26.9)$' <<<"$titles")" = 1 ] && ! grep -q '^deps: go-agent go ' <<<"$titles" \
+grep -qxF "$(ot go-agent github.com/a/lib/v2 v2.0.1 github.com/a/lib)" <<<"$titles" && [ "$(deps_outside_id go-agent github.com/a/lib/v2)" = go-agent--github-com-a-lib-v2 ] \
+  || fail "go's new major path: ${titles}"
+# the held path (go-proxy's): no finding, its held release for the weekly summary
+! grep -q '^deps: go-proxy--' <<<"$titles" && [ -f "$rd/held/go-proxy--github.com-a-lib.json" ] || fail "a held path was filed: ${titles}"
+[ "$(grep -cxF "$(ot pins-ci go v1.26.11 'go 1.26.9')" <<<"$titles")" = 1 ] && ! grep -q '^deps: go-agent--go ' <<<"$titles" \
   || fail "the Go toolchain: one finding for every module: ${titles}"
 a="$(marker 'deps: actions [')"
 [ "$(jq -c '[.updates[] | [.name, .from, .to, .sha, .old_sha]]' <<<"$a")" = "[[\"actions/checkout\",\"v7.0.1\",\"v7.0.2\",\"$(git -C "$gh/actions/checkout" rev-parse 'v7.0.2^{commit}')\",\"1111111111111111111111111111111111111111\"]]" ] \
   || fail "actions' finding: ${a}"
-grep -qxF 'deps: actions actions/checkout v8.x released (outside v7)' <<<"$titles" && grep -qxF 'deps: actions actions/cache v5.x released (outside v4)' <<<"$titles" \
+grep -qxF "$(ot actions actions/checkout v8.0.0 v7)" <<<"$titles" && grep -qxF "$(ot actions actions/cache v5.0.0 v4)" <<<"$titles" \
   || fail "actions' majors (a pin and a floating major): ${titles}"
 d="$(marker 'deps: docker [')"
 [ "$(jq -c '[.updates[] | [.name, .from, .to]] | sort' <<<"$d")" = '[["ghcr.io/aquasecurity/trivy","0.58.1","0.58.3"],["ghcr.io/brf-tech/runr/reqs/alpine","3.21","3.22"]]' ] \
   || fail "docker's finding: ${d}"
-grep -qxF 'deps: docker ghcr.io/brf-tech/runr/reqs/golang 1.27-alpine released (outside 1.26-alpine)' <<<"$titles" \
-  && grep -qxF 'deps: docker ghcr.io/brf-tech/runr/reqs/alpine 4.0 released (outside 3)' <<<"$titles" \
-  && grep -qxF 'deps: docker ghcr.io/aquasecurity/trivy 0.60.x released (outside 0.58)' <<<"$titles" || fail "docker's lines: ${titles}"
+grep -qxF "$(ot docker ghcr.io/brf-tech/runr/reqs/golang 1.27-alpine 1.26-alpine)" <<<"$titles" \
+  && grep -qxF "$(ot docker ghcr.io/brf-tech/runr/reqs/alpine 4.0 3)" <<<"$titles" \
+  && grep -qxF "$(ot docker ghcr.io/aquasecurity/trivy 0.60.0 0.58)" <<<"$titles" || fail "docker's lines: ${titles}"
 grep -q 'reqs/rust' <<<"$titles" && fail "the held Rust image was filed"
+# a hold that keeps back a minor or patch update is a row "held (<reason>)" of the summary too
+jq -e '.group == "docker" and .name == "ghcr.io/brf-tech/runr/reqs/rust" and .version == "1.99.1" and .from == "1.95.0-slim-bookworm" and (.reason | test("Rust toolchain"))'   "$rd/held/docker--ghcr.io-brf-tech-runr-reqs-rust.json" >/dev/null || fail "the held update within its line: $(cat "$rd"/held/*.json 2>/dev/null)"
 # the weekly summary's inputs: a held release outside the constraint (a row "held (<reason>)"), a
-# release outside the constraint's marker (its group's major versions issue), the groups read
+# release outside the constraint's marker (a group's, one update the test bot attempts), the groups read
 jq -e '.group == "npm-vue" and .name == "cronstrue" and .version == "3.39.0" and .line == "3.x" and (.reason | test("pinned exactly"))' \
   "$rd/held/npm-vue--cronstrue.json" >/dev/null || fail "the held release outside the constraint: $(cat "$rd"/held/*.json 2>/dev/null)"
-o="$(sed -n 's/.*<!-- deps-bot \(.*\) -->.*/\1/p' "$(grep -l -F 'deps: npm-vue vite 8.x released' "$rd"/*.md)")"
-[ "$(jq -c '[.kind, .group, .name, .line, .constraint]' <<<"$o")" = '["outside","npm-vue","vite","8.x","^6.4.5"]' ] || fail "the release outside the constraint's marker: ${o}"
+o="$(marker "$(ot npm-vue vite 8.3.8 '^6.4.5')")"
+[ "$(jq -c '[.group, .urgent, (.updates | length), (.updates[0] | .name, .from, .to, .outside, .constraint, .line, .files)]' <<<"$o")" \
+  = '["npm-vue--vite",false,1,"vite","6.4.5","8.3.8",true,"^6.4.5","8.x",["vue/package.json"]]' ] || fail "the release outside the constraint's marker: ${o}"
+grep -qF 'next update required' "$(grep -l -F "$(ot npm-vue vite 8.3.8 '^6.4.5')" "$rd"/*.md)" || fail "the finding does not say what the bot does with it"
 grep -qx npm-vue "$rd/checked" && grep -qx composer-api "$rd/checked" && grep -qx go-toolchain "$rd/checked" || fail "the groups read: $(cat "$rd/checked" 2>/dev/null)"
 # the same set again: the same titles (filed once)
 RELEASES_REPORT_DIR="$tmp/releases2" bash "$repo/ci/check-package-releases.sh" composer >/dev/null 2>&1 || true
 [ "$(head -n 1 "$tmp/releases2"/deps-composer-api-[0-9a-f]*.md)" = "$(grep -F 'deps: composer-api [' <<<"$titles")" ] || fail "the same set has another title"
-echo "ok - detection: one finding per group with its marker, an urgent one with its advisory's package, one per release line outside the constraint, holds left with their reasons, the Go toolchain once"
+echo "ok - detection: one finding per group with its marker, an urgent one with its advisory's package, a release outside the constraint a finding of its own (<group>--<package>, its marker one update outside: true), holds left with their reasons (a held path too), the Go toolchain once"
 
 # the pins: one finding per group, a newer line, every release of the patched shim and a
 # toolchain's newer line on their own; holds named
 p="$(marker 'deps: pins-images [')"
 [ "$(jq -c '[.updates[] | [.name, .from, .to]]' <<<"$p")" = '[["helm","v3.16.0","v3.16.4"],["kubectl-1.35","v1.35.9","v1.35.10"],["scalar","1.75.1","1.78.0"],["syft","1.18.1","1.19.0"]]' ] \
   && [ "$(jq -c '.updates[0].files' <<<"$p")" = '["api/Dockerfile","api/Dockerfile.prod"]' ] || fail "the images' pins: ${p}"
-grep -qxF 'deps: pins-images helm v4.x released (outside v3)' <<<"$titles" && grep -qxF 'deps: pins-images kubectl-1.37 v1.38.x released (outside v1.37)' <<<"$titles" \
-  && grep -qxF 'deps: pins-images containerd-shim-spin v0.27.x released (outside v0.26.0)' <<<"$titles" || fail "the images' pins outside their line: ${titles}"
+grep -qxF "$(ot pins-images helm v4.0.1 v3)" <<<"$titles" && grep -qxF "$(ot pins-images kubectl-1.37 v1.38.1 v1.37)" <<<"$titles" \
+  && grep -qxF "$(ot pins-images containerd-shim-spin v0.27.0 v0.26.0)" <<<"$titles" || fail "the images' pins outside their line: ${titles}"
 # the older kubectls of the set: their patches only (Kubernetes 1.36 and 1.38 are no finding of theirs)
-! grep -qE '^deps: pins-images kubectl-1\.3[135] ' <<<"$titles" || fail "an older kubectl of the set reported a newer minor: ${titles}"
-grep -qF 'a person adds the next minor to its set' "$(grep -l -F 'deps: pins-images kubectl-1.37 v1.38.x' "$rd"/*.md)" || fail "the newest kubectl's finding does not say what to do"
+! grep -qE '^deps: pins-images--kubectl-1-3[135] ' <<<"$titles" || fail "an older kubectl of the set reported a newer minor: ${titles}"
+grep -qF 'a person adds the next minor to its set' "$(grep -l -F "$(ot pins-images kubectl-1.37 v1.38.1 v1.37)" "$rd"/*.md)" || fail "the newest kubectl's finding does not say what to do"
 p="$(marker 'deps: pins-ci [')"
 [ "$(jq -c '[.updates[] | [.name, .from, .to]]' <<<"$p")" = '[["helm","v3.16.0","v3.16.4"],["kind","v0.31.0","v0.31.1"]]' ] \
   && [ "$(jq -c '.updates[1].files' <<<"$p")" = '[".github/workflows/tools.yml"]' ] || fail "the workflows' pins: ${p}"
-grep -qxF 'deps: pins-ci kind v0.32.x released (outside v0.31)' <<<"$titles" && grep -qxF 'deps: go-toolchain go 1.27.x released (outside go 1.26.9)' <<<"$titles" \
-  && grep -qxF 'deps: pins-ci node 26.x released (outside node-version 22)' <<<"$titles" && ! grep -qF 'go 1.26.x' <<<"$titles" \
+grep -qxF "$(ot pins-ci kind v0.32.0 v0.31)" <<<"$titles" && grep -qxF "$(ot pins-ci go 1.27.x 'go 1.26.9')" <<<"$titles" \
+  && grep -qxF "$(ot pins-ci node 26.13.0 'node-version 22')" <<<"$titles" && ! grep -qF 'go 1.26.x' <<<"$titles" \
   || fail "the workflows' pins and toolchains outside their line: ${titles}"
 grep -qF 'held: protoc (upstream' "$tmp/detect.log" && grep -qF 'held: php (' "$tmp/detect.log" || fail "the pins' holds are not named"
 # the places of a pin disagree: the check fails and says so
@@ -543,35 +564,41 @@ out="$(bash "$repo/ci/check-package-releases.sh" --known 2>&1)" || rc=$?
 git -C "$repo" checkout -q -- proxy/Dockerfile .github/workflows/ci.yml
 [ "$rc" = 1 ] && grep -qF 'proxy/Dockerfile: FOO_VERSION (1.0) is a version pin' <<<"$out" && grep -qF '.github/workflows/ci.yml: NEW_TOOL_VERSION (1.2.3) is a version pin' <<<"$out" \
   || fail "an unknown pin: rc ${rc}, ${out}"
-echo "ok - the pins: one finding per group (the images', the workflows'), a newer line on its own, every release of the patched shim, a toolchain's line (Go's as go-toolchain); places that disagree and an unknown pin fail the check"
+echo "ok - the pins: one finding per group (the images', the workflows'), a newer line on its own, every release of the patched shim, a toolchain's line (Go's as pins-ci--go); places that disagree and an unknown pin fail the check"
 
 # the Python SDKs and the examples: without a lockfile only what the constraint leaves out
-grep -qxF 'deps: pypi-sdk-workflows pytest 9.x released (outside >=7)' <<<"$titles" && ! grep -qF setuptools <<<"$titles" \
-  && grep -qxF 'deps: pypi-sdk-sandbox websockets 15.x released (outside >=13)' <<<"$titles" && ! grep -qF httpx <<<"$titles" \
-  && grep -qxF 'deps: pypi-example-mcp mcp 2.x released (outside >=1.12,<2)' <<<"$titles" && ! grep -qF uvicorn <<<"$titles" \
-  && grep -qxF 'deps: pypi-example-hf-weights transformers 5.x released (outside ==5.20.0)' <<<"$titles" \
-  && grep -qxF 'deps: cargo-example-wasm-rust spin-sdk 6.x released (outside 5.2.0)' <<<"$titles" && ! grep -qF anyhow <<<"$titles" \
-  && grep -qxF 'deps: npm-example-wasm-js @spinframework/build-tools 3.x released (outside ^2.1.3)' <<<"$titles" \
-  && ! grep -qE '^deps: (pypi|cargo|npm-example)-[a-z-]+ \[' <<<"$titles" || fail "the Python and example findings: ${titles}"
+grep -qxF "$(ot pypi-sdk-workflows pytest 9.0.1 '>=7')" <<<"$titles" && ! grep -qF setuptools <<<"$titles" \
+  && grep -qxF "$(ot pypi-sdk-sandbox websockets 15.0.1 '>=13')" <<<"$titles" && ! grep -qF httpx <<<"$titles" \
+  && grep -qxF "$(ot pypi-example-mcp mcp 2.1.0 '>=1.12,<2')" <<<"$titles" && ! grep -qF uvicorn <<<"$titles" \
+  && grep -qxF "$(ot pypi-example-hf-weights transformers 5.21.0 '==5.20.0')" <<<"$titles" \
+  && grep -qxF "$(ot cargo-example-wasm-rust spin-sdk 6.0.0 5.2.0)" <<<"$titles" && ! grep -qF anyhow <<<"$titles" \
+  && grep -qxF "$(ot npm-example-wasm-js @spinframework/build-tools 3.0.0 '^2.1.3')" <<<"$titles" \
+  && grep -qxF "$(ot npm-example-mcp express 6.1.0 '>=4.0.0 <6')" <<<"$titles" \
+  && ! grep -qE '^deps: (pypi|cargo|npm-example)-[a-z]+(-[a-z]+)* \[' <<<"$titles" || fail "the Python and example findings: ${titles}"
 ! grep -qF 'pypi.org/pypi/runr-workflows' "$FAKE/curl.log" && grep -qF 'held: runr-workflows (' "$tmp/detect.log" && grep -qF 'held: @runr/workflows (' "$tmp/detect.log" \
   || fail "RunR's own SDKs in the examples are looked up or not named"
 grep -q '^deps: go-example-q \[' <<<"$titles" && ! grep -q '^deps: go-example-wasm \[' <<<"$titles" \
-  && grep -qxF 'deps: go-example-wasm github.com/a/lib/v2 v2.x released (outside github.com/a/lib)' <<<"$titles" && [ ! -e "$repo/examples/wasm/go/go.sum" ] \
+  && grep -qxF "$(ot go-example-wasm github.com/a/lib/v2 v2.0.1 github.com/a/lib)" <<<"$titles" && [ ! -e "$repo/examples/wasm/go/go.sum" ] \
   || fail "a go.mod without go.sum: only its majors, read-only: ${titles}"
 echo "ok - the Python SDKs, the examples' requirements, Cargo.toml and package.json without a lockfile: only a release outside the constraint (a floor's next major); a go.mod without go.sum: only its majors"
 
 # --- the plan ----------------------------------------------------------------------------------------
 older="$(sed 's/"to": "v12.3.2"/"to": "v12.3.0"/' <<<"$c")"
-jq -n --arg t1 "$(grep -F 'deps: composer-api [' <<<"$titles")" --arg b1 "x <!-- deps-bot ${c} -->" --arg b2 "<!-- deps-bot ${older} -->" '[
+ol="$(ot composer-api laravel/framework v13.42.0 '^12.0')"
+jq -n --arg t1 "$(grep -F 'deps: composer-api [' <<<"$titles")" --arg b1 "x <!-- deps-bot ${c} -->" --arg b2 "<!-- deps-bot ${older} -->" \
+  --arg t3 "$ol" --arg b3 "<!-- deps-bot $(marker "$ol") -->" '[
   {number: 30, title: "deps: composer-api [00000000]: 3 updates: …", labels: [], body: $b2},
   {number: 31, title: $t1, labels: [], body: $b1},
   {number: 32, title: "deps: composer-api laravel/framework v13.x released (outside ^12.0)", labels: [], body: ""},
-  {number: 33, title: "deps: npm-vue [11111111]: 1 update: axios 1.21.1", labels: [], body: "no marker"}]' > "$tmp/issues.json"
+  {number: 33, title: "deps: npm-vue [11111111]: 1 update: axios 1.21.1", labels: [], body: "no marker"},
+  {number: 34, title: $t3, labels: [], body: $b3}]' > "$tmp/issues.json"
 plan="$(bash "$repo/ci/deps-plan.sh" "$tmp/issues.json")"
-[ "$(jq -c '[.tests[] | [.issue, .dep, (.updates | length), .urgent]]' <<<"$plan")" = '[[31,"composer-api",3,true]]' ] || fail "the plan's tests: ${plan}"
-[ "$(jq -c '[.superseded[] | [.issue, .by]]' <<<"$plan")" = '[[30,31]]' ] && [ "$(jq -c '[.attention[].issue]' <<<"$plan")" = '[32]' ] \
+[ "$(jq -c '[.tests[] | [.issue, .dep, (.updates | length), .urgent]]' <<<"$plan")" = '[[31,"composer-api",3,true],[34,"composer-api--laravel-framework",1,false]]' ] \
+  && [ "$(jq -c '.tests[1].updates[0] | [.outside, .constraint]' <<<"$plan")" = '[true,"^12.0"]' ] || fail "the plan's tests: ${plan}"
+[ "$(jq -c '[.superseded[] | [.issue, .by]]' <<<"$plan")" = '[[30,31]]' ] && [ "$(jq -c '[.attention[].issue]' <<<"$plan")" = '[]' ] \
+  && jq -e '.skipped[] | select(.issue == 32)' >/dev/null <<<"$plan" \
   && jq -e '.skipped[] | select(.issue == 33) | .reason | test("no deps-bot marker")' >/dev/null <<<"$plan" || fail "the plan: ${plan}"
-echo "ok - the plan: a group's newest finding with its updates (the older ones superseded), one outside its constraint labelled, one without a marker skipped"
+echo "ok - the plan: a group's newest finding with its updates (the older ones superseded), a release outside the constraint tested under its id (the old form of one skipped), one without a marker skipped"
 
 # --- the bumps ----------------------------------------------------------------------------------------
 # bump GROUP UPDATES_JSON — ci/deps-bump.sh on a clean fixture; the report in $tmp/r-GROUP
@@ -748,6 +775,103 @@ bump pins-ci '[{"name": "cloud-provider-kind", "from": "v0.10.0", "to": "v0.10.1
 bump pypi-sdk-workflows '[{"name": "pytest", "from": "7.4.4", "to": "9.0.1"}]'
 [ "$rc" = 2 ] && grep -qF 'keeps no lockfile' "$tmp/r-pypi-sdk-workflows/summary.md" || fail "a Python bump: rc ${rc}"
 echo "ok - pins: the version at every place and its published checksums (a sha256sum per arch, an npm file's sha256 and sha384), a checksums file the build reads, the image's own version, next only for a workflow's; a 504 through the API's asset endpoint; a checksum not published or the patched shim: a person, nothing left changed"
+
+# --- releases outside the constraint: attempted, the constraint moved mechanically --------------------
+# ob ID UPDATE_JSON — the bump of a release outside the constraint (its one update, "outside": true)
+ob() { bump "$1" "[$(jq -c '. + {outside: true}' <<<"$2")]"; }
+# cl — the changelog with its lines joined (a long line wraps); unchanged — nothing of the checkout
+# changed (a bump that refused)
+cl() { tr -s ' \n' ' ' < "$repo/CHANGELOG.md"; }
+unchanged() { [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ]; }
+# npm, with a lockfile: the range moves (^ stays ^) and the lockfile resolves it; vite is a build
+# root, so it releases; its own changelog line says it is a new major version
+printf '%s\n' 'node_modules/vite 8.3.8' 'node_modules/esbuild 0.27.0' > "$FAKE/npm-versions"
+ob npm-vue--vite '{"name": "vite", "from": "6.4.5", "to": "8.3.8", "constraint": "^6.4.5", "line": "8.x", "why": "a new major", "files": ["vue/package.json"]}'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-npm-vue--vite/path")" = release ] \
+  && [ "$(git -C "$repo" diff --name-only | sort | paste -sd ' ')" = "CHANGELOG.md vue/package-lock.json vue/package.json" ] \
+  && [ "$(jq -r .devDependencies.vite "$repo/vue/package.json")" = '^8.3.8' ] && [ "$(jq -r '.packages["node_modules/vite"].version' "$repo/vue/package-lock.json")" = 8.3.8 ] \
+  || fail "an npm major: rc ${rc}, $(cat "$tmp/r-npm-vue--vite/summary.md" 2>/dev/null) $(tail -n 5 "$tmp/bump.log") $(git -C "$repo" diff --name-only)"
+cl | grep -qF -- '- **Console npm packages: vite 8.3.8** (a new major version: vite 6.4.5 → 8.3.8, outside `^6.4.5` before; now `^8.3.8` in vue/package.json).' \
+  && cl | grep -qF "an installed region needs no step" || fail "an npm major's changelog line: $(sed -n '3,9p' "$repo/CHANGELOG.md")"
+[ "$(head -n 1 "$tmp/r-npm-vue--vite/commit-msg.txt")" = 'fix(ui): console npm packages (vite 8.3.8, a new major version)' ] \
+  && grep -qF '`^6.4.5` → `^8.3.8` in vue/package.json' "$tmp/r-npm-vue--vite/commit-msg.txt" && grep -qF '`^6.4.5` → `^8.3.8`' "$tmp/r-npm-vue--vite/summary.md" \
+  && [ "$(jq -c '[.[].command]' "$tmp/r-npm-vue--vite/suites.json")" = '["ui","ui-stack"]' ] || fail "an npm major's commit: $(cat "$tmp/r-npm-vue--vite/commit-msg.txt")"
+# the lockfile does not come to the new line (another package holds it back): a person
+printf '%s\n' 'node_modules/esbuild 0.27.0' > "$FAKE/npm-versions"
+ob npm-vue--vite '{"name": "vite", "from": "6.4.5", "to": "8.3.8", "constraint": "^6.4.5", "files": ["vue/package.json"]}'
+[ "$rc" = 2 ] && grep -qF 'not the 8.3.8 line' "$tmp/r-npm-vue--vite/summary.md" && unchanged || fail "an npm major the lockfile does not take: rc ${rc}"
+# composer: ^12.0 → ^13.42, composer.json and composer.lock
+printf '%s\n' 'laravel/framework v13.42.0' > "$FAKE/composer-versions"
+ob composer-api--laravel-framework '{"name": "laravel/framework", "from": "v12.3.1", "to": "v13.42.0", "constraint": "^12.0", "files": ["api/composer.json"]}'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-composer-api--laravel-framework/path")" = release ] && grep -qF '"laravel/framework": "^13.42"' "$repo/api/composer.json" \
+  && [ "$(git -C "$repo" diff --name-only | sort | paste -sd ' ')" = "CHANGELOG.md api/composer.json api/composer.lock" ] \
+  && cl | grep -qF -- '- **API Composer packages: laravel/framework v13.42.0** (a new major version: ' \
+  || fail "a composer major: rc ${rc}, $(cat "$tmp/r-composer-api--laravel-framework/summary.md" 2>/dev/null) $(tail -n 5 "$tmp/bump.log")"
+# go: a new major path in go.mod and the imports (of the module and its packages); go.sum
+ob go-agent--github-com-a-lib-v2 '{"name": "github.com/a/lib/v2", "from": "v1.2.0", "to": "v2.0.1", "constraint": "github.com/a/lib", "files": ["runtime/agent/go.mod"]}'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-go-agent--github-com-a-lib-v2/path")" = release ] && grep -qxF $'\tgithub.com/a/lib/v2 v2.0.1' "$repo/runtime/agent/go.mod" \
+  && ! grep -qE $'^\tgithub.com/a/lib v' "$repo/runtime/agent/go.mod" && grep -qF '"github.com/a/lib/v2"' "$repo/runtime/agent/main.go" \
+  && grep -qF '"github.com/a/lib/v2/sub"' "$repo/runtime/agent/main.go" && grep -qF '"github.com/a/libx"' "$repo/runtime/agent/main.go" \
+  && [ "$(git -C "$repo" diff --name-only | sort | paste -sd ' ')" = "CHANGELOG.md runtime/agent/go.mod runtime/agent/go.sum runtime/agent/main.go" ] \
+  && grep -qF 'github.com/a/lib v1.2.0 → github.com/a/lib/v2 v2.0.1' "$tmp/r-go-agent--github-com-a-lib-v2/summary.md" \
+  || fail "a Go major path: rc ${rc}, $(cat "$tmp/r-go-agent--github-com-a-lib-v2/summary.md" 2>/dev/null) $(tail -n 5 "$tmp/bump.log") $(git -C "$repo" diff)"
+# a module without go.sum: go.mod alone (no go.sum appears), next only
+ob go-example-wasm--github-com-a-lib-v2 '{"name": "github.com/a/lib/v2", "from": "v1.2.0", "to": "v2.0.1", "constraint": "github.com/a/lib", "files": ["examples/wasm/go/go.mod"]}'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-go-example-wasm--github-com-a-lib-v2/path")" = next ] && grep -qxF 'require github.com/a/lib/v2 v2.0.1' "$repo/examples/wasm/go/go.mod" \
+  && [ ! -e "$repo/examples/wasm/go/go.sum" ] || fail "a Go major path without go.sum: rc ${rc}, $(tail -n 5 "$tmp/bump.log")"
+# a hold on the path a new major replaces keeps it (the fixture's go-proxy hold)
+ob go-proxy--github-com-a-lib-v2 '{"name": "github.com/a/lib/v2", "from": "v1.2.0", "to": "v2.0.1", "constraint": "github.com/a/lib", "files": ["proxy/go.mod"]}'
+[ "$rc" = 2 ] && grep -qF 'is held: ' "$tmp/r-go-proxy--github-com-a-lib-v2/summary.md" && unchanged || fail "a held Go path moved: rc ${rc}"
+# Python: an exact pin, an upper bound (its floor kept), a floor alone
+ob pypi-example-hf-weights--transformers '{"name": "transformers", "from": "==5.20.0", "to": "5.21.0", "constraint": "==5.20.0", "files": ["examples/ai/hf-python/weights/requirements.txt"]}'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-pypi-example-hf-weights--transformers/path")" = next ] && grep -qxF 'transformers==5.21.0' "$repo/examples/ai/hf-python/weights/requirements.txt" \
+  && cl | grep -qF -- '- **Hugging Face weights example packages: transformers 5.21.0** (outside the constraint: ' \
+  && [ "$(head -n 1 "$tmp/r-pypi-example-hf-weights--transformers/commit-msg.txt")" = 'fix(examples): Hugging Face weights example packages (transformers 5.21.0, outside the constraint)' ] \
+  || fail "a Python exact pin: rc ${rc}, $(tail -n 5 "$tmp/bump.log") $(sed -n '3,9p' "$repo/CHANGELOG.md")"
+ob pypi-example-mcp--mcp '{"name": "mcp", "from": ">=1.12,<2", "to": "2.1.0", "constraint": ">=1.12,<2", "files": ["examples/mcp/python/requirements.txt"]}'
+[ "$rc" = 0 ] && grep -qxF 'mcp>=1.12,<3' "$repo/examples/mcp/python/requirements.txt" && grep -qF 'uvicorn>=0.30  # the server' "$repo/examples/mcp/python/requirements.txt" \
+  || fail "a Python upper bound: rc ${rc}, $(tail -n 5 "$tmp/bump.log")"
+ob pypi-sdk-workflows--pytest '{"name": "pytest", "from": ">=7", "to": "9.0.1", "constraint": ">=7", "files": ["sdk/python/pyproject.toml"]}'
+[ "$rc" = 0 ] && grep -qF 'test = ["pytest>=9.0.1"]' "$repo/sdk/python/pyproject.toml" && grep -qF '"setuptools>=68"' "$repo/sdk/python/pyproject.toml" \
+  && [ "$(jq -c '[.[].command]' "$tmp/r-pypi-sdk-workflows--pytest/suites.json")" = '["py-test:sdk/python"]' ] || fail "a Python floor: rc ${rc}, $(tail -n 5 "$tmp/bump.log")"
+# Cargo: the requirement
+ob cargo-example-wasm-rust--spin-sdk '{"name": "spin-sdk", "from": "5.2.0", "to": "6.0.0", "constraint": "5.2.0", "files": ["examples/wasm/rust/Cargo.toml"]}'
+[ "$rc" = 0 ] && grep -qxF 'spin-sdk = "6.0.0"' "$repo/examples/wasm/rust/Cargo.toml" && grep -qxF 'anyhow = "1"' "$repo/examples/wasm/rust/Cargo.toml" \
+  && [ "$(jq -c '[.[].command]' "$tmp/r-cargo-example-wasm-rust--spin-sdk/suites.json")" = '["test-wasm"]' ] || fail "a Cargo major: rc ${rc}, $(tail -n 5 "$tmp/bump.log")"
+# Actions: a pin's new major (its tag's commit, on next only) and a floating major in actions/ (it ships)
+sha8="$(git -C "$gh/actions/checkout" rev-parse 'v8.0.0^{commit}')"
+ob actions--actions-checkout '{"name": "actions/checkout", "from": "v7.0.1", "to": "v8.0.0", "constraint": "v7", "files": [".github/workflows/ci.yml"]}'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-actions--actions-checkout/path")" = next ] && grep -qF "actions/checkout@${sha8} # v8.0.0" "$repo/.github/workflows/ci.yml" \
+  || fail "an Actions major: rc ${rc}, $(tail -n 5 "$tmp/bump.log")"
+ob actions--actions-cache '{"name": "actions/cache", "from": "v4", "to": "v5.0.0", "constraint": "v4", "files": ["actions/deploy/action.yml"]}'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-actions--actions-cache/path")" = release ] && grep -qF 'uses: actions/cache@v5' "$repo/actions/deploy/action.yml" \
+  || fail "a floating Actions major: rc ${rc}, $(tail -n 5 "$tmp/bump.log")"
+# a Dockerfile base's new major (the dev stack's: next only)
+ob docker--ghcr-io-brf-tech-runr-reqs-alpine '{"name": "ghcr.io/brf-tech/runr/reqs/alpine", "from": "3.21", "to": "4.0", "constraint": "3", "files": ["proxy/Dockerfile"]}'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-docker--ghcr-io-brf-tech-runr-reqs-alpine/path")" = next ] && grep -qF 'reqs/alpine:4.0' "$repo/proxy/Dockerfile" \
+  || fail "a Dockerfile base's major: rc ${rc}, $(tail -n 5 "$tmp/bump.log")"
+# a pin's new major: every place and the published checksums of the new version
+for a in amd64:1 arm64:2; do web "get.helm.sh/helm-v4.0.1-linux-${a%:*}.tar.gz.sha256sum" <<<"$(sha 9 "${a#*:}")  helm-v4.0.1-linux-${a%:*}.tar.gz"; done
+ob pins-images--helm '{"name": "helm", "from": "v3.16.0", "to": "v4.0.1", "constraint": "v3", "files": ["api/Dockerfile", "api/Dockerfile.prod"]}'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-pins-images--helm/path")" = release ] && grep -qx 'ARG HELM_VERSION=v4.0.1' "$repo/api/Dockerfile.prod" \
+  && grep -qF "amd64) HELM_SHA=$(sha 9 1) ;; arm64) HELM_SHA=$(sha 9 2) ;;" "$repo/api/Dockerfile" \
+  && cl | grep -qF -- '- **Image tool pins: helm v4.0.1** (a new major version: helm v3.16.0 → v4.0.1' \
+  || fail "a pin's major: rc ${rc}, $(cat "$tmp/r-pins-images--helm/summary.md" 2>/dev/null) $(tail -n 5 "$tmp/bump.log")"
+# not mechanical: a range of another form, a Go toolchain line (the golang image, the workflows' go),
+# a new kubectl minor of the API image's set; the reason, nothing left changed
+ob npm-example-mcp--express '{"name": "express", "from": ">=4.0.0 <6", "to": "6.1.0", "constraint": ">=4.0.0 <6", "files": ["examples/mcp/node/package.json"]}'
+[ "$rc" = 2 ] && grep -qF 'is no caret, tilde or exact version the bot moves mechanically' "$tmp/r-npm-example-mcp--express/summary.md" && unchanged \
+  || fail "a range of another form: rc ${rc}, $(cat "$tmp/r-npm-example-mcp--express/summary.md" 2>/dev/null)"
+ob docker--ghcr-io-brf-tech-runr-reqs-golang '{"name": "ghcr.io/brf-tech/runr/reqs/golang", "from": "1.26-alpine", "to": "1.27-alpine", "constraint": "1.26-alpine", "files": ["proxy/Dockerfile"]}'
+[ "$rc" = 2 ] && grep -qF 'new Go toolchain line' "$tmp/r-docker--ghcr-io-brf-tech-runr-reqs-golang/summary.md" && unchanged || fail "a golang line moved: rc ${rc}"
+ob pins-ci--go '{"name": "go", "from": "1.26.9", "to": "1.27.x", "constraint": "go 1.26.9", "where": "every go.mod'"'"'s go line", "files": []}'
+[ "$rc" = 2 ] && grep -qF "every go.mod's go line" "$tmp/r-pins-ci--go/summary.md" && unchanged || fail "the Go toolchain moved: rc ${rc}"
+ob pins-images--kubectl-1-37 "{\"name\": \"kubectl-1.37\", \"from\": \"${kv37}\", \"to\": \"v1.38.1\", \"constraint\": \"v1.37\", \"files\": [\"api/Dockerfile\", \"api/Dockerfile.prod\"]}"
+[ "$rc" = 2 ] && grep -qF 'a new row of the set' "$tmp/r-pins-images--kubectl-1-37/summary.md" && unchanged || fail "a new kubectl minor moved: rc ${rc}"
+# an update outside the constraint whose fields a command would take apart: refused
+ob npm-vue--vite '{"name": "vite", "from": "6.4.5", "to": "8.3.8", "constraint": "^6.4.5`id`", "files": ["vue/package.json"]}'
+[ "$rc" = 1 ] && unchanged || fail "a malformed constraint: rc ${rc}"
+echo "ok - outside the constraint: the constraint moves mechanically and the kind's bump follows (npm ^ with its lockfile, composer, a Go major path with its imports, with and without go.sum, Python ==, an upper bound and a floor, Cargo, an Actions pin and a floating major, a Dockerfile base, a pin with its checksums), its changelog line says a new major version or outside the constraint; a range of another form, a Go toolchain line, a new kubectl minor, a held path and a lockfile that does not take the line: refused with the reason, nothing left changed"
 
 # --- a bump of next only: made on next, landed on the origin's next -----------------------------------
 src="$tmp/src"

@@ -12,7 +12,12 @@
 #   - the report: result, the commit subject and body, the suites with their ci.sh commands and
 #     the last release tag, the edits;
 #   - nothing to do for a version at or below the pin; a dirty checkout and an unknown
-#     dependency are refused; a pin the console or the landing page names goes to a person;
+#     dependency are refused; a pin the console or the landing page names is not mechanical;
+#   - every newer chart is attempted: a new major (its changelog line says "a new major version"),
+#     a new app version of an image from the reqs mirror (the image pin moves, the report names
+#     the copy the mirror needs first), another kubeVersion, other objects and changed CRDs (the
+#     changelog gives the command that applies them) are bumped and written down; a dropped,
+#     ignored or refused value is not mechanical, with nothing left changed;
 #   - the chart checks send a new major, another kubeVersion, a new app version of a reqs-mirror
 #     image, other objects, changed CRDs, a value RunR sets that the chart dropped, and values the
 #     new chart refuses to a person, and put the checkout back; a mechanical bump of Zot moves its
@@ -314,6 +319,7 @@ echo "export const traefikChart = '42.3.0'" > "$repo/vue/src/app.js"
 (cd "$repo" && git commit -q -a -m vue)
 bump traefik 42.3.1 --no-render
 [ "$rc" = 2 ] && [ "$(cat "$report/result")" = attention ] || fail "a pin in the console: exit ${rc}: $(cat "$out")"
+grep -qF 'cannot be moved mechanically' "$report/summary.md" || fail "the console's pin: $(cat "$report/summary.md")"
 grep -qF 'vue/src/app.js:1' "$report/summary.md" || fail "the summary does not name the console's line: $(cat "$report/summary.md")"
 [ -z "$(changed)" ] || fail "a bump that needs a person left $(changed)"
 echo "ok - nothing to do at or below the pin; a dirty checkout, an unknown dependency, a non-version refused; the console's pin goes to a person"
@@ -336,20 +342,51 @@ grep -qF 'Deployment knative-serving/traefik (spec.template.spec.containers.0.ar
 grep -qF 'Rendered with RunR' "$report/commit-msg.txt" || fail "the render notes in the body: $(cat "$report/commit-msg.txt")"
 grep -qF 'the app version stays v3.7.17' "$report/commit-msg.txt" || fail "the app version: $(cat "$report/commit-msg.txt")"
 git -C "$repo" checkout -q -- .
-# attention CASE VERSION NEEDLE — a chart the bot gives to a person, the checkout as it was
+# joined FILE — a changelog with each wrapped bullet on one line
+joined() { awk '/^  [^ ]/ { sub(/^  /, ""); printf " %s", $0; next } NR > 1 { print "" } { printf "%s", $0 } END { print "" }' "$1"; }
+# attention CASE VERSION NEEDLE — a chart the bot cannot move mechanically, the checkout as it was
 attention() {
   bump traefik "$2"
   [ "$rc" = 2 ] && [ "$(cat "$report/result")" = attention ] || fail "$1: exit ${rc}: $(cat "$out")"
   grep -qF -- "$3" "$report/summary.md" || fail "$1: the summary does not say '$3': $(cat "$report/summary.md")"
+  grep -qF 'next update required' "$report/summary.md" || fail "$1: the summary does not say it waits for its next update: $(cat "$report/summary.md")"
   [ -z "$(changed)" ] || fail "$1: left $(changed)"
 }
-attention "a new major" 43.0.0 "a new major release (42.3.0 → 43.0.0)"
-attention "a new app version from the reqs mirror" 42.4.0 "mirror \`ghcr.io/brf-tech/runr/reqs/traefik:${unmirrored}\` first"
-attention "another kubeVersion" 42.5.0 "the chart's kubeVersion changed"
+# attempted CASE VERSION NEEDLE — a chart the bot moves now (the suites decide), written down
+attempted() {
+  bump traefik "$2"
+  [ "$rc" = 0 ] && [ "$(cat "$report/result")" = bumped ] || fail "$1: exit ${rc}: $(cat "$out") $(cat "$report/summary.md" 2>/dev/null)"
+  grep -qF -- "$3" "$report/summary.md" || fail "$1: the summary does not say '$3': $(cat "$report/summary.md")"
+  grep -qF "const TRAEFIK_CHART_VERSION = '$2';" "$repo/api/app/Services/Contracts/KnativeConstants.php" || fail "$1: the pin did not move"
+}
+attempted "a new major" 43.0.0 "a new major version (42.3.0 → 43.0.0)"
+[ "$(cat "$report/major")" = 1 ] || fail "a new major: no major in the report"
+[ "$(head -n 1 "$report/commit-msg.txt")" = "fix(regions): traefik chart 43.0.0 (a new major version)" ] || fail "a new major's subject: $(head -n 1 "$report/commit-msg.txt")"
+joined "$repo/CHANGELOG.md" | grep -qF -- '- **Region Traefik chart 43.0.0** (from 42.3.0, a new major version; Traefik v3.7.17, as before). New regions install it; `region:reconcile` moves the Traefik of an existing region to it' \
+  || fail "a new major's changelog line: $(cat "$repo/CHANGELOG.md")"
+[ ! -e "$report/mirror" ] || fail "a new major of the same app version needs a mirror copy: $(cat "$report/mirror")"
+git -C "$repo" checkout -q -- .
+attempted "a new app version from the reqs mirror" 42.4.0 "a copy of docker.io/library/traefik:${unmirrored}"
+[ "$(cat "$report/mirror")" = "ghcr.io/brf-tech/runr/reqs/traefik:${unmirrored} docker.io/library/traefik:${unmirrored}" ] || fail "the mirror copy: $(cat "$report/mirror" 2>/dev/null)"
+grep -qF "const TRAEFIK_IMAGE = 'ghcr.io/brf-tech/runr/reqs/traefik:${unmirrored}';" "$repo/api/app/Services/Contracts/KnativeConstants.php" \
+  || fail "the image pin did not move: $(cat "$repo/api/app/Services/Contracts/KnativeConstants.php")"
+grep -qF "TRAEFIK_ALIAS_HEADERS_SINCE = 'v3.7.17'" "$repo/api/app/Services/Contracts/KnativeConstants.php" || fail "a since-version moved with the image"
+grep -qF "\`ghcr.io/brf-tech/runr/reqs/traefik:${unmirrored}\`)" "$repo/docs/regions.md" || fail "the image in the docs: $(cat "$repo/docs/regions.md")"
+joined "$repo/CHANGELOG.md" | grep -qF "copied into the reqs mirror from \`docker.io/library/traefik:${unmirrored}\`" || fail "the changelog does not name the copy: $(cat "$repo/CHANGELOG.md")"
+grep -qF "app version v3.7.17 → ${unmirrored}." "$report/commit-msg.txt" || fail "the app version in the message (merge-next reads it): $(cat "$report/commit-msg.txt")"
+[ ! -e "$report/major" ] || fail "42.4.0 is no new major"
+git -C "$repo" checkout -q -- .
+attempted "another kubeVersion" 42.5.0 "the chart's kubeVersion changed"
+git -C "$repo" checkout -q -- .
 diffs '{"old": 9, "new": 10, "added": ["Service knative-serving/traefik-hub"], "removed": [], "changed": [], "crds": []}' "$nocrds" "$nokeys"
-attention "another object" 42.3.1 "renders objects 42.3.0 does not: Service knative-serving/traefik-hub"
+attempted "another object" 42.3.1 "renders objects 42.3.0 does not: Service knative-serving/traefik-hub"
+git -C "$repo" checkout -q -- .
 diffs "$same" '{"added": [], "removed": [], "changed": ["middlewares.traefik.io"]}' "$nokeys"
-attention "changed CRDs" 42.3.1 "the chart's CRDs changed (changed middlewares.traefik.io)"
+attempted "changed CRDs" 42.3.1 "the chart's CRDs (crds/) changed: changed middlewares.traefik.io"
+joined "$repo/CHANGELOG.md" | grep -qF 'Its CRDs changed (middlewares.traefik.io): Helm never upgrades a chart'"'"'s CRDs' || fail "the CRDs in the changelog: $(cat "$repo/CHANGELOG.md")"
+joined "$repo/CHANGELOG.md" | grep -qF '`helm show crds traefik --repo https://traefik.github.io/charts --version 42.3.1 | kubectl apply --server-side --force-conflicts -f -`' \
+  || fail "the command that applies the CRDs: $(cat "$repo/CHANGELOG.md")"
+git -C "$repo" checkout -q -- .
 diffs "$same" "$nocrds" '{"dropped": ["logs.access"]}'
 attention "a dropped value" 42.3.1 "no longer has values RunR sets: logs.access"
 diffs "$same" "$nocrds" "$nokeys" '{"values": 3, "dead": ["deployment.replicas"], "refused": []}' '{"values": 3, "dead": ["deployment.replicas", "service.type"], "refused": []}'
@@ -363,7 +400,7 @@ diffs "$same" "$nocrds" "$nokeys"
 touch "$FAKE/refuse-42.3.1"
 attention "values the chart refuses" 42.3.1 "chart 42.3.1 refuses RunR's values on Kubernetes 1.30.0"
 rm -f "$FAKE/refuse-42.3.1"
-echo "ok - a new major, a new app version of a mirrored image, another kubeVersion, other objects, changed CRDs, a dropped, ignored or refused value go to a person, nothing left changed"
+echo "ok - every newer chart is attempted: a new major, a new app version from the reqs mirror (its copy named, the image pin moved), another kubeVersion, other objects and changed CRDs (with the command for an installed region); a dropped, ignored or refused value is not mechanical, nothing left changed"
 
 # Zot pins its image straight from upstream: a new app version moves it with the chart
 rm -rf "$FAKE/charts"

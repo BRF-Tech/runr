@@ -4,23 +4,30 @@
 # stub that keeps the issues in a JSON file (as gh issue list writes them), the findings are files
 # as ci/check-*-releases.sh writes them. Checks that:
 #   - the first run folds the findings filed as issues of their own into the week's summary
-#     ("Folded into the weekly summary #N: …" in their bodies, closed), a security one too; the
-#     single releases outside a constraint into one "major versions" issue per group; a newer
-#     finding supersedes a red issue; a finding an issue or a summary had is not listed again; a
-#     major a hold keeps is a row "held (<reason>)", no issue; the rows, columns and markers;
+#     ("Folded into the weekly summary #N: …" in their bodies, closed), a security one too; a
+#     release outside a constraint is a row of its own (<group>--<package>), the earlier bot's
+#     "major versions" issue and single outside issue closed with a pointer (one labelled next
+#     update required left alone); a newer finding supersedes a red issue; an issue of its own
+#     labelled next update required is not folded, its row says so; a finding an issue or a summary
+#     had is not listed again; a major a hold keeps is a row "held (<reason>)", no issue; the rows,
+#     columns and markers; the section "Next update required" (its updates, the holds);
 #   - the same week: a new finding edits the summary; a security finding is a row flagged
 #     "security: <advisory>", tested the same day (a dispatch of <summary>:<group>);
 #   - the test bot's results: a run that starts marks its rows testing (no movement, no summary); a
 #     result in a later week opens its summary with the open rows ("Continued from"), the last one
-#     closed ("Continued in #N." in its body); green → shipped in vX.Y.Z, green, a red row moved to
-#     an issue of its own the plan reads, a release that needs a person one issue for the run,
+#     closed ("Continued in #N." in its body); green → shipped in vX.Y.Z, green, a row that failed
+#     moved to an issue of its own labelled next update required (the section lists it) that the
+#     plan tests on every run, a release that needs a person one issue for the run,
 #     closed by itself once its rows moved on; the mirror of an issue of its own; the dispatch; no
 #     comment on a summary;
 #   - the plan: a summary's open rows by <summary>:<group>, one that needs attention only when named
-#     (the summary's number names them all, <any>:<group> the row wherever it carried over);
+#     (the summary's number names them all, <any>:<group> the row wherever it carried over); an
+#     issue labelled next update required on every run (retry), a legacy needs attention one too,
+#     relabelled;
 #   - a quiet week opens no summary and keeps the open one; movement carries the open rows over;
-#   - a group's major versions: one issue, its list edited, reopened when closed by hand while not
-#     empty, closed when empty, an unchecked group's kept; a hold that is gone leaves the summary;
+#   - a release outside a constraint that the check of its group no longer reports: its row closed;
+#     no major versions issue is made; one retired without a summary points at none; a hold that is
+#     gone leaves the summary;
 #   - a finding that landed on next and that the check no longer reports: shipped in the last
 #     release; a later week closes a summary with nothing open ("Closed at the end of the week:
 #     nothing was left open.") and opens none;
@@ -107,12 +114,20 @@ group() {
   } > "$1/deps-$2-$3.md"
 }
 chart() { printf 'deps: %s %s released\n\nNew version of the Helm chart **%s**.\n' "$2" "$3" "$2" > "$1/deps-$2-$3.md"; }
-# outside DIR GROUP NAME LINE TO CONSTRAINT — a release outside the constraint
+# outside DIR ID FP NAME FROM TO CONSTRAINT — a release outside the constraint, as the check files
+# it: a package group's finding of its own, id <group>--<package>
 outside() {
-  printf 'deps: %s %s %s released (outside %s)\n\n**%s** %s is out.\n\n<!-- deps-bot %s -->\n' "$2" "$3" "$4" "$6" "$3" "$5" \
-    "$(jq -nc --arg g "$2" --arg n "$3" --arg l "$4" --arg t "$5" --arg c "$6" '{group: $g, kind: "outside", name: $n, line: $l, from: "1.0.0", to: $t, constraint: $c, where: "x/package.json", why: "a new major"}')" \
-    > "$1/deps-$2-outside-${3//\//-}-$4.md"
+  {
+    echo "deps: $2 [$3]: 1 update: $4 $6 (outside $7)"
+    echo ""
+    echo "**$4** $6 is out, outside \`$7\`."
+    echo ""
+    echo "<!-- deps-bot $(jq -nc --arg g "$2" --arg n "$4" --arg f "$5" --arg t "$6" --arg c "$7" '{group: $g, updates: [{name: $n, from: $f, to: $t, outside: true, constraint: $c, line: "x", why: "a new major", files: ["x/package.json"]}], urgent: false, advisories: []}') -->"
+  } > "$1/deps-$2-$3.md"
 }
+# a major versions issue of the earlier bot, and the text it gets when it is retired
+MAJORS_BODY=$'Major versions of **npm-vue** need a decision.\n\n<!-- deps-bot {"group":"npm-vue","kind":"outside","items":[{"name":"vite","line":"8.x","from":"7.3.1","to":"8.0.1","constraint":"^7.0.0"}]} -->\n<!-- runr-deps:majors:npm-vue -->'
+RETIRED='The dependency test bot now attempts every release outside a constraint on its weekly run: each one is a row of the weekly summary'
 held() { mkdir -p "$1/held"; jq -nc --arg g "$2" --arg n "$3" --arg v "$4" --arg l "$5" --arg r "$6" '{group: $g, name: $n, version: $v, line: $l, from: "3.38.0", constraint: "3.38.0", reason: $r}' > "$1/held/$2--$3.json"; }
 upd() { jq -nc --arg n "$1" --arg f "$2" --arg t "$3" '[{name: $n, from: $f, to: $t, files: ["x/lock"]}]'; }
 gmarker() { jq -nc --arg g "$1" --argjson u "$2" --argjson urgent "${3:-false}" '{group: $g, updates: $u, urgent: $urgent, advisories: (if $urgent then [{id: "GHSA-test", package: "x"}] else [] end)}'; }
@@ -153,6 +168,9 @@ digest_of() { jq -r --arg w "$1" '.[] | select(.title == "deps: week \($w)") | .
   iss 15 "deps: traefik 42.3.2 released" OPEN "" "New version." 2026-11-10
   iss 20 "deps: composer-api [27340472]: 1 update: laravel/framework v12.72.0" OPEN "" "$(body "$(gmarker composer-api "$(upd laravel/framework v12.70.0 v12.72.0)")")"
   iss 31 "deps: go-example-wasm github.com/x/sdk/v3 v3.x released (outside github.com/x/sdk/v2)" OPEN "needs attention" "**x** is out."
+  iss 32 "deps: go-example-wasm github.com/y/sdk/v3 v3.x released (outside github.com/y/sdk/v2)" OPEN "next update required" "**y** is held."
+  iss 37 "deps: go-agent [44444444]: 1 update: k8s.io/api v0.37.0" OPEN "deps,next update required" "$(body "$(gmarker go-agent "$(upd k8s.io/api v0.36.0 v0.37.0)")")"
+  iss 40 "deps: npm-vue major versions need a decision" OPEN "deps,needs attention" "$MAJORS_BODY"
   iss 34 "deps: go-proxy [3063d268]: 1 update: github.com/redis/go-redis/v9 v9.23.0" OPEN "" "$(body "$(gmarker go-proxy "$(upd github.com/redis/go-redis/v9 v9.7.3 v9.23.0)")")"
   iss 35 "deps: go-queue-consumer [9e8b508b]: 1 update: github.com/jackc/pgx/v5 v5.13.0 (security)" OPEN "security" "$(body "$(gmarker go-queue-consumer "$(upd github.com/jackc/pgx/v5 v5.12.0 v5.13.0)" true)")"
   iss 36 "deps: go-cli [11111111]: 1 update: github.com/spf13/cobra v1.10.1" OPEN "needs attention" "$(body "$(gmarker go-cli "$(upd github.com/spf13/cobra v1.8.1 v1.10.1)")")"
@@ -164,42 +182,50 @@ group "$f1" go-proxy 3063d268 "$(upd github.com/redis/go-redis/v9 v9.7.3 v9.23.0
 group "$f1" go-cli 22222222 "$(upd github.com/spf13/cobra v1.8.1 v1.10.2)"
 group "$f1" npm-vue 15672bfe "$(upd axios 1.21.0 1.21.1)"
 chart "$f1" zot 0.1.135
-outside "$f1" npm-vue vite 8.x 8.0.1 '^6.4.5'
-outside "$f1" npm-vue pinia 4.x 4.0.0 '^2.2'
-outside "$f1" go-example-wasm github.com/x/sdk/v3 v3.x v3.0.0 github.com/x/sdk/v2
+outside "$f1" npm-vue--vite aaaa0001 vite 7.3.1 8.0.1 '^7.0.0'
 held "$f1" npm-vue cronstrue 4.0.0 4.x "pinned exactly in vue/package.json: the warmer editor's tests compare its wording"
 printf '%s\n' npm-vue go-proxy go-cli go-example-wasm zot > "$f1/checked"
 run 2026-11-14 "$f1"
 dg="$(digest_of 2026-W46)"
 [ -n "$dg" ] && [ "$(labels_of "$dg")" = '["deps"]' ] || fail "no summary: $(state '[.[] | [.number, .title, .state]]')"
-on="$(number_of "deps: npm-vue major versions need a decision")"
-ow="$(number_of "deps: go-example-wasm major versions need a decision")"
-[ -n "$on" ] && [ -n "$ow" ] && [ "$(labels_of "$on")" = '["deps","needs attention"]' ] \
-  || fail "one major versions issue per group: $(state '[.[] | [.number, .title, .state]]')"
-grep -qxF '| `pinia` | 1.0.0 | 4.0.0 | `^2.2` |' <<<"$(body_of "$on")" && grep -qxF '| `vite` | 1.0.0 | 8.0.1 | `^6.4.5` |' <<<"$(body_of "$on")" \
-  && grep -qxF '| Dependency | Pinned | Newest major | allow |' <<<"$(body_of "$on")" && grep -qxF '<!-- runr-deps:majors:npm-vue -->' <<<"$(body_of "$on")" \
-  || fail "the major versions issue's body: $(body_of "$on")"
-[ "$(rows "$dg")" = '[["composer-api","27340472","new",null],["go-cli","22222222","new",null],["go-proxy","3063d268","new",null],["go-queue-consumer","9e8b508b","new",null],["npm-vue/cronstrue","4.x","held",null],["traefik","42.3.2","new",null],["zot","0.1.135","new",null]]' ] \
+[ "$(state '[.[] | select(.title | test("major versions need a decision$")) | .number]')" = '[40]' ] \
+  || fail "a major versions issue made: $(state '[.[] | [.number, .title, .state]]')"
+[ "$(rows "$dg")" = '[["composer-api","27340472","new",null],["go-agent","44444444","next update required",37],["go-cli","22222222","new",null],["go-proxy","3063d268","new",null],["go-queue-consumer","9e8b508b","new",null],["npm-vue--vite","aaaa0001","new",null],["npm-vue/cronstrue","4.x","held",null],["traefik","42.3.2","new",null],["zot","0.1.135","new",null]]' ] \
   || fail "the first summary's rows: $(rows "$dg")"
-[ "$(state '[.[] | select(.state == "OPEN") | .number] | sort')" = "$(jq -nc "[50, ${dg}, ${on}, ${ow}] | sort")" ] \
+[ "$(state '[.[] | select(.state == "OPEN") | .number] | sort')" = "$(jq -nc "[32, 37, 50, ${dg}] | sort")" ] \
   || fail "the open issues after the first run: $(state '[.[] | select(.state == "OPEN") | [.number, .title]]')"
 for n in 15 20 34 35; do
   [ "$(body_of "$n" | tail -n 1)" = "Folded into the weekly summary #${dg}: the bot opens a separate issue only when a person has to do something." ] \
     || fail "#${n} folded: $(body_of "$n")"
 done
 body_of 36 | grep -qF "Superseded by go-cli 22222222 (the check of 2026-11-14), a row of the weekly summary #${dg}" || fail "the red issue superseded: $(body_of 36)"
-body_of 31 | grep -qF "Folded into #${ow}: the bot keeps one issue per group for its major versions" || fail "the single major folded: $(body_of 31)"
+# the earlier bot's issues of major versions: closed with a pointer (one labelled next update required stays)
+[ "$(body_of 31 | tail -n 1)" = "${RETIRED} #${dg}; one it cannot move or that fails its suites gets \`next update required\` there." ] \
+  && [ "$(state_of 31)" = CLOSED ] || fail "the single major retired: $(state_of 31) $(body_of 31)"
+[ "$(state_of 40)" = CLOSED ] && [ "$(body_of 40 | tail -n 1)" = '<!-- runr-deps:majors:npm-vue -->' ] && body_of 40 | grep -qF "${RETIRED} #${dg};" \
+  || fail "the major versions issue retired: $(state_of 40) $(body_of 40)"
+[ "$(state_of 32)" = OPEN ] && [ "$(body_of 32)" = '**y** is held.' ] && [ "$(labels_of 32)" = '["next update required"]' ] \
+  || fail "a single major labelled next update required was touched: $(state_of 32) $(body_of 32)"
+! grep -qF '[edit] [37]' "$GH_LOG" || fail "an issue labelled next update required was folded: $(body_of 37)"
 [ ! -s "$GH_COMMENTS" ] || fail "the bot wrote comments: $(cat "$GH_COMMENTS")"
 b="$(body_of "$dg")"
 grep -qxF '| Dependency | Version | State | Item | Note |' <<<"$b" \
   && grep -qxF '| `go-proxy` <!-- runr-deps:row:go-proxy --> | `github.com/redis/go-redis/v9` v9.7.3 → v9.23.0 | new |  |  |' <<<"$b" \
   && grep -qxF '| `npm-vue/cronstrue` <!-- runr-deps:row:npm-vue/cronstrue --> | 3.38.0 → 4.0.0 | held (pinned exactly in vue/package.json: the warmer editor'"'"'s tests compare its wording) |  |  |' <<<"$b" \
+  && grep -qxF '| `npm-vue--vite` <!-- runr-deps:row:npm-vue--vite --> | `vite` 7.3.1 → 8.0.1 | new |  |  |' <<<"$b" \
+  && grep -qxF '| `go-agent` <!-- runr-deps:row:go-agent --> | `k8s.io/api` v0.36.0 → v0.37.0 | next update required | #37 |  |' <<<"$b" \
   && grep -qxF '| `go-queue-consumer` <!-- runr-deps:row:go-queue-consumer --> | `github.com/jackc/pgx/v5` v5.12.0 → v5.13.0 | new |  | security: GHSA-test |' <<<"$b" \
   && grep -qxF '| `zot` <!-- runr-deps:row:zot --> | 0.1.135 | new |  |  |' <<<"$b" \
   && [ "$(tail -n 1 <<<"$b")" = '<!-- runr-deps:digest:2026-W46 -->' ] && grep -qF '**2026-W46** (2026-11-09 to 2026-11-15, UTC)' <<<"$b" \
   || fail "the summary's body: ${b}"
+# the section: the updates the bot tries again every week, the holds with their reasons
+sec="$(sed -n '/^### Next update required$/,/^<!-- deps-bot /{/^<!-- deps-bot /!p}' <<<"$b")"
+grep -qxF -e '- `go-agent` `k8s.io/api` v0.36.0 → v0.37.0 (#37)' <<<"$sec" \
+  && grep -qxF -e '- `npm-vue/cronstrue` 3.38.0 → 4.0.0: held, pinned exactly in vue/package.json: the warmer editor'"'"'s tests compare its wording' <<<"$sec" \
+  && grep -qF 'The bot tries these updates again on every weekly run' <<<"$sec" && grep -qF '`ci/deps/holds.txt`' <<<"$sec" \
+  && [ "$(grep -c '^- ' <<<"$sec")" = 2 ] || fail "the section Next update required: ${sec}"
 grep -q 'workflow run' "$GH_LOG" && fail "a dispatch without a new security finding"
-echo "ok - the first run: the issues of their own folded into the week's summary, the single majors into one issue per group, a red issue superseded, nothing listed twice, a held major a row; the columns, row and summary markers, no comment"
+echo "ok - the first run: the issues of their own folded into the week's summary (one labelled next update required not), a release outside a constraint a row of its own, the earlier bot's major versions issues closed with a pointer (one labelled next update required left), a red issue superseded, nothing listed twice, a held major a row; the columns, row and summary markers, the section Next update required, no comment"
 
 # --- the same week: a new finding edits the summary; a security finding is a flagged row, tested today
 f2="$tmp/f2"; cp -r "$f1" "$f2"
@@ -209,6 +235,7 @@ run 2026-11-15 "$f2"
 [ "$(state '[.[] | select(.title | startswith("deps: week"))] | length')" = 1 ] && ! grep -qF '[issue] [create]' "$GH_LOG" || fail "an issue for a security finding: $(cat "$GH_LOG")"
 grep -qxF '| `go-agent` <!-- runr-deps:row:go-agent --> | `k8s.io/api` v0.37.1 → v0.37.2 | new |  | security: GHSA-test |' <<<"$(body_of "$dg")" || fail "the security row: $(body_of "$dg")"
 grep -qF "gh [workflow] [run] [deps-test.yml] [--repo] [example/repo] [-f] [issue=${dg}:go-agent] [-f] [attempt=1]" "$GH_LOG" || fail "the security finding is not tested today: $(cat "$GH_LOG")"
+[ "$(state_of 37)" = CLOSED ] && body_of 37 | grep -qF "Superseded by go-agent 33333333" || fail "a newer finding supersedes an issue labelled next update required: $(body_of 37)"
 : > "$GH_LOG"
 run 2026-11-15 "$f2"
 grep -q 'issue\] \[\(create\|edit\|close\|reopen\)\|workflow' "$GH_LOG" && fail "the same findings again changed something: $(cat "$GH_LOG")"
@@ -217,14 +244,16 @@ echo "ok - the same week: a new finding edits the summary; a security finding is
 # --- the plan of the summary's rows ----------------------------------------------------------------
 gh issue list > "$tmp/open.json"
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/open.json")"
-[ "$(jq -c '[.tests[] | [.ref, .version]]' <<<"$plan")" = "[[\"${dg}:composer-api\",\"27340472\"],[\"${dg}:go-agent\",\"33333333\"],[\"${dg}:go-cli\",\"22222222\"],[\"${dg}:go-proxy\",\"3063d268\"],[\"${dg}:go-queue-consumer\",\"9e8b508b\"],[\"${dg}:traefik\",\"42.3.2\"],[\"${dg}:zot\",\"0.1.135\"]]" ] \
+[ "$(jq -c '[.tests[] | [.ref, .version]]' <<<"$plan")" = "[[\"${dg}:composer-api\",\"27340472\"],[\"${dg}:go-agent\",\"33333333\"],[\"${dg}:go-cli\",\"22222222\"],[\"${dg}:go-proxy\",\"3063d268\"],[\"${dg}:go-queue-consumer\",\"9e8b508b\"],[\"${dg}:npm-vue--vite\",\"aaaa0001\"],[\"${dg}:traefik\",\"42.3.2\"],[\"${dg}:zot\",\"0.1.135\"]]" ] \
   || fail "the plan of the summary: $(jq -c .tests <<<"$plan")"
+[ "$(jq -c '.tests[] | select(.dep == "npm-vue--vite") | .updates[0] | [.name, .to, .outside]' <<<"$plan")" = '["vite","8.0.1",true]' ] \
+  || fail "a release outside a constraint's test: ${plan}"
 [ "$(jq -c '.tests[] | select(.dep == "go-agent") | [.issue, (.updates | length), .urgent]' <<<"$plan")" = "[${dg},1,true]" ] || fail "a security row's test: ${plan}"
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/open.json" --only="7:zot,${dg}:go-agent")"
 [ "$(jq -c '[.tests[].ref]' <<<"$plan")" = "[\"${dg}:go-agent\",\"${dg}:zot\"]" ] || fail "a row named wherever it carried over: $(jq -c .tests <<<"$plan")"
 rc=0; bash "$root/ci/deps-plan.sh" "$tmp/open.json" --only="${dg}:Zot" >/dev/null 2>&1 || rc=$?
 [ "$rc" = 1 ] || fail "a ref that is no N or N:group passed"
-echo "ok - the plan: the summary's open rows by <summary>:<group> (a security one urgent), a row named wherever it carried over"
+echo "ok - the plan: the summary's open rows by <summary>:<group> (a security one urgent, a release outside a constraint), a row named wherever it carried over"
 
 # --- the markers: the summary's, its rows' and the other runr-deps: markers are no data marker, and
 # a marker a person quotes in a text (not the last line of the body) makes no summary ---------------
@@ -237,11 +266,13 @@ jq --argjson n 900 '. + [
   {number: ($n + 2), title: "deps: kata-deploy 4.9.0 released", state: "OPEN", labels: [{name: "needs attention"}], createdAt: "2026-11-15T08:00:00Z",
    body: "x\n<!-- runr-deps:row:zot/0.1.200 -->"}]' "$tmp/open.json" > "$tmp/quoted.json"
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/quoted.json")"
-[ "$(jq -c '[.tests[].ref]' <<<"$plan")" = "$plan_before" ] \
+# (902, an update issue of the earlier bot labelled needs attention: tested on every run as next
+# update required, and relabelled)
+[ "$(jq -c '[.tests[].ref | select(. != "902")]' <<<"$plan")" = "$plan_before" ] \
   && jq -e '.skipped[] | select(.issue == 901) | .reason | test("no deps-bot marker")' >/dev/null <<<"$plan" \
-  && jq -e '.skipped[] | select(.issue == 902) | .reason | test("waits for a person")' >/dev/null <<<"$plan" \
+  && jq -e '.tests[] | select(.ref == "902") | .retry == true' >/dev/null <<<"$plan" && [ "$(jq -c .relabel <<<"$plan")" = '[902]' ] \
   && ! jq -e '[.tests[], .skipped[]] | any(.ref | startswith("900:") or startswith("901:"))' >/dev/null <<<"$plan" \
-  || fail "the plan took a runr-deps: marker for a summary or a data marker: ${plan}"
+  || fail "the plan took a runr-deps: marker for a summary or a data marker, or a needs attention update issue waits: ${plan}"
 mk="$tmp/mk"; mkdir -p "$mk"
 res "${dg}:zot" "" zot 0.1.135 testing quiet "" "" "" https://example.test/run/8 > "$mk/lines"
 GH_DATE=2026-11-15 bash "$D" report "$mk" "$tmp/quoted.json" 2026-11-15 > "$tmp/mk.json" || fail "report: $(cat "$tmp/mk.json")"
@@ -266,12 +297,12 @@ grep -qxF '| `zot` <!-- runr-deps:row:zot --> | 0.1.135 | testing | [run](https:
 # the results: zot and go-agent shipped, go-cli red (an issue of its own), go-proxy green (tested
 # again), composer-api's release needs a person
 r1="$tmp/r1"; mkdir -p "$r1"
-printf '**Needs attention: go-cli 22222222 failed on next.**\n\nrun the workflow with this issue'"'"'s number.\n' > "$r1/red.md"
+printf '**Next update required: go-cli 22222222 failed on next.**\n\nThe failing suite: e2e.\n' > "$r1/red.md"
 printf '**Needs attention: composer-api passed, but its release v0.7.1 did not finish.**\n' > "$r1/fail.md"
 {
   res "${dg}:zot" chart zot 0.1.135 shipped line "" "" v0.7.1 https://example.test/releases/v0.7.1
   res "${dg}:go-agent" group go-agent 33333333 shipped line "" "" v0.7.1 https://example.test/releases/v0.7.1
-  res "${dg}:go-cli" group go-cli 22222222 red split "failed on next" "$r1/red.md" "" https://example.test/run/10
+  res "${dg}:go-cli" group go-cli 22222222 "next update required" split "failed: e2e" "$r1/red.md" "" https://example.test/run/10
   res "${dg}:go-proxy" group go-proxy 3063d268 green line "the base moved under it: tested again, attempt 2 of 3" "" "" https://example.test/run/10
   res "${dg}:composer-api" group composer-api 27340472 "needs attention" incident "its release v0.7.1 did not finish" "$r1/fail.md" "" https://example.test/run/10
 } > "$r1/lines"
@@ -283,29 +314,36 @@ dg2="$(digest_of 2026-W47)"
   || fail "a result in a later week: its summary, the last one closed: $(state '[.[] | [.number, .title, .state]]') $(body_of "$dg" | tail -n 4)"
 split="$(number_of "deps: go-cli [22222222]")"
 inc="$(number_of "deps: a dependency test run needs a person (2026-W47)")"
-[ -n "$split" ] && [ "$(labels_of "$split")" = '["deps","needs attention"]' ] && body_of "$split" | grep -qF 'failed on next' \
-  && body_of "$split" | grep -q '<!-- deps-bot {"group":"go-cli","kind":"group","version":"22222222","separate":true' || fail "the red row's issue: $(state '[.[] | [.number, .title]]')"
+[ -n "$split" ] && [ "$(labels_of "$split")" = '["deps","next update required"]' ] && body_of "$split" | grep -qF 'failed on next' \
+  && body_of "$split" | grep -qF 'From the weekly summary of 2026-W47: `next update required`. The dependency test bot tries it again on every weekly run' \
+  && body_of "$split" | grep -q '<!-- deps-bot {"group":"go-cli","kind":"group","version":"22222222","separate":true' || fail "the row that failed: its issue: $(state '[.[] | [.number, .title]]') $(body_of "${split:-0}")"
 [ -n "$inc" ] && [ "$(labels_of "$inc")" = '["deps","needs attention"]' ] && body_of "$inc" | grep -qF 'its release v0.7.1 did not finish' \
   && body_of "$inc" | grep -qxF '<!-- runr-deps:incident -->' || fail "the run that needs a person: no issue: $(state '[.[] | [.number, .title]]')"
-[ "$(rows "$dg2")" = "[[\"composer-api\",\"27340472\",\"needs attention\",${inc}],[\"go-agent\",\"33333333\",\"shipped\",null],[\"go-cli\",\"22222222\",\"red\",${split}],[\"go-proxy\",\"3063d268\",\"green\",null],[\"go-queue-consumer\",\"9e8b508b\",\"new\",null],[\"npm-vue/cronstrue\",\"4.x\",\"held\",null],[\"traefik\",\"42.3.2\",\"new\",null],[\"zot\",\"0.1.135\",\"shipped\",null]]" ] \
+[ "$(rows "$dg2")" = "[[\"composer-api\",\"27340472\",\"needs attention\",${inc}],[\"go-agent\",\"33333333\",\"shipped\",null],[\"go-cli\",\"22222222\",\"next update required\",${split}],[\"go-proxy\",\"3063d268\",\"green\",null],[\"go-queue-consumer\",\"9e8b508b\",\"new\",null],[\"npm-vue--vite\",\"aaaa0001\",\"new\",null],[\"npm-vue/cronstrue\",\"4.x\",\"held\",null],[\"traefik\",\"42.3.2\",\"new\",null],[\"zot\",\"0.1.135\",\"shipped\",null]]" ] \
   || fail "the later week's summary: $(rows "$dg2")"
 b="$(body_of "$dg2")"
 grep -qxF '| `zot` <!-- runr-deps:row:zot --> | 0.1.135 | green → shipped in v0.7.1 | [v0.7.1](https://example.test/releases/v0.7.1) |  |' <<<"$b" \
-  && grep -qxF "| \`go-cli\` <!-- runr-deps:row:go-cli --> | \`github.com/spf13/cobra\` v1.8.1 → v1.10.2 | red | #${split} | failed on next |" <<<"$b" \
+  && grep -qxF "| \`go-cli\` <!-- runr-deps:row:go-cli --> | \`github.com/spf13/cobra\` v1.8.1 → v1.10.2 | next update required | #${split} | failed: e2e |" <<<"$b" \
   && grep -qxF '| `go-proxy` <!-- runr-deps:row:go-proxy --> | `github.com/redis/go-redis/v9` v9.7.3 → v9.23.0 | green | [run](https://example.test/run/10) | the base moved under it: tested again, attempt 2 of 3 |' <<<"$b" \
   && grep -qxF "Continued from #${dg}." <<<"$b" || fail "the later week's body: ${b}"
+sec="$(sed -n '/^### Next update required$/,/^<!-- deps-bot /{/^<!-- deps-bot /!p}' <<<"$b")"
+grep -qxF -e "- \`go-cli\` \`github.com/spf13/cobra\` v1.8.1 → v1.10.2: failed: e2e (#${split}, [run](https://example.test/run/10))" <<<"$sec" \
+  && grep -qF -- '- `npm-vue/cronstrue` 3.38.0 → 4.0.0: held, ' <<<"$sec" && [ "$(grep -c '^- ' <<<"$sec")" = 2 ] \
+  && ! grep -qF 'composer-api' <<<"$sec" || fail "the section Next update required: ${sec}"
 grep -qF "gh [workflow] [run] [deps-test.yml] [--repo] [example/repo] [--ref] [main] [-f] [issue=${dg}:go-proxy] [-f] [attempt=2]" "$GH_LOG" || fail "the dispatch: $(cat "$GH_LOG")"
 [ ! -s "$GH_COMMENTS" ] || fail "a comment on a summary: $(cat "$GH_COMMENTS")"
-# the plan: the red row through its issue, the row that needs a person only when named
+# the plan: the row that failed through its issue on every run (next update required: retry), the
+# row that needs a person only when named
 gh issue list > "$tmp/open.json"
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/open.json")"
-[ "$(jq -c '[.tests[].ref]' <<<"$plan")" = "[\"${dg2}:go-proxy\",\"${dg2}:go-queue-consumer\",\"${dg2}:traefik\"]" ] \
-  && jq -e '.skipped[] | select(.ref == "'"$split"'") | .reason | test("waits for a person")' >/dev/null <<<"$plan" \
+[ "$(jq -c '[.tests[].ref]' <<<"$plan")" = "[\"${split}\",\"${dg2}:go-proxy\",\"${dg2}:go-queue-consumer\",\"${dg2}:npm-vue--vite\",\"${dg2}:traefik\"]" ] \
+  && jq -e '.tests[] | select(.ref == "'"$split"'") | .retry == true and (.updates | length) == 1' >/dev/null <<<"$plan" \
   && jq -e '.skipped[] | select(.ref == "'"${dg2}:composer-api"'") | .reason | test("waits for a person")' >/dev/null <<<"$plan" \
+  && [ "$(jq -c '.relabel' <<<"$plan")" = '[]' ] && jq -e 'has("retrigger") | not' >/dev/null <<<"$plan" \
   || fail "the plan after the results: ${plan}"
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/open.json" --only="${dg2},${split}")"
-[ "$(jq -c '[.tests[].ref]' <<<"$plan")" = "[\"${dg2}:composer-api\",\"${split}\",\"${dg2}:go-proxy\",\"${dg2}:go-queue-consumer\",\"${dg2}:traefik\"]" ] \
-  && [ "$(jq -c .retrigger <<<"$plan")" = "[${split}]" ] && [ "$(jq -c '.tests[] | select(.dep == "go-cli") | (.updates | length)' <<<"$plan")" = 1 ] \
+[ "$(jq -c '[.tests[].ref]' <<<"$plan")" = "[\"${dg2}:composer-api\",\"${split}\",\"${dg2}:go-proxy\",\"${dg2}:go-queue-consumer\",\"${dg2}:npm-vue--vite\",\"${dg2}:traefik\"]" ] \
+  && jq -e 'has("retrigger") | not' >/dev/null <<<"$plan" && [ "$(jq -c '.tests[] | select(.dep == "go-cli") | (.updates | length)' <<<"$plan")" = 1 ] \
   || fail "the summary named: ${plan}"
 # tested again: the red one shipped (its issue's own actions, its row mirrors it), the one that
 # needed a person green: the run's issue closes by itself
@@ -320,7 +358,7 @@ report 2026-11-22 "$r2"
 has_row "$dg2" "[\"go-cli\",\"22222222\",\"shipped\",${split}]" && has_row "$dg2" '["composer-api","27340472","green",null]' || fail "the results of the rows tested again: $(rows "$dg2")"
 [ "$(state_of "$split")" = CLOSED ] && grep -qxF "$(printf '%s\treleased ' "$split")" "$GH_COMMENTS" || fail "the red issue's own actions"
 [ "$(state_of "$inc")" = CLOSED ] && body_of "$inc" | grep -qF 'Nothing it held is open any more' || fail "the run's issue stays open with nothing it holds"
-echo "ok - the test bot's results: testing (no movement), a later week's summary with the open rows (the last one: Continued in #N.), green → shipped in vX.Y.Z, green, a red row an issue of its own, a run that needs a person one issue (closed once its rows moved on), the mirror of an issue of its own, the dispatch, no comment on a summary; the plan names the rows that need a person only when asked"
+echo "ok - the test bot's results: testing (no movement), a later week's summary with the open rows (the last one: Continued in #N.), green → shipped in vX.Y.Z, green, a row that failed an issue of its own labelled next update required (listed under Next update required), a run that needs a person one issue (closed once its rows moved on), the mirror of an issue of its own, the dispatch, no comment on a summary; the plan tests an issue labelled next update required on every run and names the rows that need a person only when asked"
 
 # --- a quiet week keeps the summary; movement carries the open rows over ---------------------------
 f3="$tmp/f3"; cp -r "$f2" "$f3"
@@ -334,29 +372,48 @@ chart "$f3" zot 0.1.136
 run 2026-12-01 "$f3"
 dg3="$(digest_of 2026-W49)"
 [ -n "$dg3" ] && [ "$(state_of "$dg2")" = CLOSED ] && grep -qxF "Continued in #${dg3}." <<<"$(body_of "$dg2")" || fail "movement in a later week: $(state '[.[] | [.number, .title, .state]]')"
-[ "$(rows "$dg3" | jq -c 'map(.[0:3])')" = '[["composer-api","27340472","green"],["go-proxy","3063d268","green"],["go-queue-consumer","9e8b508b","new"],["npm-vue/cronstrue","4.x","held"],["traefik","42.3.2","new"],["zot","0.1.136","new"]]' ] \
+[ "$(rows "$dg3" | jq -c 'map(.[0:3])')" = '[["composer-api","27340472","green"],["go-proxy","3063d268","green"],["go-queue-consumer","9e8b508b","new"],["npm-vue--vite","aaaa0001","new"],["npm-vue/cronstrue","4.x","held"],["traefik","42.3.2","new"],["zot","0.1.136","new"]]' ] \
   || fail "the carried rows: $(rows "$dg3")"
 echo "ok - a quiet week opens no summary and keeps the open one; movement opens the week's summary with the open rows (the resolved ones stay behind)"
 
-# --- a group's major versions ------------------------------------------------------------------------
+# --- a release outside a constraint the check no longer reports; no major versions issue ------------
 f4="$tmp/f4"; cp -r "$f3" "$f4"
-outside "$f4" npm-vue zod 4.x 4.0.0 '^3.25'
+# a derived row of a group that was not read stays; its group read without it: closed
+grep -vx npm-vue "$f4/checked" > "$f4/checked.tmp"; mv "$f4/checked.tmp" "$f4/checked"
+rm -f "$f4"/deps-npm-vue--vite-*.md
 run 2026-12-02 "$f4"
-grep -qxF '| `zod` | 1.0.0 | 4.0.0 | `^3.25` |' <<<"$(body_of "$on")" && [ "$(title_of "$on")" = "deps: npm-vue major versions need a decision" ] || fail "a new major: $(body_of "$on")"
-gh issue close "$on" --repo example/repo
-run 2026-12-02 "$f4"
-[ "$(state_of "$on")" = OPEN ] || fail "closed by hand while its list is not empty: not reopened"
-rm -f "$f4"/deps-npm-vue-outside-*.md
+has_row "$dg3" '["npm-vue--vite","aaaa0001","new",null]' || fail "a release outside a constraint of a group that was not read left: $(rows "$dg3")"
+echo npm-vue >> "$f4/checked"
 run 2026-12-03 "$f4"
-[ "$(state_of "$on")" = CLOSED ] || fail "the list empty: the issue not closed"
-grep -vx go-example-wasm "$f4/checked" > "$f4/checked.tmp"; mv "$f4/checked.tmp" "$f4/checked"
-rm -f "$f4"/deps-go-example-wasm-outside-*.md
-run 2026-12-04 "$f4"
-[ "$(state_of "$ow")" = OPEN ] || fail "the issue of a group that was not read closed"
+has_row "$dg3" '["npm-vue--vite","aaaa0001","closed",null]' && grep -qF '| closed |  | no longer found by the check of 2026-12-03 |' <<<"$(body_of "$dg3")" \
+  || fail "a release outside a constraint its group's check no longer reports: not closed: $(rows "$dg3")"
+[ "$(state '[.[] | select(.title | test("major versions need a decision$")) | select(.state == "OPEN")] | length')" = 0 ] && [ "$(state_of 32)" = OPEN ] \
+  || fail "a major versions issue, or the single major labelled next update required touched: $(state '[.[] | [.number, .title, .state]]')"
 rm -rf "$f4/held"
 run 2026-12-04 "$f4"
 rows "$dg3" | jq -e 'map(select(.[2] == "held")) | length == 0' >/dev/null || fail "a hold that is gone stays: $(rows "$dg3")"
-echo "ok - a group's major versions: one issue, its list edited, reopened when closed by hand while not empty, closed when empty, an unread group's kept; a hold that is gone leaves the summary"
+# a major versions issue retired with no summary to point at: the text names none
+jq -n --arg b "$MAJORS_BODY" '[{number: 7, title: "deps: npm-vue major versions need a decision", state: "OPEN", labels: [{name: "deps"}], body: $b, createdAt: "2026-11-01T05:30:00Z"}]' > "$tmp/lone.json"
+mkdir -p "$tmp/empty"
+bash "$D" file "$tmp/empty" "$tmp/lone.json" 2026-12-04 > "$tmp/lone-ops.json" || fail "file: $(cat "$tmp/lone-ops.json")"
+[ "$(jq -c '[.[] | [.op, .issue // .key]]' "$tmp/lone-ops.json")" = '[["edit",7],["close",7]]' ] \
+  && jq -e '.[0].body | contains("each one is a row of the weekly summary; one it cannot move") and (contains("{{") | not)' "$tmp/lone-ops.json" >/dev/null \
+  || fail "a major versions issue retired without a summary: $(cat "$tmp/lone-ops.json")"
+# the earlier bot's rows of an issue of its own (red, needs attention) whose issue is labelled: next
+# update required, in the section
+m84="$(jq -nc '{id: "traefik", kind: "chart", group: "traefik", version: "42.4.0", title: "deps: traefik 42.4.0 released", issue: 84, item_kind: "issue", state: "needs attention", note: "no mechanical bump: a person moves it", found: "2026-12-01"}')"
+m80="$(jq -nc '{id: "docker", kind: "group", group: "docker", version: "ee4ab2fa", title: "deps: docker [ee4ab2fa]: 1 update: x 3.22", issue: 80, item_kind: "issue", state: "red", note: "failed on v0.7.3", found: "2026-12-01", updates: [{name: "x", from: "3.21", to: "3.22"}]}')"
+jq -n --arg b "$(printf 'Summary.\n\n<!-- deps-bot %s -->\n<!-- deps-bot %s -->\n\n<!-- runr-deps:digest:2026-W49 -->\n' "$m84" "$m80")" \
+  '[{number: 60, title: "deps: week 2026-W49", state: "OPEN", labels: [{name: "deps"}], body: $b, createdAt: "2026-12-01T05:30:00Z"},
+    {number: 84, title: "deps: traefik 42.4.0 released", state: "OPEN", labels: [{name: "needs attention"}], body: "x", createdAt: "2026-12-01T05:30:00Z"},
+    {number: 80, title: "deps: docker [ee4ab2fa]: 1 update: x 3.22", state: "OPEN", labels: [{name: "deps"}, {name: "next update required"}], body: "x", createdAt: "2026-12-01T05:30:00Z"}]' > "$tmp/legacy.json"
+bash "$D" file "$tmp/empty" "$tmp/legacy.json" 2026-12-04 > "$tmp/legacy-ops.json" || fail "file: $(cat "$tmp/legacy-ops.json")"
+lb="$(jq -r '.[] | select(.op == "edit" and .issue == 60) | .body' "$tmp/legacy-ops.json")"
+grep -qF '| `traefik` <!-- runr-deps:row:traefik --> | 42.4.0 | next update required | #84 | no mechanical bump: a person moves it |' <<<"$lb" \
+  && grep -qF '| next update required | #80 | failed on v0.7.3 |' <<<"$lb" \
+  && grep -qxF -e '- `traefik` 42.4.0: no mechanical bump: a person moves it (#84)' <<<"$lb" && grep -qxF -e '- `docker` `x` 3.21 → 3.22: failed on v0.7.3 (#80)' <<<"$lb" \
+  || fail "the earlier bot's rows of a labelled issue: $(cat "$tmp/legacy-ops.json")"
+echo "ok - a release outside a constraint: its row closed once the check of its group no longer reports it (kept while the group is not read); no major versions issue made, one retired without a summary names none; a hold that is gone leaves the summary; the earlier bot's red and needs attention rows of a labelled issue: next update required"
 
 # --- landed on next, then shipped; a later week closes a summary with nothing open ---------------------
 r3="$tmp/r3"; mkdir -p "$r3"

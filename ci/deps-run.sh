@@ -21,14 +21,27 @@ set -euo pipefail
 #       instead, with no release commit: deps/<dep> is next and the bump. Every bump commit
 #       carries the trailer "RunR-Deps-Bot: <dep> <version>" (DEPS_TRAILER).
 #       DIR/bump/<dep>/ holds the bump's report with issue, version, base, bump, head (the release
-#       commit, or the bump on next) and path; DIR/matrix-suites.json (Kind suites),
-#       matrix-checks.json (ci/deps-check.sh), matrix-ui.json (ui-tests.yml), matrix-ui-stack.json
-#       (ui-stack-suite.yml), matrix-unit.json (PHPUnit) and matrix-shell.json (runtime/test) the
-#       jobs that test them (SUITE_JOBS).
+#       commit, or the bump on next) and path, retry when its issue is labelled next update
+#       required; DIR/matrix-suites.json (Kind suites), matrix-checks.json (ci/deps-check.sh),
+#       matrix-ui.json (ui-tests.yml), matrix-ui-stack.json (ui-stack-suite.yml), matrix-unit.json
+#       (PHPUnit) and matrix-shell.json (runtime/test) the jobs that test them (SUITE_JOBS).
+#       A bump whose image comes from the reqs mirror (its report's mirror: "TARGET SOURCE") needs
+#       that copy before its suites: one the mirror has is noted (mirror.log); a missing one goes
+#       to DIR/mirror.json ([{dep, target, source}]) for the job Reqs mirror (mirror-needed), or,
+#       in a dry run (DEPS_DRY_RUN or DRY_RUN true: nothing is pushed), becomes a stand-in: the
+#       suites load SOURCE under TARGET's name (standins; E2E_IMAGE_STANDINS of its Kind suites,
+#       REQS_MIRROR_STANDINS of its shell job)
+#   bash ci/deps-run.sh mirror MIRROR.json OUT
+#       the job Reqs mirror, never in a dry run: every copy of MIRROR.json made with crane (logged
+#       in to ghcr.io with the job's GITHUB_TOKEN, packages: write), a Docker Hub source through
+#       mirror.gcr.io by Docker Hub's digest when Docker Hub refuses; one the mirror has already is
+#       left as it is. OUT/mirror: "TARGET present|copied|failed DETAIL" per copy (the artifact
+#       deps-result-mirror, which outcome reads); exit 1 when one failed
 #   bash ci/deps-run.sh outcome DIR
 #       after the test jobs (their results in DIR/results/<artifact>/): DIR/outcome/<dep> is
-#       green, red, attention, held, current or error; DIR/green lists the green ones in the
-#       order of a batch: an urgent one (a security advisory) first, then by issue
+#       green, red, attention (not mechanical), held (the run cannot release it now: the base, or a
+#       reqs mirror copy it needs that failed), current or error; DIR/green lists the green ones in
+#       the order of a batch: an urgent one (a security advisory) first, then by issue
 #   bash ci/deps-run.sh batch DIR CLONE
 #       the green bumps together, one batch per path (DIR/batch/release/, DIR/batch/next/): the
 #       first is its own bump, every other one is made again on the one before it by the tag's
@@ -61,9 +74,14 @@ set -euo pipefail
 #       again), the comments in DIR/comments/; and what the weekly digest's lines become, one per
 #       bump in DIR/lines (ci/deps-digest.sh report: a test of a digest line gets no action of
 #       its own, only its line; one of an issue of its own both). A test's ref (the plan's: N, or
-#       N:group) is DIR/bump/<dep>/ref. --dry-run writes the comments, no action and no line
+#       N:group) is DIR/bump/<dep>/ref. A bump that is not mechanical, failed its suites or failed
+#       together with the run's other bumps gets the label next update required (NEXT_LABEL; its
+#       row that state) and the bot tries it again every week; a green one of a labelled issue
+#       loses it when it ships. "needs attention" is for the run itself (its release or landing did
+#       not finish). --dry-run writes the comments, no action and no line
 #
-# Needs bash, git, jq.
+# Needs bash, git, jq; crane for the reqs mirror (bumps: whether the mirror has a copy, anonymously;
+# mirror: the copies).
 # ─────────────────────────────────────────────────────────────────────────────
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -76,6 +94,15 @@ source "$ROOT/ci/deps/lib.sh"
 DEPS_TRAILER="${DEPS_TRAILER:-RunR-Deps-Bot}"
 PASSED_LABEL="${DEPS_PASSED_LABEL:-deps: passed}"
 ATTENTION_LABEL="${DEPS_ATTENTION_LABEL:-needs attention}"
+# an update the bot could not move or that failed: it tries it again every week
+NEXT_LABEL="${DEPS_NEXT_LABEL:-next update required}"
+# a dry run pushes nothing: no copy into the reqs mirror either (the suites take a stand-in)
+DRY="${DEPS_DRY_RUN:-${DRY_RUN:-false}}"
+# the copies the bot makes into the reqs mirror (ci/deps-bump.sh REPORT/mirror): the mirror's
+# images, from Docker Hub, ghcr.io, quay.io or registry.k8s.io
+MIRROR_TARGET_RE='^ghcr\.io/brf-tech/runr/reqs/[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$'
+MIRROR_SOURCE_RE='^(docker\.io|ghcr\.io|quay\.io|registry\.k8s\.io)/[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$'
+MIRROR_RETRY_PAUSE="${DEPS_MIRROR_RETRY_PAUSE:-10}"
 # the release moved under the green bumps this many runs in a row (another release came first): the
 # next weekly run tries again
 MAX_ATTEMPTS="${DEPS_MAX_ATTEMPTS:-3}"
@@ -111,6 +138,7 @@ cmd_bumps() {
   local tests="$1" clone="$2" dir="$3" public="$4" run_url="${5:-}" base base_tag new n i issue dep version report rc err path next_base f
   mkdir -p "$dir/bump"
   for f in $SUITE_JOBS unit shell; do echo '[]' > "$dir/matrix-${f%%:*}.json"; done
+  echo '[]' > "$dir/mirror.json"
   err=""
   if ! bash "$ROOT/ci/deps-release.sh" base "$clone" "$public" > "$dir/base.env" 2> "$dir/base.err"; then
     err="$(tr '\n' ' ' < "$dir/base.err")"
@@ -133,7 +161,10 @@ cmd_bumps() {
     jq -r ".[$i].ref // (.[$i].issue | tostring)" "$tests" > "$report/ref"
     echo "$version" > "$report/version"
     echo "$run_url" > "$report/run-url"
-    rm -f -- "$report/updates.json" "$report/urgent" "$report/held" "$report/held-wait"
+    rm -f -- "$report/updates.json" "$report/urgent" "$report/held" "$report/held-wait" "$report/retry" \
+      "$report/standins" "$report/mirror-needed" "$report/mirror.log"
+    # its issue is labelled next update required: a green one loses the label
+    [ "$(jq -r ".[$i].retry // false" "$tests")" != true ] || touch "$report/retry"
     # a package group's updates (its finding's marker) and whether an advisory makes it urgent
     if jq -e ".[$i].updates" "$tests" >/dev/null 2>&1; then
       jq -c ".[$i] | {updates, urgent: (.urgent // false)}" "$tests" > "$report/updates.json"
@@ -155,7 +186,11 @@ cmd_bumps() {
       # the tag's own bump makes it: a dependency it does not know yet waits for the next full release
       if ! knows "$clone" "$base" "$dep"; then
         echo "held" > "$report/result"
-        echo "the last release's bot does not know ${dep}; the next full release brings it" > "$report/held"
+        if [ "${dep%%--*}" != "$dep" ]; then
+          echo "the last release's bot cannot move a constraint yet (${dep}); the next full release brings it" > "$report/held"
+        else
+          echo "the last release's bot does not know ${dep}; the next full release brings it" > "$report/held"
+        fi
         touch "$report/held-wait"
         continue
       fi
@@ -194,6 +229,10 @@ cmd_bumps() {
         *) echo "error" > "$report/result"; cat "$report/merge.err" >> "$report/bump.log"; continue ;;
       esac
     fi
+    if ! mirror_prereq "$dir" "$report"; then
+      echo "error" > "$report/result"
+      continue
+    fi
     git -C "$clone" branch -f "deps/${dep}" HEAD
     git -C "$clone" log --format='%H %an <%ae> %s' -2 HEAD
     add_matrix "$dir" "$report" "$dep" "$issue"
@@ -210,12 +249,116 @@ deps_path_of() {
 
 # knows CLONE COMMIT DEP — COMMIT's own bump knows DEP: a package group's row in its
 # ci/deps/packages.sh (none on a tag from before the groups), a chart's or Knative's in its
-# ci/deps/lib.sh (DEPS_BOT)
+# ci/deps/lib.sh (DEPS_BOT); a release outside a constraint (<group>--<package>) also needs its
+# ci/deps/bump-packages.sh to move a constraint (bump_outside)
 knows() {
-  local file=ci/deps/lib.sh text
-  [ -z "$(deps_pkg_row "$3" || true)" ] || file=ci/deps/packages.sh
+  local file=ci/deps/lib.sh text base="${3%%--*}"
+  [ -z "$(deps_pkg_row "$base" || true)" ] || file=ci/deps/packages.sh
   text="$(git -C "$1" show "${2}:${file}" 2>/dev/null || true)"
-  grep -qE "^[[:space:]]*\"${3}\|" <<<"$text"
+  grep -qE "^[[:space:]]*\"${base}\|" <<<"$text" || return 1
+  [ "$base" = "$3" ] || git -C "$1" show "${2}:ci/deps/bump-packages.sh" 2>/dev/null | grep -q '^bump_outside()'
+}
+
+# reqs_present TARGET — the reqs mirror has TARGET (crane, anonymously: the mirror is public)
+reqs_present() { command -v crane >/dev/null 2>&1 && crane digest "$1" >/dev/null 2>&1; }
+
+# mirror_prereq DIR REPORT — the copies the reqs mirror needs before the bump's suites (REPORT/mirror
+# of the tag's bump, "TARGET SOURCE" per image): one the mirror has is noted; a missing one goes to
+# DIR/mirror.json for the job Reqs mirror (REPORT/mirror-needed), or in a dry run, which copies
+# nothing, becomes a stand-in (REPORT/standins: TARGET=SOURCE,…): the bump's Kind suites load SOURCE
+# under TARGET's name (E2E_IMAGE_STANDINS), its shell job's reqs mirror check takes it
+# (REQS_MIRROR_STANDINS). Status 1: the bump names a copy the bot does not make
+mirror_prereq() {
+  local dir="$1" report="$2" target source standins=""
+  [ -s "$report/mirror" ] || return 0
+  : > "$report/mirror.log"
+  while read -r target source; do
+    [ -n "$target" ] || continue
+    if ! [[ "$target" =~ $MIRROR_TARGET_RE ]] || ! [[ "$source" =~ $MIRROR_SOURCE_RE ]]; then
+      echo "the bump names a reqs mirror copy the bot does not make: '${target}' from '${source}'" | tee -a "$report/bump.log"
+      return 1
+    fi
+    if reqs_present "$target"; then
+      echo "\`${target}\` is in the reqs mirror already" >> "$report/mirror.log"
+    elif [ "$DRY" = true ]; then
+      standins="${standins:+${standins},}${target}=${source}"
+      echo "\`${target}\` is not in the reqs mirror yet: a run copies it from \`${source}\` before the suites; this dry run copied nothing and its suites loaded \`${source}\` under that name" >> "$report/mirror.log"
+    else
+      echo "$target" >> "$report/mirror-needed"
+      jq -c --arg d "${report##*/}" --arg t "$target" --arg s "$source" '. + [{dep: $d, target: $t, source: $s}] | unique_by(.target)' \
+        "$dir/mirror.json" > "$dir/mirror.tmp" && mv "$dir/mirror.tmp" "$dir/mirror.json"
+      echo "\`${target}\` was copied into the reqs mirror from \`${source}\` before the suites (the job Reqs mirror)" >> "$report/mirror.log"
+    fi
+  done < "$report/mirror"
+  if [ -n "$standins" ]; then
+    echo "$standins" > "$report/standins"
+    jq -c --arg s "E2E_IMAGE_STANDINS=${standins}" 'map(if (.job // "kind") == "kind" then .env = (((.env // "") + " " + $s) | ltrimstr(" ")) else . end)' \
+      "$report/suites.json" > "$report/suites.tmp" && mv "$report/suites.tmp" "$report/suites.json"
+  fi
+}
+
+# mirror_copy SOURCE TARGET — crane copy SOURCE TARGET, once more after MIRROR_RETRY_PAUSE when GHCR
+# refuses it (DENIED: the first push of a new package), and a Docker Hub source through mirror.gcr.io
+# by Docker Hub's digest (a HEAD request, which the pull limit does not count) when Docker Hub
+# refuses it; prints the last error when no copy worked
+mirror_copy() {
+  local source="$1" target="$2" err want path
+  err="$(crane copy "$source" "$target" 2>&1)" && return 0
+  if grep -q DENIED <<<"$err"; then
+    sleep "$MIRROR_RETRY_PAUSE"
+    err="$(crane copy "$source" "$target" 2>&1)" && return 0
+  fi
+  if [[ "$source" == docker.io/* ]] && want="$(crane digest "$source" 2>/dev/null)"; then
+    path="${source#docker.io/}"
+    err="$(crane copy "mirror.gcr.io/${path%%:*}@${want}" "$target" 2>&1)" && return 0
+  fi
+  tail -n 1 <<<"$err" | cut -c1-300
+  return 1
+}
+
+cmd_mirror() {
+  local list="$1" out="$2" n i target source err rc=0
+  mkdir -p "$out"
+  : > "$out/mirror"
+  n="$(jq length "$list")"
+  for ((i = 0; i < n; i++)); do
+    target="$(jq -r ".[$i].target" "$list")"
+    source="$(jq -r ".[$i].source" "$list")"
+    if ! [[ "$target" =~ $MIRROR_TARGET_RE ]] || ! [[ "$source" =~ $MIRROR_SOURCE_RE ]]; then
+      echo "${target} failed not a copy the bot makes (from ${source})" | tee -a "$out/mirror"
+      rc=1
+      continue
+    fi
+    if crane digest "$target" >/dev/null 2>&1; then
+      echo "${target} present" | tee -a "$out/mirror"
+    elif err="$(mirror_copy "$source" "$target")"; then
+      echo "${target} copied $(crane digest "$target" 2>/dev/null || true) from ${source}" | tee -a "$out/mirror"
+    else
+      echo "${target} failed ${err:-crane copy failed}" | tee -a "$out/mirror"
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
+# mirror_failed DIR REPORT — why the reqs mirror lacks a copy the bump needed (nothing when every
+# one is there): the job Reqs mirror's result (deps-result-mirror)
+mirror_failed() {
+  local res="$1/results/deps-result-mirror/mirror" target line status pkg
+  while read -r target; do
+    [ -n "$target" ] || continue
+    line="$(awk -v t="$target" '$1 == t' "$res" 2>/dev/null | tail -n 1)"
+    status="$(awk '{ print $2 }' <<<"$line")"
+    case "$status" in present|copied) continue ;; esac
+    pkg="${target#ghcr.io/brf-tech/}"
+    pkg="${pkg%:*}"
+    if [ -z "$line" ]; then
+      echo "its image must be in the reqs mirror before its suites, and the job Reqs mirror left no result for \`${target}\` (it failed before the copy, or did not run): see the run's log"
+    else
+      echo "its image must be in the reqs mirror before its suites, and the bot could not copy \`${target}\`: $(cut -d' ' -f3- <<<"$line"). The package must let this repository's workflows write to it: https://github.com/orgs/BRF-Tech/packages/container/${pkg//\//%2F}/settings → Manage Actions access → BRF-Tech/runr, role Write"
+    fi
+    return 0
+  done < "$2/mirror-needed"
 }
 
 # bump_on CLONE COMMIT DEP VERSION REPORT RUN_URL — COMMIT's own ci/deps-bump.sh moves the dependency
@@ -252,7 +395,8 @@ add_matrix() {
   rm -f -- "$dir/suites.tmp"
   for f in shell unit; do
     [ "$f" = shell ] || [ "$(cat "$report/unit" 2>/dev/null || echo 1)" = 1 ] || continue
-    jq -c --arg dep "$dep" --argjson issue "$issue" --arg ref "$ref" '. + [{dep: $dep, issue: $issue, ref: $ref}]' \
+    jq -c --arg dep "$dep" --argjson issue "$issue" --arg ref "$ref" --arg s "$([ "$f" = shell ] && cat "$report/standins" 2>/dev/null || true)" \
+      '. + [{dep: $dep, issue: $issue, ref: $ref} + (if $s != "" then {standins: $s} else {} end)]' \
       "$dir/matrix-${f}.json" > "$dir/matrix.tmp" && mv "$dir/matrix.tmp" "$dir/matrix-${f}.json"
   done
 }
@@ -286,7 +430,7 @@ suite_green() {
 }
 
 cmd_outcome() {
-  local dir="$1" report dep result suite ok
+  local dir="$1" report dep result suite ok why
   mkdir -p "$dir/outcome"
   : > "$dir/green"
   : > "$dir/green.tmp"
@@ -298,6 +442,13 @@ cmd_outcome() {
     case "$result" in
       current|attention|error|held) echo "$result" > "$dir/outcome/$dep"; continue ;;
     esac
+    # a copy into the reqs mirror it needed and did not get: its suites ran without its image
+    if [ -s "$report/mirror-needed" ] && why="$(mirror_failed "$dir" "$report")" && [ -n "$why" ]; then
+      echo held > "$report/result"
+      echo "$why" > "$report/held"
+      echo held > "$dir/outcome/$dep"
+      continue
+    fi
     ok=1
     : > "$report/failed"
     for suite in $(report_suites "$report"); do
@@ -495,7 +646,7 @@ batch_chain() {
 # batch_matrix DIR KIND — the combined tests of a batch: the union's Kind suites, checks and the
 # console's, PHPUnit when one of its bumps needs it, runtime/test
 batch_matrix() {
-  local dir="$1" b="$1/batch/$2" id ref f
+  local dir="$1" b="$1/batch/$2" id ref f standins m
   id="$(batch_id "$2")"
   ref="deps/${id}"
   for f in $SUITE_JOBS; do
@@ -505,9 +656,12 @@ batch_matrix() {
     mv "$dir/batch/matrix.tmp" "$dir/batch/matrix-${f%%:*}.json"
   done
   rm -f -- "$dir/batch/add.json"
+  # the stand-ins of a dry run's members (mirror_prereq)
+  standins="$(while read -r m; do cat "$dir/bump/$m/standins" 2>/dev/null || true; done < "$b/members" | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -)"
   for f in shell unit; do
     [ "$f" = shell ] || [ "$(cat "$b/report/unit")" = 1 ] || continue
-    jq -c --arg dep "$id" --arg ref "$ref" '. + [{dep: $dep, ref: $ref}]' "$dir/batch/matrix-${f}.json" > "$dir/batch/matrix.tmp"
+    jq -c --arg dep "$id" --arg ref "$ref" --arg s "$([ "$f" = shell ] && echo "$standins")" \
+      '. + [{dep: $dep, ref: $ref} + (if $s != "" then {standins: $s} else {} end)]' "$dir/batch/matrix-${f}.json" > "$dir/batch/matrix.tmp"
     mv "$dir/batch/matrix.tmp" "$dir/batch/matrix-${f}.json"
   done
 }
@@ -593,7 +747,7 @@ combined_breaker() {
   dep="${members[$k]}"
   # the failed suites that are its own or those of the bumps before it
   mine="$(for ((i = 0; i <= k; i++)); do member_suites "$dir" "$b" "${members[$i]}"; done | grep -xF -f "$b/failed" | sort -u | paste -sd ' ' - || true)"
-  echo "**Needs attention: $(bump_name "$dir" "$dep") passed alone on $(where_of "$dir" "$kind"), but failed together with the bumps before it** ($(bump_names "$dir" "${members[@]:0:$k}")). This run's $(what_of "$dir" "$kind") leaves it out; nothing of it was pushed."
+  echo "**Next update required: $(bump_name "$dir" "$dep") passed alone on $(where_of "$dir" "$kind"), but failed together with the bumps before it** ($(bump_names "$dir" "${members[@]:0:$k}")). This run's $(what_of "$dir" "$kind") leaves it out; nothing of it was pushed."
   echo ""
   echo "The combined tree of this run's green bumps (\`deps/${id}\`, $(cut -c1-12 "$b/head"): $(bump_names "$dir" "${members[@]}")) failed $(paste -sd ' ' "$b/failed" | sed 's/ /, /g'); with the bumps before it, its suites include ${mine// /, }. The $(what_of "$dir" "$kind") takes the bumps before it; the ones after it wait for the next run."
   echo ""
@@ -612,7 +766,7 @@ combined_breaker() {
 remake_breaker() {
   local dir="$1" kind="$2" dep="$3" b="$1/batch/$2" members=()
   mapfile -t members < "$b/members"
-  echo "**Needs attention: $(bump_name "$dir" "$dep") passed alone on $(where_of "$dir" "$kind"), but not together with the other green bumps of this run.** This run's $(what_of "$dir" "$kind") leaves it out; nothing of it was pushed."
+  echo "**Next update required: $(bump_name "$dir" "$dep") passed alone on $(where_of "$dir" "$kind"), but not together with the other green bumps of this run.** This run's $(what_of "$dir" "$kind") leaves it out; nothing of it was pushed."
   echo ""
   if [ "$(cat "$b/breaker.how" 2>/dev/null || echo remake)" = release ]; then
     echo "With the bumps before it ($(bump_names "$dir" "${members[@]}")):"
@@ -913,6 +1067,7 @@ comment_release() {
     echo "**Dry run: ${name} passed on ${base_tag} and would be RunR ${new_tag#v}**${others:+, together with ${others}} (${rstate}; nothing was pushed or created, the issue is left as it is)."
     echo ""
     if [ -s "$dir/release/steps" ]; then sed 's/^/- /' "$dir/release/steps"; fi
+    if [ -s "$report/mirror.log" ]; then sed 's/^/- reqs mirror: /' "$report/mirror.log"; fi
     [ ! -s "$dir/release/failed" ] || echo "- failed: $(cat "$dir/release/failed")"
     [ ! -s "$dir/release/moved" ] || echo "- moved: $(cat "$dir/release/moved")"
     echo ""
@@ -944,6 +1099,7 @@ comment_release() {
       echo "- Tagged ${new_tag} (signed) on the origin's main and on this repository's main (${public:0:12}); next takes it as ${merge:0:12}, so the next release from next carries it."
       echo "- Images built by release-images.yml ([run](${images})) and checked: every tag pulls without credentials and names the digests the run pushed."
       echo "- The chart ${new_tag#v} is on helm.brf.sh and is the release's."
+      if [ -s "$report/mirror.log" ]; then sed 's/^/- Reqs mirror: /' "$report/mirror.log"; fi
       echo ""
       cat "$report/summary.md"
       echo ""
@@ -1002,6 +1158,7 @@ comment_land() {
   if [ "$dry" = --dry-run ]; then
     verdict=none
     echo "**Dry run: ${name} passed on next and would land on next**${others:+, together with ${others}} (${lstate}; nothing was pushed, the issue is left as it is)."
+    if [ -s "$report/mirror.log" ]; then echo ""; sed 's/^/- reqs mirror: /' "$report/mirror.log"; fi
     echo ""
     if [ -s "$dir/land/steps" ]; then sed 's/^/- /' "$dir/land/steps"; fi
     [ ! -s "$dir/land/failed" ] || echo "- failed: $(cat "$dir/land/failed")"
@@ -1048,9 +1205,23 @@ comment_land() {
   esac
 }
 
+# failed_commands DIR NAME REPORT — the commands of the suites of a bump (or a batch) that failed,
+# as the comments name them ("`runtime/ci.sh test`, `ci/deps-check.sh image:…`")
+failed_commands() {
+  local suite out=() joined
+  while read -r suite; do
+    [ -n "$suite" ] || continue
+    out+=("$(suite_line "$1" "$2" "$suite" "$3" | sed -E 's/^(`[^`]*`).*/\1/')")
+  done < "$3/failed"
+  [ "${#out[@]}" -gt 0 ] || { echo "a suite"; return 0; }
+  local IFS=';'
+  joined="${out[*]}"
+  echo "${joined//;/, }"
+}
+
 cmd_actions() {
   local dir="$1" run_url="$2" attempt="${3:-1}" dry="${4:-}" report dep issue version outcome base_tag head comment suite
-  local name role rstate lstate new_tag release land next_attempt verdict where retest=() ref kind group lversion digest split
+  local name role rstate lstate new_tag release land next_attempt verdict where retest=() ref kind group lversion digest split failed_cmds first
   mkdir -p "$dir/comments"
   : > "$dir/actions"
   : > "$dir/lines"
@@ -1129,23 +1300,43 @@ cmd_actions() {
           act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
           line new line "$(cat "$report/held")" "" "" "$run_url"
         else
-          {
-            echo "**The bot cannot release now:** $(cat "$report/held")"
-            echo ""
-            echo "Nothing was tested or pushed ([run](${run_url})). Once that is fixed, run **Actions → Dependency tests → Run workflow** with $(rerun_hint "$report")."
-          } > "$comment"
-          act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
+          if [ -s "$report/mirror-needed" ]; then
+            {
+              echo "**The bot cannot test ${name} now:** $(cat "$report/held")."
+              echo ""
+              echo "Nothing was released or pushed ([run](${run_url})). Once that is fixed, the next weekly run tests it again, or run **Actions → Dependency tests → Run workflow** with $(rerun_hint "$report")."
+            } > "$comment"
+          else
+            {
+              echo "**The bot cannot release now:** $(cat "$report/held")"
+              echo ""
+              echo "Nothing was tested or pushed ([run](${run_url})). Once that is fixed, run **Actions → Dependency tests → Run workflow** with $(rerun_hint "$report")."
+            } > "$comment"
+          fi
+          # the run itself needs a person (its issue, needs attention): the update keeps its labels
+          act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
           # one cause for every bump of the run: one comment on the digest says it
-          line "needs attention" incident "the bot cannot release now" "$comment" "" "$run_url"
+          line "needs attention" incident "$([ -s "$report/mirror-needed" ] && echo "its reqs mirror copy failed" || echo "the bot cannot release now")" "$comment" "" "$run_url"
         fi ;;
       attention)
-        {
-          cat "$report/summary.md"
-          echo ""
-          echo "Nothing was pushed: the origin and this repository are unchanged ([run](${run_url})). Once the last release can take it (or a person moved it), run **Actions → Dependency tests → Run workflow** with this issue's number to test it again; a newer release supersedes this issue by itself."
-        } > "$comment"
-        act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
-        line "needs attention" split "no mechanical bump: a person moves it" "$comment" "" "$run_url" ;;
+        # not mechanical: the bump (or its release) cannot be made without code or a person's
+        # change; tried again every week, a newer release may be mechanical
+        first="$(sed -n 's/^- //p' "$report/summary.md" 2>/dev/null | head -n 1 | cut -c1-200)"
+        if [ -e "$report/retry" ]; then
+          {
+            echo "**Next update required: ${name} is still not mechanical on ${where}** ([run](${run_url})); nothing was pushed, the label stays and the next weekly run tries again:"
+            echo ""
+            grep '^- ' "$report/summary.md" 2>/dev/null || cat "$report/summary.md"
+          } > "$comment"
+        else
+          {
+            cat "$report/summary.md"
+            echo ""
+            echo "Nothing was pushed: the origin and this repository are unchanged ([run](${run_url})). The issue gets \`${NEXT_LABEL}\`: the bot tries it again on every weekly run (a newer release may be mechanical), and ships it once it is and its suites pass. A newer release supersedes this issue by itself."
+          } > "$comment"
+        fi
+        act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$NEXT_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
+        line "next update required" split "not mechanical${first:+: ${first}}" "$comment" "" "$run_url" ;;
       error)
         {
           echo "**The dependency test bot could not check ${name}** ([run](${run_url})): the next run tries again."
@@ -1157,8 +1348,9 @@ cmd_actions() {
         act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
         line new line "the bot could not check it: the next run tries again" "" "" "$run_url" ;;
       red)
+        failed_cmds="$(failed_commands "$dir" "$dep" "$report")"
         {
-          echo "**Needs attention: ${name} failed on ${where}.** Nothing was released or pushed; the run's other bumps went without it."
+          echo "**Next update required: ${name} failed on ${where}:** ${failed_cmds} ([run](${run_url}), its log below). Nothing was released or pushed; the run's other bumps went without it. The issue keeps \`${NEXT_LABEL}\`: the bot tries it again on every weekly run (a newer release may fix it) and ships it once its suites pass."
           echo ""
           if [ "$where" = next ]; then
             echo "The bump (on next, commit ${head:0:12} of this [run](${run_url}), not pushed):"
@@ -1176,10 +1368,10 @@ cmd_actions() {
             failure_details "$dir" "$dep" "$suite"
           done < "$report/failed"
           echo ""
-          echo "Fix what failed (on next, and in a release the bot can build on), or decide the version waits; then run **Actions → Dependency tests → Run workflow** with this issue's number. A newer release supersedes this issue by itself."
+          echo "When RunR's code must change for it, fix it on next; a release outside what RunR can take waits with a hold (ci/deps/holds.txt, with its reason). A newer release supersedes this issue by itself."
         } > "$comment"
-        act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
-        line red split "failed on ${where}" "$comment" "" "$run_url" ;;
+        act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$NEXT_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"
+        line "next update required" split "failed on ${where}: ${failed_cmds}" "$comment" "" "$run_url" ;;
       green)
         role="$(cat "$dir/role/$dep" 2>/dev/null || echo nobatch)"
         verdict=comment
@@ -1193,18 +1385,27 @@ cmd_actions() {
             {
               cat "$dir/role/$dep.md"
               echo ""
-              echo "Fix what keeps them apart (on next, and in a release the bot can build on), or decide the version waits; then run **Actions → Dependency tests → Run workflow** with this issue's number ([run](${run_url})). A newer release supersedes this issue by itself."
+              echo "The issue gets \`${NEXT_LABEL}\`: the bot tries it again on every weekly run ([run](${run_url})), with the bumps of that run. A newer release supersedes this issue by itself."
             } > "$comment" ;;
           wait)
             { cat "$dir/role/$dep.md"; echo ""; echo "This [run](${run_url})."; } > "$comment" ;;
           *)
             echo "**${name} passed alone on ${where}; it waits for the next run** ([run](${run_url})): this run could not put its green bumps together (its job *The green bumps together* did not finish). Nothing was pushed for it, and the issue keeps no label: the next run makes and tests it again." > "$comment" ;;
         esac
-        case "$verdict" in
-          passed) act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$PASSED_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" "$(printf 'close\t%s' "$issue")" ;;
-          attention) act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" ;;
-          retest) act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"; retest+=("$ref") ;;
-          comment) act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" ;;
+        case "$verdict:$role" in
+          passed:*)
+            # shipped: a retried one loses next update required
+            if [ -e "$report/retry" ]; then
+              act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$PASSED_LABEL")" "$(printf 'unlabel\t%s\t%s' "$issue" "$NEXT_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" "$(printf 'close\t%s' "$issue")"
+            else
+              act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$PASSED_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" "$(printf 'close\t%s' "$issue")"
+            fi ;;
+          # failed together with the run's other bumps: an update that breaks us, tried again weekly
+          attention:breaker) act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$NEXT_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" ;;
+          # the run's release or landing did not finish: the run needs a person
+          attention:*) act "$issue" "$(printf 'label\t%s\t%s' "$issue" "$ATTENTION_LABEL")" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" ;;
+          retest:*) act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")"; retest+=("$ref") ;;
+          comment:*) act "$issue" "$(printf 'comment\t%s\t%s' "$issue" "$comment")" ;;
         esac
         # the row of the weekly summary: what became of the bump, in a few words (its comment: the
         # run's summary; the issue of a run that needs a person when the release or landing does)
@@ -1214,7 +1415,7 @@ cmd_actions() {
           *:retest) line green line "the base moved under it: tested again, attempt ${next_attempt} of ${MAX_ATTEMPTS}" "" "" "$run_url" ;;
           release:attention) line "needs attention" incident "its release ${new_tag} did not finish" "$comment" "" "$run_url" ;;
           land:attention) line "needs attention" incident "its landing on next did not finish" "$comment" "" "$run_url" ;;
-          breaker:*) line "needs attention" "$split" "passed alone, failed together with this run's other bumps" "$comment" "" "$run_url" ;;
+          breaker:*) line "next update required" "$split" "passed alone, failed together with this run's other bumps" "$comment" "" "$run_url" ;;
           wait:*) line green line "passed alone; this run's release stops before it: the next run tests it again" "" "" "$run_url" ;;
           release:comment|land:comment) line green line "the base moved under it ${MAX_ATTEMPTS} runs in a row: the next weekly run tests it again" "" "" "$run_url" ;;
           release:none|land:none) ;;
@@ -1236,6 +1437,7 @@ case "$command" in
   batch) cmd_batch "$@" ;;
   pick) cmd_pick "$@" ;;
   resume) cmd_resume "$@" ;;
+  mirror) cmd_mirror "$@" ;;
   actions) cmd_actions "$@" ;;
-  *) sed -n '4,66p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '4,84p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

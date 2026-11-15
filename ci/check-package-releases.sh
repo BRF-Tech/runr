@@ -15,12 +15,15 @@ set -euo pipefail
 # body ends with a marker the bot reads: <!-- deps-bot {"group", "updates": [{name, from, to, …}],
 # "urgent", "advisories"} -->. An update outside the manifest's constraint (a new major, a new
 # minor of a 0.x caret range, an exact pin, a new Go major path, the Go toolchain) is a finding of
-# its own that a person decides: deps: <group> <name> <version> released (outside <constraint>),
-# its marker {"group", "kind": "outside", "name", "line", "from", "to", "constraint", "where",
-# "why"}. A security advisory (composer audit, npm audit, govulncheck) makes the group's finding
-# urgent: its packages join it and the title says (security). The holds (ci/deps/holds.txt) are
-# left and named with their reasons; a release outside the constraint that a hold keeps is written
-# to RELEASES_REPORT_DIR/held/ (a line "held (<reason>)" of the weekly digest, no issue), and every
+# its own in the same form, under the id <group>--<package> (deps_outside_id): deps: <id>
+# [<fingerprint>]: 1 update: <name> <version> (outside <constraint>), its marker's one update
+# {name, from, to, "outside": true, constraint, line, why, where, files}; the test bot attempts it
+# on its weekly run (it moves the constraint mechanically). A security advisory (composer audit,
+# npm audit, govulncheck) makes the group's finding urgent: its packages join it and the title says
+# (security). The holds (ci/deps/holds.txt) are
+# left and named with their reasons; an update a hold keeps back (a release outside the constraint,
+# or a minor or patch one) is written to RELEASES_REPORT_DIR/held/ (a line "held (<reason>)" of the
+# weekly digest, listed under Next update required, no issue), and every
 # group whose sources were all read is a line of RELEASES_REPORT_DIR/checked.
 # ci/deps-digest.sh file turns the findings into the weekly digest and the few issues that need a
 # person (.github/workflows/upstream-releases.yml).
@@ -117,22 +120,36 @@ series() {
   else echo "$1"; fi
 }
 
-# outside GROUP NAME FROM TO CONSTRAINT WHERE [LINE] [WHY] — an update a person decides: one finding
-# per release line (vite 8.x; LINE when the version's form says otherwise), not per version; WHY
-# when it is outside for another reason than these
+# outside GROUP NAME FROM TO CONSTRAINT WHERE [LINE] [WHY] — a release outside the constraint: a
+# finding of its own, in the form of a group's (one update), under the id <group>--<package>
+# (deps_outside_id), which the dependency test bot attempts on its weekly run: it moves the
+# constraint mechanically (ci/deps/bump-packages.sh, bump_outside) and runs the group's suites. LINE
+# the release line it opens (vite 8.x; by default series of TO), WHY when it is outside for another
+# reason than a new major, a 0.x minor, an exact pin or a new toolchain. The Go toolchain's
+# (go-toolchain) is the workflows' pin's, pins-ci--go, which the bump refuses with its reason.
 outside() {
-  local slug line
-  slug="$(tr -c 'a-zA-Z0-9.\n-' '-' <<<"$2" | tr -s '-')"
+  local group="$1" name="$2" line why id fp marker files
   line="${7:-$(series "$4")}"
-  if [ "$2" = go ]; then line="$4"; fi
-  echo "▶ deps: $1 $2 ${line} released (outside $5)"
-  report "deps-$1-outside-${slug}-${line}" "deps: $1 $2 ${line} released (outside $5)" "**${2}** ${4} is out; ${1} pins ${3} (${6}), and ${4} is outside \`${5}\`: ${8:-a new major, a new minor of a 0.x range, an exact pin or a new toolchain}. The bot does not move it: read its release notes, move it by hand (with the code it needs) and the bot takes the minor and patch updates from there.
+  if [ "$name" = go ]; then line="$4"; fi
+  why="${8:-a new major, a new minor of a 0.x range, an exact pin or a new toolchain}"
+  [ "$group" != go-toolchain ] || group=pins-ci
+  id="$(deps_outside_id "$group" "$name")"
+  fp="$(printf '%s@%s\n' "$name" "$4" | deps_fingerprint)"
+  # the files the update moves: WHERE when it names paths (a sentence names none)
+  files="$(jq -nc --arg w "$6" '($w | split(" ") | map(select(length > 0))) as $ws
+    | if ($ws | length) > 0 and all($ws[]; test("^[A-Za-z0-9._/-]+$") and (test("[.][.]") | not)) then $ws else [] end')"
+  marker="$(jq -nc --arg g "$id" --arg n "$name" --arg f "$3" --arg t "$4" --arg c "$5" --arg l "$line" --arg w "$6" --arg why "$why" \
+    --argjson files "$files" \
+    '{group: $g, updates: [{name: $n, from: $f, to: $t, outside: true, constraint: $c, line: $l, why: $why, where: $w, files: $files}], urgent: false, advisories: []}' \
+    | sed 's/-->/--\\u003e/g')"
+  echo "▶ deps: ${id} [${fp}]: 1 update: ${name} ${4} (outside ${5})"
+  report "deps-${id}-${fp}" "deps: ${id} [${fp}]: 1 update: ${name} ${4} (outside ${5})" "**${name}** ${4} is out (the ${line} line); $(deps_base_group "$id") pins ${3} (${6}), and ${4} is outside \`${5}\`: ${why}.
+
+The dependency test bot attempts it on its weekly run: it moves the constraint mechanically, makes the group's bump and runs the group's suites, then releases it (or lands it on next) like any other update. One it cannot move mechanically, or whose suites fail, gets the label \`next update required\` and is tried again on every weekly run: a newer release may fix it. A person who wants it held writes a hold with its reason (\`ci/deps/holds.txt\`).
 
 Reported by ci/check-package-releases.sh.
 
-<!-- deps-bot $(jq -nc --arg g "$1" --arg n "$2" --arg l "$line" --arg f "$3" --arg t "$4" --arg c "$5" --arg w "$6" \
-  --arg why "${8:-a new major, a new minor of a 0.x range, an exact pin or a new toolchain}" \
-  '{group: $g, kind: "outside", name: $n, line: $l, from: $f, to: $t, constraint: $c, where: $w, why: $why}' | sed 's/-->/--\\u003e/g') -->"
+<!-- deps-bot ${marker} -->"
 }
 
 # held_major GROUP NAME VERSION [FROM] [CONSTRAINT] — as held, for a release outside the constraint:
@@ -150,11 +167,19 @@ held_major() {
   return 0
 }
 
-# held GROUP NAME VERSION — true (and says so) when the holds keep NAME at VERSION
+# held GROUP NAME VERSION [FROM] — true (and says so) when the holds keep NAME at VERSION; the
+# update it keeps back is a line of the weekly digest too, "held (<reason>)" (under Next update
+# required), unless a release outside the constraint the hold keeps says more already (held_major)
 held() {
-  local reason
+  local reason slug
   reason="$(deps_held "$1" "$2" "$3")" || return 1
   echo "  held: $2 $3 ($reason)"
+  [ -n "${RELEASES_REPORT_DIR:-}" ] || return 0
+  mkdir -p "$RELEASES_REPORT_DIR/held"
+  slug="$(tr -c 'a-zA-Z0-9.\n-' '-' <<<"$2" | tr -s '-')"
+  [ -e "$RELEASES_REPORT_DIR/held/$1--${slug}.json" ] && return 0
+  jq -nc --arg g "$1" --arg n "$2" --arg v "$3" --arg l "$(series "$3")" --arg f "${4:-}" --arg r "$reason" \
+    '{group: $g, name: $n, version: $v, line: $l, from: $f, constraint: "", reason: $r}' > "$RELEASES_REPORT_DIR/held/$1--${slug}.json"
   return 0
 }
 # held_always GROUP NAME — true (and says so) when the holds never move NAME, whatever its version
@@ -178,7 +203,7 @@ detect_composer() {
   updates='[]'
   while IFS=$'\t' read -r name from to direct; do
     [ -n "$name" ] || continue
-    held "$group" "$name" "$to" && continue
+    held "$group" "$name" "$to" "$from" && continue
     # a transitive package moves only for an advisory (with-dependencies moves the rest with it)
     if [ "$direct" != true ] && ! jq -e --arg p "$name" 'any(.[]; .package == $p)' >/dev/null <<<"$advisories"; then continue; fi
     updates="$(jq -c --arg n "$name" --arg f "$from" --arg t "$to" --arg file "${dir}/composer.lock" '. + [{name: $n, from: $f, to: $t, files: [$file]}]' <<<"$updates")"
@@ -209,7 +234,7 @@ detect_npm() {
     latest="$(npm view "$name" dist-tags.latest 2>"$work/npm.err")" || { held_always "$group" "$name" || unreadable "${group}: npm view ${name}: $(tail -n 1 "$work/npm.err")"; continue; }
     # the newest version the range takes (npm's own semver): an array, a string or nothing
     wanted="$(npm view "${name}@${range}" version --json 2>/dev/null | jq -r 'if type == "array" then .[-1] else . end // empty' 2>/dev/null)" || wanted=""
-    if [ -f "$lock" ] && [ -n "$from" ] && [ -n "$wanted" ] && deps_is_newer "$wanted" "$from" && ! held "$group" "$name" "$wanted"; then
+    if [ -f "$lock" ] && [ -n "$from" ] && [ -n "$wanted" ] && deps_is_newer "$wanted" "$from" && ! held "$group" "$name" "$wanted" "$from"; then
       updates="$(jq -c --arg n "$name" --arg f "$from" --arg t "$wanted" --arg file "$lock" '. + [{name: $n, from: $f, to: $t, files: [$file]}]' <<<"$updates")"
     fi
     if [ -n "$latest" ] && deps_is_newer "$latest" "${wanted:-${from:-0}}" && ! held_major "$group" "$name" "$latest" "${from:-$range}" "$range"; then
@@ -274,7 +299,7 @@ detect_go() {
   local kept='[]' row
   while IFS= read -r row; do
     name="$(jq -r .name <<<"$row")"; to="$(jq -r .to <<<"$row")"
-    held "$group" "$name" "$to" || kept="$(jq -c --argjson r "$row" '. + [$r]' <<<"$kept")"
+    held "$group" "$name" "$to" "$(jq -r .from <<<"$row")" || kept="$(jq -c --argjson r "$row" '. + [$r]' <<<"$kept")"
   done < <(jq -c '.[]' <<<"$updates")
   finding "$group" "$kept" "$(jq -c '[.[] | select(.package != "stdlib" and .package != "toolchain")]' <<<"$advisories")"
   # a new major is a module of its own path: one request per direct requirement
@@ -322,7 +347,7 @@ detect_actions() {
     if [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && [[ "$comment" =~ ^v?[0-9]+(\.[0-9]+)*$ ]]; then
       major="$(deps_major "$comment")"
       best="$(newest_tag "$tags" "$major")"
-      if [ -n "$best" ] && deps_is_newer "${best%% *}" "$comment" && ! held "$group" "$repo" "${best%% *}"; then
+      if [ -n "$best" ] && deps_is_newer "${best%% *}" "$comment" && ! held "$group" "$repo" "${best%% *}" "$comment"; then
         if [ -z "${seen[$key]+x}" ]; then
           updates="$(jq -c --arg n "$repo" --arg f "$comment" --arg t "${best%% *}" --arg sha "${best##* }" --arg old "$ref" --arg file "$file" \
             '. + [{name: $n, from: $f, to: $t, sha: $sha, old_sha: $old, files: [$file]}]' <<<"$updates")"
@@ -405,7 +430,7 @@ detect_docker() {
       best="$(while read -r c; do [ -z "$c" ] || [ "$(line_of "$image" "$c")" != "$(line_of "$image" "$ver")" ] || echo "$c"; done <<<"$cand" | tail -n 1)"
       bestmaj="$(tail -n 1 <<<"$cand")"
       key="${image}:${tag}"
-      if [ -n "$best" ] && deps_is_newer "$best" "$ver" && ! held "$group" "$image" "$best"; then
+      if [ -n "$best" ] && deps_is_newer "$best" "$ver" && ! held "$group" "$image" "$best" "$tag"; then
         local newdigest=""
         if [ -n "$digest" ]; then
           newdigest="$(ghcr_digest "$path" "${prefix}${best}${suffix}" 2>/dev/null)" || newdigest=""
@@ -526,7 +551,7 @@ detect_pins() {
         vers="$(grep -E "^[0-9]+(\.[0-9]+){$((n - 1))}\$" <<<"$vers" || true)"
         best="$(while read -r c; do [ -z "$c" ] || [ "$(pin_line "$line" "$c")" != "$(pin_line "$line" "$from")" ] || echo "$c"; done <<<"$vers" | tail -n 1)"
         newest="$(tail -n 1 <<<"$vers")"
-        if [ -n "$best" ] && deps_is_newer "$best" "${from#v}" && ! held "$group" "$name" "${prefix}${best}"; then
+        if [ -n "$best" ] && deps_is_newer "$best" "${from#v}" && ! held "$group" "$name" "${prefix}${best}" "$from"; then
           updates="$(jq -c --arg n "$name" --arg f "$from" --arg t "${prefix}${best}" --arg files "$where" \
             '. + [{name: $n, from: $f, to: $t, files: ($files | split(" "))}]' <<<"$updates")"
         fi

@@ -21,7 +21,7 @@
 # see acquire_kind_lock in test-runtimes.sh).
 
 supply_chain_image_tag() {
-  echo "${REGISTRY}/supply-chain:${SUPPLY_CHAIN_VERSION:-1.1.1}"
+  echo "${REGISTRY}/supply-chain:${SUPPLY_CHAIN_VERSION:-1.1.2}"
 }
 
 cmd_build_supply_chain() {

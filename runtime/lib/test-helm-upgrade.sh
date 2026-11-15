@@ -71,7 +71,7 @@
 #                         or registry:upgrade-zot,{region} (repeatable; the dependency test bot moves
 #                         an installed region's chart with them)
 #   --expect-release=NS/RELEASE=CHART  single-tenant: afterwards the region's Helm release
-#                         NS/RELEASE runs CHART (observability/knative=kube-prometheus-stack-92.22.0;
+#                         NS/RELEASE runs CHART (observability/knative=kube-prometheus-stack-93.3.0;
 #                         repeatable)
 #   --kata                single-tenant: on the installed version the region gets Kata (Cloud
 #                         Hypervisor) through its API; after the upgrade region:reconcile
@@ -165,8 +165,8 @@ _upg_ns="runr"
 _upg_region="upg"
 # The region Traefik's chart and image after the upgrade (KnativeConstants::TRAEFIK_CHART_VERSION,
 # TRAEFIK_IMAGE): region:reconcile moves a Traefik of chart 40 or later to them
-_UPG_TRAEFIK_CHART="traefik-42.3.1"
-_UPG_TRAEFIK_IMAGE="ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17"
+_UPG_TRAEFIK_CHART="traefik-42.4.0"
+_UPG_TRAEFIK_IMAGE="ghcr.io/brf-tech/runr/reqs/traefik:v3.7.18"
 # The installed version's image namespace (ghcr.io/runrsh up to 0.5.0, ghcr.io/brf-tech in 0.5.1;
 # set from --from's chart): the upgrade moves every reference to ghcr.io/brf-tech/runr (chart helper
 # runr.image, the database migrations, region:reconcile image-registry)
@@ -1321,7 +1321,7 @@ _upg_kata_sandbox_runs() {
   [ "$code" = 0 ]
 }
 
-# _upg_release_chart NS/RELEASE — the chart a Helm release of the region runs (traefik-42.3.1)
+# _upg_release_chart NS/RELEASE — the chart a Helm release of the region runs (traefik-42.4.0)
 _upg_release_chart() {
   helm --kubeconfig "$_upg_kubeconfig" list -n "${1%%/*}" -o json 2>/dev/null \
     | jq -r --arg r "${1#*/}" '[.[] | select(.name == $r)][0].chart // empty'

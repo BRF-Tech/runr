@@ -474,7 +474,7 @@ gitDeploy:
 # until an administrator enables them (publish / mirror toolsImage first).
 supplyChain:
   enabled: true                 # build-ready hooks: every RunR-built image gets its supply-chain run
-  toolsImage: ""                # default ghcr.io/brf-tech/runr/supply-chain:1.1.1 (ci.sh supply-chain)
+  toolsImage: ""                # default ghcr.io/brf-tech/runr/supply-chain:1.1.2 (ci.sh supply-chain)
   jobNamespace: ""              # default runr-supply-chain (Jobs + region signing key, per region)
   rescanHours: ""               # default re-scan interval of deployed images for new regions (24)
   trivyDbSource: ""             # mirror source of the vulnerability DB (mirror.gcr.io/aquasec/trivy-db:2)

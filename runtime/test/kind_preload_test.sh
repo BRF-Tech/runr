@@ -3,7 +3,8 @@
 # functions that record their calls. The preload needs nothing of the Compose stack (no
 # `docker compose exec`, no database): each image of its list is pulled on the host and loaded
 # into the Kind cluster, an image that cannot be loaded is left to the nodes, no runtime image is
-# among them, and KIND_PRELOAD=0 loads nothing.
+# among them, KIND_PRELOAD=0 loads nothing, and a dry run's stand-in (E2E_IMAGE_STANDINS) is its
+# upstream under the mirror's name.
 #
 #   bash runtime/test/kind_preload_test.sh
 set -euo pipefail
@@ -48,7 +49,7 @@ for img in $listed; do
 done
 [ "$(grep -c '^docker pull ' "$calls")" = "$(echo "$listed" | wc -l)" ] || fail "pulled something not listed: $(grep '^docker pull' "$calls")"
 # the images the e2e regions run before anything is deployed
-for img in ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17 ghcr.io/project-zot/zot:v2.1.23 ghcr.io/osscontainertools/kaniko:v1.28.5 \
+for img in ghcr.io/brf-tech/runr/reqs/traefik:v3.7.18 ghcr.io/project-zot/zot:v2.1.23 ghcr.io/osscontainertools/kaniko:v1.28.5 \
   ghcr.io/brf-tech/runr/reqs/redis:7-alpine ghcr.io/brf-tech/runr/queue-consumer:latest; do
   echo "$listed" | grep -qxF "$img" || fail "${img} not preloaded"
 done
@@ -110,5 +111,15 @@ unset RUNR_AGENT_IMAGE RUNR_INTERNAL_AUTHZ_IMAGE RUNR_QUEUE_CONSUMER_IMAGE
 E2E_LOCAL_RUNR_IMAGES=0 build_e2e_runr_images >/dev/null 2>&1
 [ -s "$calls" ] && fail "E2E_LOCAL_RUNR_IMAGES=0 built: $(cat "$calls")"
 [ -z "${RUNR_INTERNAL_AUTHZ_IMAGE:-}" ] || fail "E2E_LOCAL_RUNR_IMAGES=0 exported ${RUNR_INTERNAL_AUTHZ_IMAGE}"
+
+# --- a dry run of the dependency test bot: an image of the reqs mirror stands in for itself --------
+# (E2E_IMAGE_STANDINS=TARGET=SOURCE: the image its bump moved to, which only a real run copies into
+# the mirror, is its upstream pulled and tagged under the mirror's name, then loaded)
+: > "$calls"
+mirrored="ghcr.io/brf-tech/runr/reqs/traefik:v3.7.18"
+out=$(E2E_IMAGE_STANDINS="${mirrored}=docker.io/library/traefik:v3.7.18" preload_kind_images runr-e2e-1 2>&1) || fail "preload with a stand-in failed: $out"
+grep -qxF "docker pull -q docker.io/library/traefik:v3.7.18" "$calls" && grep -qxF "docker tag docker.io/library/traefik:v3.7.18 ${mirrored}" "$calls"   && grep -qxF "kind load docker-image ${mirrored} --name runr-e2e-1" "$calls" || fail "the stand-in: $(cat "$calls")"
+grep -qxF "docker pull -q ${mirrored}" "$calls" && fail "the stand-in's image was pulled from the mirror"
+grep -qxF "docker pull -q ghcr.io/brf-tech/runr/reqs/redis:7-alpine" "$calls" || fail "a stand-in changed another image's pull"
 
 echo "ok: kind preload"

@@ -8,7 +8,7 @@
 # Release binaries are verified against the checksums file of their release.
 ARG TRIVY_VERSION=0.76.2
 
-FROM --platform=$BUILDPLATFORM ghcr.io/brf-tech/runr/reqs/alpine:3.21 AS tools
+FROM --platform=$BUILDPLATFORM ghcr.io/brf-tech/runr/reqs/alpine:3.22 AS tools
 ARG TARGETARCH
 ARG SYFT_VERSION=1.57.1
 ARG COSIGN_VERSION=3.1.4

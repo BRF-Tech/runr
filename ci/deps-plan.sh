@@ -7,35 +7,42 @@ set -euo pipefail
 #
 #   - the weekly summary ("deps: week <ISO week>", <!-- runr-deps:digest:<week> -->,
 #     ci/deps-digest.sh) has one row per dependency, its data a marker <!-- deps-bot {"id", "kind",
-#     "group", "version", "state", …} -->: a row of kind group (a package group's minor and patch
-#     updates: its marker's updates), chart or knative whose state is new, testing (a run that did
-#     not finish) or green (passed, not shipped yet) is tested; one that needs attention only when
-#     the run names it; one that lives in an issue of its own (item_kind "issue": a bump that went
-#     red) is tested through that issue. Its ref is <summary>:<group>;
+#     "group", "version", "state", …} -->: a row of kind group (a package group's updates: its
+#     marker's updates; a release outside a constraint is a group of its own, <group>--<package>,
+#     whose update moves the constraint), chart or knative whose state is new, testing (a run that
+#     did not finish), green (passed, not shipped yet) or next update required is tested; one that
+#     waits for a run that needs a person (needs attention, an incident) only when the run names it;
+#     one that lives in an issue of its own (item_kind "issue") is tested through that issue. Its
+#     ref is <summary>:<group>;
 #   - an issue of its own: of ci/check-helm-releases.sh ("deps: <chart> <version> released") or of
 #     ci/check-knative-releases.sh ("Knative 1.25 released: update KNATIVE_K8S_COMPAT") names one
 #     dependency version; "Knative 1.26 is not in KNATIVE_K8S_COMPAT" needs a person (its minimum
 #     Kubernetes minor) and is only labelled; of ci/check-package-releases.sh ("deps: <group>
-#     [<fingerprint>]: <n> updates: …": a row the bot moved out of the summary because it went red,
-#     or one filed before the summary) names a package group's minor and patch updates, which its
-#     body's marker lists; "deps: <group> <name> <version> released (outside <constraint>)" needs a
-#     person and is only labelled. Its ref is its number;
+#     [<fingerprint>]: <n> updates: …": a row the bot moved out of the summary because it could not
+#     move it or it failed, or one filed before the summary) names a package group's updates, which
+#     its body's marker lists. An old "deps: <group> <name> <version> released (outside
+#     <constraint>)" is skipped: the daily check files that release again as a group of its own.
+#     Its ref is its number;
 #   - of one dependency only the newest finding is tested (a chart's or Knative's newest version, a
 #     package group's latest finding: its marker's "found" date, then its number): an older issue
 #     is superseded (closed with a pointer to the newer one), labelled or not; an older row is
 #     skipped;
-#   - an issue labelled "deps: passed" is done; one labelled "needs attention" (or a row in that
-#     state) waits for a person and is tested again only when the run names it (--only, the
-#     workflow's `issue` input), which takes the label off.
+#   - an issue labelled "deps: passed" is done; one labelled "next update required" (the bot could
+#     not move it, or it failed) is tested again on every run that names nothing (the weekly one)
+#     and on one that names it, with "retry": true: a newer release may have fixed it, and a green
+#     one ships and loses the label. An update issue labelled "needs attention" (before the label
+#     existed) is the same and is listed in "relabel" (its label becomes next update required);
+#   - an update a hold keeps (ci/deps/holds.txt: one of its packages) is skipped with the hold's
+#     reason: a person's decision, which the weekly summary lists under Next update required.
 #
 #   bash ci/deps-plan.sh ISSUES.json [--only=REF[,REF…]]
 #
 # A REF of --only: N (an issue of its own, or a summary: all its open rows, those that need
 # attention too) or N:group (the group's row of the open summary, whichever week it is in now).
 # ISSUES.json: gh issue list --json number,title,labels,body.
-# Prints JSON: {"tests": [{"issue", "ref", "dep", "version"[, "updates", "urgent"]}], "superseded":
-# [{"issue", "by", "dep", "version"}], "retrigger": [issue], "attention": [{"issue", "reason"}],
-# "skipped": [{"issue", "ref", "reason"}]}. Needs bash, jq and GNU sort.
+# Prints JSON: {"tests": [{"issue", "ref", "dep", "version"[, "updates", "urgent"][, "retry"]}],
+# "superseded": [{"issue", "by", "dep", "version"}], "relabel": [issue], "attention": [{"issue",
+# "reason"}], "skipped": [{"issue", "ref", "reason"}]}. Needs bash, jq and GNU sort.
 # ─────────────────────────────────────────────────────────────────────────────
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,6 +53,7 @@ source "$ROOT/ci/deps/lib.sh"
 
 PASSED_LABEL="${DEPS_PASSED_LABEL:-deps: passed}"
 ATTENTION_LABEL="${DEPS_ATTENTION_LABEL:-needs attention}"
+NEXT_LABEL="${DEPS_NEXT_LABEL:-next update required}"
 
 issues_file="${1:?usage: ci/deps-plan.sh ISSUES.json [--only=REF,…]}"
 only=""
@@ -92,10 +100,9 @@ while IFS=$'\t' read -r number ref title labels marker found; do
     fi
     markers[$ref]="$marker"
   elif [[ "$title" =~ ^deps:\ ([a-z0-9-]+)\ (.+)\ ([^\ ]+)\ released\ \(outside\ (.*)\)$ ]]; then
-    # outside the manifest's constraint (a new major, a 0.x minor, an exact pin, the Go toolchain)
-    if [[ "$labels" != *"|${ATTENTION_LABEL}|"* ]] && [[ "$labels" != *"|${PASSED_LABEL}|"* ]]; then
-      attention+=("$(jq -nc --argjson issue "$number" --arg reason "${BASH_REMATCH[2]} ${BASH_REMATCH[3]} is outside ${BASH_REMATCH[1]}'s constraint \`${BASH_REMATCH[4]}\`: a person reads its release notes and moves it with the code it needs; the bot takes the minor and patch updates from there" '{issue: $issue, reason: $reason}')")
-    fi
+    # the old form of a release outside the constraint: the daily check files it again as a group
+    # of its own (<group>--<package>), which the bot attempts
+    skip "$number" "$ref" "an old finding outside a constraint: the daily check files it as a group of its own, which the bot attempts"
     continue
   elif [[ "$title" =~ ^deps:\ ([a-z0-9-]+)\ (v?[0-9][0-9A-Za-z.-]*)\ released$ ]]; then
     dep="${BASH_REMATCH[1]}"
@@ -111,9 +118,23 @@ while IFS=$'\t' read -r number ref title labels marker found; do
   else
     continue
   fi
-  if [[ "$known" != *" ${dep} "* ]]; then
+  # a release outside a constraint is a group of its own, <group>--<package>: the group's
+  if [[ "$known" != *" ${dep%%--*} "* ]]; then
     skip "$number" "$ref" "the bot does not know ${dep} (ci/deps/lib.sh, DEPS_BOT)"
     continue
+  fi
+  # an update a hold keeps (a person's decision, with its reason) is not attempted
+  if [ "$group" = 1 ]; then
+    held_reason=""
+    while IFS=$'\t' read -r hname hto hold_also; do
+      [ -n "$hname" ] || continue
+      held_reason="$(deps_held "${dep%%--*}" "$hname" "$hto" || { [ -n "$hold_also" ] && deps_held "${dep%%--*}" "$hold_also" "$hto"; } || true)"
+      [ -z "$held_reason" ] || { held_reason="${hname} ${hto}: ${held_reason}"; break; }
+    done < <(jq -r '.updates[] | [.name, .to, (if .outside == true then (.constraint // "") else "" end)] | @tsv' <<<"$marker")
+    if [ -n "$held_reason" ]; then
+      skip "$number" "$ref" "held (ci/deps/holds.txt): ${held_reason}"
+      continue
+    fi
   fi
   if [ "$group" = 0 ] && ! deps_version_valid "$version"; then
     skip "$number" "$ref" "'${version}' is not a version"
@@ -144,7 +165,7 @@ done < <(jq -r '
   | if summary then
       .number as $n
       | markers[]
-      | select(.item_kind != "issue" and (.group != null) and (.kind | IN("group", "chart", "knative")) and ((.state // "new") | IN("new", "testing", "green", "needs attention")))
+      | select(.item_kind != "issue" and (.group != null) and (.kind | IN("group", "chart", "knative")) and ((.state // "new") | IN("new", "testing", "green", "next update required", "needs attention")))
       | [$n, "\($n):\(.group)",
          (if .kind == "group" then "deps: \(.group) [\(.version)]: " elif .kind == "chart" then "deps: \(.group) \(.version) released" else (.title // "") end),
          (if .state == "needs attention" then "|needs attention|" else "||" end), tojson, (.found // "")]
@@ -156,7 +177,7 @@ done < <(jq -r '
 
 tests=()
 superseded=()
-retrigger=()
+relabel=()
 for row in ${rows[@]+"${rows[@]}"}; do
   IFS=$'\t' read -r number ref dep version labels <<< "$row"
   if [ "$ref" != "${newest_ref[$dep]}" ]; then
@@ -174,18 +195,24 @@ for row in ${rows[@]+"${rows[@]}"}; do
     skip "$number" "$ref" "not named in this run"
     continue
   fi
-  if [[ "$labels" == *"|${ATTENTION_LABEL}|"* ]]; then
-    if [ "$is_named" = 0 ]; then
-      skip "$number" "$ref" "waits for a person (${ATTENTION_LABEL}); run the workflow with $( [[ "$ref" == *:* ]] && echo "\`${ref}\`" || echo "this issue number") to test it again"
+  retry=false
+  if [[ "$ref" == *:* ]]; then
+    # a row that waits for a run that needs a person (its incident): tested when the run names it
+    if [[ "$labels" == *"|${ATTENTION_LABEL}|"* ]] && [ "$is_named" = 0 ]; then
+      skip "$number" "$ref" "waits for a person (${ATTENTION_LABEL}: the run's issue); run the workflow with \`${ref}\` to test it again"
       continue
     fi
-    [[ "$ref" == *:* ]] || retrigger+=("$number")
+  elif [[ "$labels" == *"|${NEXT_LABEL}|"* ]] || [[ "$labels" == *"|${ATTENTION_LABEL}|"* ]]; then
+    # the bot could not move it or it failed: tried again every week (a newer release may fix it)
+    retry=true
+    [[ "$labels" == *"|${NEXT_LABEL}|"* ]] || relabel+=("$number")
   fi
   if [ -n "${markers[$ref]:-}" ]; then
-    tests+=("$(jq -nc --argjson issue "$number" --arg ref "$ref" --arg dep "$dep" --arg version "$version" --argjson m "${markers[$ref]}" \
-      '{issue: $issue, ref: $ref, dep: $dep, version: $version, updates: $m.updates, urgent: ($m.urgent // false)}')")
+    tests+=("$(jq -nc --argjson issue "$number" --arg ref "$ref" --arg dep "$dep" --arg version "$version" --argjson m "${markers[$ref]}" --argjson retry "$retry" \
+      '{issue: $issue, ref: $ref, dep: $dep, version: $version, updates: $m.updates, urgent: ($m.urgent // false)} + (if $retry then {retry: true} else {} end)')")
   else
-    tests+=("$(jq -nc --argjson issue "$number" --arg ref "$ref" --arg dep "$dep" --arg version "$version" '{issue: $issue, ref: $ref, dep: $dep, version: $version}')")
+    tests+=("$(jq -nc --argjson issue "$number" --arg ref "$ref" --arg dep "$dep" --arg version "$version" --argjson retry "$retry" \
+      '{issue: $issue, ref: $ref, dep: $dep, version: $version} + (if $retry then {retry: true} else {} end)')")
   fi
 done
 
@@ -193,7 +220,7 @@ join_json() { if [ "$#" -gt 0 ]; then printf '%s\n' "$@" | jq -s -c .; else echo
 jq -nc \
   --argjson tests "$(join_json ${tests[@]+"${tests[@]}"})" \
   --argjson superseded "$(join_json ${superseded[@]+"${superseded[@]}"})" \
-  --argjson retrigger "$(if [ "${#retrigger[@]}" -gt 0 ]; then printf '%s\n' "${retrigger[@]}" | jq -s -c .; else echo '[]'; fi)" \
+  --argjson relabel "$(if [ "${#relabel[@]}" -gt 0 ]; then printf '%s\n' "${relabel[@]}" | jq -s -c 'unique'; else echo '[]'; fi)" \
   --argjson attention "$(join_json ${attention[@]+"${attention[@]}"})" \
   --argjson skipped "$(join_json ${skipped[@]+"${skipped[@]}"})" \
-  '{tests: ($tests | sort_by(.dep)), superseded: $superseded, retrigger: $retrigger, attention: $attention, skipped: $skipped}'
+  '{tests: ($tests | sort_by(.dep)), superseded: $superseded, relabel: $relabel, attention: $attention, skipped: $skipped}'

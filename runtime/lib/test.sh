@@ -119,9 +119,26 @@ e2e_runtime_catalog() {
 # mirror (ghcr.io/brf-tech/runr/reqs/…) is published by BRF-Tech/runr-runtimes: an image this
 # checkout starts to use is mirrored there first, ci/check-reqs-mirror.sh fails until it resolves.
 pull_image() {
-  local img="$1"
+  local img="$1" src
+  # a dry run of the dependency test bot: an image its bump moved to, which the reqs mirror gets
+  # only from a real run, is its upstream under the mirror's name
+  src="$(image_standin "$img")"
+  if [ -n "$src" ]; then
+    echo "    a stand-in (E2E_IMAGE_STANDINS): ${src} under this name"
+    docker pull -q "$src" >/dev/null 2>&1 && docker tag "$src" "$img" && return 0
+  fi
   docker pull -q "$img" >/dev/null 2>&1 && return 0
   docker image inspect "$img" >/dev/null 2>&1
+}
+
+# image_standin IMAGE — the image E2E_IMAGE_STANDINS (TARGET=SOURCE,…: the dependency test bot's dry
+# run, ci/deps-run.sh) puts in IMAGE's place; nothing for another image
+image_standin() {
+  local pair
+  local list="${E2E_IMAGE_STANDINS:-}"
+  for pair in ${list//,/ }; do
+    [ "${pair%%=*}" != "$1" ] || { echo "${pair#*=}"; return 0; }
+  done
 }
 
 # kind_load_image IMAGE CLUSTER — a local image into every node of a Kind cluster. A pulled
@@ -202,7 +219,7 @@ preload_kind_images() {
     "ghcr.io/project-zot/zot:v2.1.23"
     "ghcr.io/osscontainertools/kaniko:v1.28.5"
     # the region Traefik (KnativeConstants::TRAEFIK_IMAGE): three replicas that would each pull it
-    "ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17"
+    "ghcr.io/brf-tech/runr/reqs/traefik:v3.7.18"
     # the region tracing backend (ManagedTracing::COLLECTOR_IMAGE / TEMPO_IMAGE), installed with
     # Knative Serving
     "ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0"

@@ -23,11 +23,11 @@ interface KnativeConstants
     const TRAEFIK_CHART = 'traefik/traefik';
 
     // Pinned: 39.x bundles Gateway API v1.4 CRDs, which the safe-upgrades
-    // ValidatingAdmissionPolicy of an installed Gateway API >= v1.5 rejects. 42.3.1 = Traefik
-    // v3.7.17, no bundled Gateway API CRDs. Existing regions move to it through TraefikChartStep:
+    // ValidatingAdmissionPolicy of an installed Gateway API >= v1.5 rejects. 42.4.0 = Traefik
+    // v3.7.18, no bundled Gateway API CRDs. Existing regions move to it through TraefikChartStep:
     // chart >= 41.0.0 renamed root `logs` to `log`/`accessLog`, and its values schema refuses the
     // old keys a release keeps (TraefikChartValues).
-    const TRAEFIK_CHART_VERSION = '42.3.1';
+    const TRAEFIK_CHART_VERSION = '42.4.0';
 
     // kubeVersion of that chart: Helm refuses it on an earlier Kubernetes
     const TRAEFIK_CHART_MIN_K8S_MINOR = 30;
@@ -52,7 +52,7 @@ interface KnativeConstants
     // chart's image (KnativeTraefikTrait), pre-pulled by the nodes (config knative.prepull_images)
     // and loaded into Kind by the e2e. KNATIVE_TRAEFIK_IMAGE overrides it (TraefikImage).
     // Changes with TRAEFIK_CHART_VERSION, together with its REQS_IMAGES entry.
-    const TRAEFIK_IMAGE = 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17';
+    const TRAEFIK_IMAGE = 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.18';
 
     // IngressClass owned by the region Traefik; "traefik-knative" when another controller owns "traefik"
     const TRAEFIK_INGRESS_CLASS = 'traefik';

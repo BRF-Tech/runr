@@ -31,3 +31,7 @@ pins-ci php * the API's tests run on the oldest PHP of api/composer.json's php c
 # good need not be on its registry)
 npm-example-workflows @runr/workflows * RunR's own Workflow SDK (sdk/node): the example follows its releases, by a person
 pypi-example-workflows runr-workflows * RunR's own Workflow SDK (sdk/python): the example follows its releases, by a person
+# examples/wasm/go (and the wasm-go runtime of BRF-Tech/runr-runtimes) build with TinyGo and
+# spin-go-sdk v2: v3 and newer build with componentize-go, which needs WASIp3 in Go itself
+# (golang/go#76775). Burak's decision (#31, RunR 0.7.0): they move once a Go release ships it
+go-example-wasm github.com/spinframework/spin-go-sdk/v2 * spin-go-sdk v3 and newer build with componentize-go, which needs WASIp3 support in Go itself (golang/go#76775): examples/wasm/go stays on TinyGo and spin-go-sdk v2 until a Go release ships it (#31)

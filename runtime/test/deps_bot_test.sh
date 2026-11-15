@@ -2,9 +2,11 @@
 # Tests the dependency test bot's plan (ci/deps-plan.sh) and its deploy key (ci/deps/ssh-key.sh)
 # without GitHub or GitLab: the issues are a JSON file as `gh issue list` writes it. Checks that:
 #   - the plan takes every deps issue and the Knative release issue, tests only the newest version
-#     of a dependency and supersedes the older ones, skips a passed one and one that waits for a
-#     person unless the run names it (which takes the label off), and labels a Knative minor that
-#     has no row;
+#     of a dependency and supersedes the older ones, skips a passed one, labels a Knative minor that
+#     has no row; an issue labelled next update required is tested again on every run that names
+#     nothing (the weekly one) and on one that names it ("retry"), an update issue still labelled
+#     needs attention too, relabelled; a release outside a constraint (<group>--<package>) is
+#     tested, an old "released (outside …)" issue and an update a hold keeps are skipped;
 #   - the deploy key: an SSH URL of the pinned host, 0600 files, the host's published key only.
 # The bumps, their outcome, the release and the issues' actions: runtime/test/deps_release_test.sh;
 # the weekly summary and the plan of its rows: runtime/test/deps_digest_test.sh.
@@ -22,40 +24,50 @@ export GIT_AUTHOR_NAME=someone GIT_AUTHOR_EMAIL=someone@example.test GIT_COMMITT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 # --- the plan ---------------------------------------------------------------------------------------
-cat > "$tmp/issues.json" <<'EOF'
-[
+vite='{"group": "npm-vue--vite", "updates": [{"name": "vite", "from": "7.3.1", "to": "8.0.1", "outside": true, "constraint": "^7.0.0", "line": "8.x", "files": ["vue/package.json"]}], "urgent": false, "advisories": []}'
+cron='{"group": "npm-vue", "updates": [{"name": "cronstrue", "from": "2.61.0", "to": "3.0.0", "files": ["vue/package-lock.json"]}], "urgent": false, "advisories": []}'
+jq -n --arg vite "<!-- deps-bot ${vite} -->" --arg cron "<!-- deps-bot ${cron} -->" '[
   {"number": 12, "title": "deps: traefik 42.3.1 released", "labels": []},
   {"number": 9, "title": "deps: traefik 42.2.0 released", "labels": [{"name": "needs attention"}]},
   {"number": 8, "title": "deps: kube-prometheus-stack 92.21.2 released", "labels": []},
   {"number": 14, "title": "deps: zot 0.1.131 released", "labels": [{"name": "needs attention"}]},
   {"number": 15, "title": "deps: loki-stack 2.10.4 released", "labels": [{"name": "deps: passed"}]},
+  {"number": 21, "title": "deps: loki-stack 2.10.5 released", "labels": [{"name": "deps"}, {"name": "next update required"}]},
   {"number": 16, "title": "Knative 1.25, 1.26 released: update KNATIVE_K8S_COMPAT", "labels": []},
   {"number": 17, "title": "Knative 1.27 is not in KNATIVE_K8S_COMPAT", "labels": []},
   {"number": 18, "title": "deps: nginx 1.0.0 released", "labels": []},
   {"number": 19, "title": "A bug report", "labels": []},
-  {"number": 20, "title": "deps: traefik 42.10.0 released", "labels": []}
-]
-EOF
+  {"number": 20, "title": "deps: traefik 42.10.0 released", "labels": []},
+  {"number": 22, "title": "deps: go-example-wasm github.com/spinframework/spin-go-sdk/v3 v3.x released (outside github.com/spinframework/spin-go-sdk/v2)", "labels": [{"name": "next update required"}]},
+  {"number": 23, "title": "deps: npm-vue--vite [1a2b3c4d]: 1 update: vite 8.0.1 (outside ^7.0.0)", "labels": [{"name": "next update required"}], "body": ("A release outside the constraint.\n\n" + $vite)},
+  {"number": 24, "title": "deps: npm-vue [aaaabbbb]: 1 update: cronstrue 3.0.0", "labels": [], "body": ("Updates.\n\n" + $cron)},
+  {"number": 25, "title": "deps: nginx--thing [1a2b3c4d]: 1 update: thing 2.0.0 (outside ^1.0.0)", "labels": [], "body": "<!-- deps-bot {\"group\": \"nginx--thing\", \"updates\": [{\"name\": \"thing\", \"from\": \"1.0.0\", \"to\": \"2.0.0\", \"outside\": true}]} -->"}
+]' > "$tmp/issues.json"
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/issues.json")"
-[ "$(jq -c '[.tests[] | [.issue, .dep, .version]]' <<<"$plan")" = '[[16,"knative","1.26"],[8,"kube-prometheus-stack","92.21.2"],[20,"traefik","42.10.0"]]' ] \
+[ "$(jq -c '[.tests[] | [.issue, .dep, .version, (.retry // false)]]' <<<"$plan")" = '[[16,"knative","1.26",false],[8,"kube-prometheus-stack","92.21.2",false],[21,"loki-stack","2.10.5",true],[23,"npm-vue--vite","1a2b3c4d",true],[20,"traefik","42.10.0",false],[14,"zot","0.1.131",true]]' ] \
   || fail "the tests: $(jq -c .tests <<<"$plan")"
+jq -e '.tests[] | select(.issue == 23) | .updates[0] | .outside == true and .constraint == "^7.0.0"' <<<"$plan" >/dev/null || fail "the release outside a constraint without its update: $(jq -c .tests <<<"$plan")"
 [ "$(jq -c '[.superseded[] | [.issue, .by]] | sort' <<<"$plan")" = '[[9,20],[12,20]]' ] || fail "superseded: $(jq -c .superseded <<<"$plan")"
 [ "$(jq -c '[.attention[].issue]' <<<"$plan")" = '[17]' ] || fail "attention: $(jq -c .attention <<<"$plan")"
-[ "$(jq -c '.retrigger' <<<"$plan")" = '[]' ] || fail "retrigger: $(jq -c .retrigger <<<"$plan")"
-jq -e '.skipped[] | select(.issue == 14) | .reason | test("waits for a person")' <<<"$plan" >/dev/null || fail "a held issue is not skipped: $plan"
+[ "$(jq -c '.relabel' <<<"$plan")" = '[14]' ] || fail "relabel: $(jq -c .relabel <<<"$plan")"
+jq -e 'has("retrigger") | not' <<<"$plan" >/dev/null || fail "the plan still has retrigger"
 jq -e '.skipped[] | select(.issue == 15) | .reason | test("passed")' <<<"$plan" >/dev/null || fail "a passed issue is not skipped: $plan"
 jq -e '.skipped[] | select(.issue == 18) | .reason | test("does not know nginx")' <<<"$plan" >/dev/null || fail "an unknown chart: $plan"
-echo "ok - the plan: the newest version of each dependency, the older ones superseded, passed and held ones skipped, a Knative minor without a row labelled"
+jq -e '.skipped[] | select(.issue == 25) | .reason | test("does not know nginx--thing")' <<<"$plan" >/dev/null || fail "an unknown group's release outside a constraint: $plan"
+jq -e '.skipped[] | select(.issue == 22) | .reason | test("old finding outside a constraint")' <<<"$plan" >/dev/null || fail "an old outside issue: $plan"
+jq -e '.skipped[] | select(.issue == 24) | .reason | test("^held \\(ci/deps/holds.txt\\): cronstrue 3.0.0: pinned exactly")' <<<"$plan" >/dev/null || fail "a held update: $plan"
+echo "ok - the plan: the newest version of each dependency, the older ones superseded, a passed one skipped, a Knative minor without a row labelled; next update required (and an old needs attention update, relabelled) tested again with retry, a release outside a constraint tested; an old outside issue and a held update skipped"
 
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/issues.json" --only=14,8)"
-[ "$(jq -c '[.tests[].issue]' <<<"$plan")" = '[8,14]' ] || fail "--only: $(jq -c .tests <<<"$plan")"
-[ "$(jq -c '.retrigger' <<<"$plan")" = '[14]' ] || fail "--only takes the label off: $(jq -c .retrigger <<<"$plan")"
+[ "$(jq -c '[.tests[] | [.issue, (.retry // false)]]' <<<"$plan")" = '[[8,false],[14,true]]' ] || fail "--only: $(jq -c .tests <<<"$plan")"
+[ "$(jq -c '.relabel' <<<"$plan")" = '[14]' ] || fail "--only relabels the old label: $(jq -c .relabel <<<"$plan")"
+jq -e '.skipped[] | select(.issue == 21) | .reason | test("not named")' <<<"$plan" >/dev/null || fail "a run that names others tests next update required too: $plan"
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/issues.json" --only=9)"
 [ "$(jq -c '[.tests[].issue]' <<<"$plan")" = '[]' ] || fail "a superseded issue named: $(jq -c .tests <<<"$plan")"
 rc=0
 bash "$root/ci/deps-plan.sh" "$tmp/issues.json" --only='8;x' >/dev/null 2>&1 || rc=$?
 [ "$rc" = 1 ] || fail "--only takes numbers only"
-echo "ok - a run that names a held issue tests it again and takes the label off; a superseded one stays superseded"
+echo "ok - a run that names issues tests those (next update required too); one it does not name waits for the weekly run; a superseded one stays superseded"
 
 # --- the deploy key ---------------------------------------------------------------------------------
 # a real key: ssh-keygen must load what the script writes
