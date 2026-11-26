@@ -83,9 +83,12 @@ trait KnativeLokiTrait
             ] + DedicatedWorkers::systemPlacement(),
             'promtail' => [
                 'enabled' => true,
+                // The requests reserve what an idle node needs. The limits leave room for a busy node:
+                // at 200m / 128Mi, Promtail on a node with ~50 pods ran at its CPU limit, and its
+                // readiness probe (1 s) kept timing out.
                 'resources' => [
                     'requests' => ['cpu' => '50m',  'memory' => '64Mi'],
-                    'limits' => ['cpu' => '200m', 'memory' => '128Mi'],
+                    'limits' => ['cpu' => '500m', 'memory' => '256Mi'],
                 ],
                 // Tolerate RunR worker node taints so Promtail runs on every node,
                 // including dedicated project worker nodes (runr.dev/dedicated).

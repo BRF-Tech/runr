@@ -120,9 +120,10 @@ class ApiImageBuildTest extends TestCase
     }
 
     /**
-     * CVE-2026-109618 and CVE-2026-109619 (remote code execution in PHP's request handling) are
-     * fixed in PHP 8.3.36: the runtime stage of both images refuses a base whose PHP is older, or
-     * on another branch than the floor, before it installs anything.
+     * PHP 8.3.37 fixes PHP-FPM request smuggling (CVE-2026-129289) and remote code execution in
+     * sessions and the timezone cache (CVE-2026-115560, CVE-2026-126714, CVE-2026-129496), after
+     * 8.3.36 fixed CVE-2026-109618 and CVE-2026-109619: the runtime stage of both images refuses a
+     * base whose PHP is older, or on another branch than the floor, before it installs anything.
      */
     public function test_both_dockerfiles_refuse_a_php_older_than_the_fixed_release(): void
     {
@@ -130,7 +131,7 @@ class ApiImageBuildTest extends TestCase
             $min = $this->argDefault($dockerfile, 'PHP_MIN_VERSION');
             $this->assertNotNull($min, "{$dockerfile}: ARG PHP_MIN_VERSION=<the fixed PHP release>");
             $this->assertMatchesRegularExpression('/^8\.3\.\d+$/', $min, "{$dockerfile}: PHP_MIN_VERSION is a PHP 8.3 release");
-            $this->assertTrue(version_compare($min, '8.3.36', '>='), "{$dockerfile}: PHP_MIN_VERSION {$min} is older than 8.3.36");
+            $this->assertTrue(version_compare($min, '8.3.37', '>='), "{$dockerfile}: PHP_MIN_VERSION {$min} is older than 8.3.37");
 
             $stage = $this->runtimeStage($dockerfile);
             $this->assertMatchesRegularExpression('/^ARG PHP_MIN_VERSION=/m', $stage, "{$dockerfile}: the runtime stage declares PHP_MIN_VERSION");

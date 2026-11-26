@@ -87,6 +87,44 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.7.6 → 0.7.7
+
+0.7.7 pins the API image to FrankenPHP 1.14.0 on PHP 8.3.37, makes its build fail on an older PHP,
+and gives Promtail the limits a busy node needs. There is no database migration and nothing has to
+be set ([Procedure](#procedure)). The console and the region images are those of 0.7.6, built again
+at 0.7.7; the region Job moves the region agent and the event gateway to 0.7.7 ([Order of
+operations](#order-of-operations)), and a region that pulls through a mirror of its own needs
+`agent:0.7.7` and `queue-consumer:0.7.7` there before the upgrade.
+
+- **PHP 8.3.37 in the API image, pinned** (FrankenPHP 1.14.0): the PHP release of 2026-11-19
+  fixes, among others, PHP-FPM request smuggling through an unread request body (CVE-2026-129289),
+  remote code execution through a session serializer mismatch (CVE-2026-115560) and partially
+  overwritten session files (CVE-2026-126714), and a use-after-free in the timezone cache
+  (CVE-2026-129496) ([PHP's changelog](https://www.php.net/ChangeLog-8.php)). The image's FrankenPHP
+  base is the exact tag `1.14.0-php8.3-alpine` of the reqs mirror; it was the floating
+  `1-php8.3-alpine`, on which 0.7.6's image already had PHP 8.3.37 (0.7.5's had 8.3.36 on
+  FrankenPHP 1.13.5). The build now fails on an older PHP (`PHP_MIN_VERSION=8.3.37`). The API,
+  Horizon, the scheduler and Reverb restart once with the new image.
+- **The PHP runtime images** run PHP 8.2.36, 8.3.37, 8.4.28 and 8.5.13 since 2026-11-20: the
+  critical patches `exec-php:8.2.36-r1`, `8.3.37-r1`, `8.4.28-r1` and `8.5.13-r1` of the signed
+  patch feed, with a deadline of seven days ([Runtime patches](runtimes.md#runtime-patches)). They
+  need no RunR upgrade: 0.7.5 and 0.7.6 show and apply them the same way.
+- **Promtail's limits** are 500m CPU and 256Mi memory (from 200m / 128Mi); its requests stay
+  50m / 64Mi, so a region reserves nothing more. On a node with about 50 pods Promtail ran at its
+  CPU limit and its readiness probe kept timing out. Regions set up from now on get the limits; an
+  installed region takes them with `php artisan cluster:patch-observability [REGION-ID]` (Promtail
+  restarts once on every node) ([observability.md](observability.md)).
+
+From 0.7.5, upgrade straight to 0.7.7: 0.7.6, a dependency release of 0.7.5, needs no step of its
+own ([0.7.5 → 0.7.6](#075--076)); the API moves from PHP 8.3.36 to 8.3.37.
+
+### Back to 0.7.6
+
+A `helm rollback` (`helm history runr -n runr` lists the revisions); nothing runs on the database,
+and the region Job of the rollback moves the region agent and the event gateway back to 0.7.6. The
+API stays on PHP 8.3.37: 0.7.6's image has it as well. Promtail keeps the limits
+`cluster:patch-observability` gave it. **Never uninstall** to go back.
+
 ## 0.7.5 → 0.7.6
 
 0.7.6 is a dependency release of 0.7.5, made by the dependency test bot: it moves one dependency of

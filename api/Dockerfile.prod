@@ -3,7 +3,7 @@
 # <FrankenPHP version>-php<PHP version>-alpine on PHP_MIN_VERSION or later, or the floating
 # 1-php8.3-alpine while upstream has none on it; the guard of the runtime stage refuses an older
 # PHP either way.
-ARG FRANKENPHP_TAG=1-php8.3-alpine
+ARG FRANKENPHP_TAG=1.14.0-php8.3-alpine
 
 # ─── Stage 1: Composer dependencies ──────────────────────────────────────────
 FROM ghcr.io/brf-tech/runr/reqs/composer:2.7 AS vendor
@@ -25,11 +25,13 @@ RUN composer install \
 # ─── Stage 2: Runtime (the image's stage 4 adds the OpenAPI document) ─────────
 FROM ghcr.io/brf-tech/runr/reqs/frankenphp:${FRANKENPHP_TAG} AS base
 
-# The oldest PHP the image may ship: the PHP 8.3 release that fixes CVE-2026-109618 and
-# CVE-2026-109619 (https://www.php.net/archive/2026.php#2026-10-21-5); Dockerfile has the same.
-# The build fails when the base image's PHP is older, or is on another branch than
-# PHP_MIN_VERSION (a base on a new PHP branch sets that branch's fixed release here).
-ARG PHP_MIN_VERSION=8.3.36
+# The oldest PHP the image may ship: the PHP 8.3 release of 2026-11-19, which fixes
+# CVE-2026-129289, CVE-2026-115560, CVE-2026-126714 and CVE-2026-129496 among others
+# (https://www.php.net/archive/2026.php#2026-11-19-2), after 8.3.36 fixed CVE-2026-109618 and
+# CVE-2026-109619; Dockerfile has the same. The build fails when the base image's PHP is older,
+# or is on another branch than PHP_MIN_VERSION (a base on a new PHP branch sets that branch's
+# fixed release here).
+ARG PHP_MIN_VERSION=8.3.37
 RUN php -r '$min = $argv[1] ?? ""; \
         $branch = implode(".", array_slice(explode(".", $min), 0, 2)) . "."; \
         exit(str_starts_with(PHP_VERSION, $branch) && version_compare(PHP_VERSION, $min, ">=") ? 0 : 1);' \

@@ -8,6 +8,45 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-11-26
+
+### Upgrade notes
+
+- **Upgrading from 0.7.6 or 0.7.5 needs no migration and no new value.** The API image is built on
+  FrankenPHP 1.14.0 and PHP 8.3.37 (0.7.6's image already ran PHP 8.3.37, 0.7.5's ran 8.3.36); the
+  console, the region agent and the event gateway are those of 0.7.6, built again at 0.7.7. The
+  region Job moves the region agent and the event gateway (`agent`, `queue-consumer`) to 0.7.7 as in
+  every release; a region that pulls through a mirror of its own needs `agent:0.7.7` and
+  `queue-consumer:0.7.7` there first ([0.7.6 → 0.7.7 in upgrade.md](docs/upgrade.md#076--077)).
+- **Promtail's new limits do not reach an installed region by themselves:**
+  `php artisan cluster:patch-observability [REGION-ID]` applies them when it suits the region
+  (Promtail restarts once on every node).
+- **The PHP runtime patches need no upgrade:** `exec-php` 8.2.36-r1, 8.3.37-r1, 8.4.28-r1 and
+  8.5.13-r1 are critical patches of the signed patch feed, which every installation that follows it
+  shows and applies by their deadline, on 0.7.5 and 0.7.6 as on 0.7.7.
+- **Back to 0.7.6 is a `helm rollback`**; nothing runs on the database, and the API stays on PHP
+  8.3.37 (0.7.6's image has it as well).
+
+### Fixed
+
+- Promtail's limits are 500m CPU and 256Mi memory (from 200m / 128Mi); its requests stay
+  50m / 64Mi, so a region reserves nothing more. On a node with about 50 pods, Promtail ran at
+  its CPU limit and its readiness probe (1 s) kept timing out. A new region gets the limits; an
+  installed one with `php artisan cluster:patch-observability`.
+
+### Security
+
+- **The API image is built on PHP 8.3.37** (FrankenPHP 1.14.0), the PHP release of 2026-11-19
+  that fixes PHP-FPM request smuggling (CVE-2026-129289), remote code execution through sessions
+  (CVE-2026-115560, CVE-2026-126714) and the timezone cache (CVE-2026-129496), among others; its
+  build now fails on an older PHP. The FrankenPHP base is the exact tag `1.14.0-php8.3-alpine` of
+  the reqs mirror (it was the floating `1-php8.3-alpine`, on which 0.7.6's image already had
+  PHP 8.3.37; 0.7.5's had 8.3.36).
+- **The PHP runtime images run PHP 8.2.36, 8.3.37, 8.4.28 and 8.5.13:** `exec-php:8.2.36-r1`,
+  `8.3.37-r1`, `8.4.28-r1` and `8.5.13-r1` are critical patches of the signed patch feed
+  (2026-11-20), with a deadline of seven days; they reach every installation that follows the feed
+  without a RunR upgrade ([Runtime patches](docs/runtimes.md#runtime-patches)).
+
 ## [0.7.6] - 2026-11-26
 
 ### Upgrade notes
@@ -4874,7 +4913,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.6...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.7...main
+[0.7.7]: https://github.com/brf-tech/runr/releases/tag/v0.7.7
 [0.7.6]: https://github.com/brf-tech/runr/releases/tag/v0.7.6
 [0.7.5]: https://github.com/brf-tech/runr/releases/tag/v0.7.5
 [0.7.4]: https://github.com/brf-tech/runr/releases/tag/v0.7.4

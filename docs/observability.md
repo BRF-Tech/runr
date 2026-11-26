@@ -134,8 +134,8 @@ honorLabels:   true
 | Loki | CPU request/limit | 100m / 500m |
 | Loki | Memory request/limit | 128Mi / 512Mi |
 | Promtail | Tolerations | `[{operator: Exists}]` — every node |
-| Promtail | CPU request/limit | 50m / 200m |
-| Promtail | Memory request/limit | 64Mi / 128Mi |
+| Promtail | CPU request/limit | 50m / 500m |
+| Promtail | Memory request/limit | 64Mi / 256Mi |
 
 **Important:** with `tolerations: [{operator: Exists}]` Promtail also runs on worker nodes tainted `runr.dev/dedicated`; without it, project pod logs on those nodes would not be collected.
 
