@@ -87,6 +87,23 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.7.5 → 0.7.6
+
+0.7.6 is a dependency release of 0.7.5, made by the dependency test bot: it moves one dependency of
+a region and nothing else. There is no database migration, the images keep their names, and nothing
+has to be set ([Procedure](#procedure)). The CLI, the Terraform provider and runr.sh stay those of
+0.7.5.
+
+- **API Composer packages moved** (minor and patch updates): dedoc/scramble v0.13.53 → v0.13.55,
+  egulias/email-validator 4.0.4 → 4.0.5, firebase/php-jwt v7.2.1 → v7.2.2, guzzlehttp/guzzle 7.16.1
+  → 7.17.0, guzzlehttp/promises 2.6.0 → 2.6.2, guzzlehttp/psr7 2.13.3 → 2.13.6, laravel/framework
+  v12.72.0 → v12.74.0, laravel/horizon v5.51.0 → v5.52.0 and 33 more. The release's images carry
+  them.
+
+The bot ran these suites on this release before it was tagged: PHPUnit, Pint, Larastan and the API
+reference, `runtime/test`, `runtime/ci.sh test`, `runtime/ci.sh test-helm-upgrade --from=v0.7.5`
+([run](https://github.com/BRF-Tech/runr/actions/runs/45849724032)).
+
 ## 0.7.4 → 0.7.5
 
 0.7.5 moves the region Traefik to v3.7.18 and kube-prometheus-stack to 93.3.0, builds the region

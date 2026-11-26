@@ -8,6 +8,23 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-11-26
+
+### Upgrade notes
+
+- **A dependency release of 0.7.5: upgrading needs no step.** There is no database migration, the
+  images keep their names and nothing has to be set; only the dependency below changes. The CLI, the
+  Terraform provider and runr.sh stay those of 0.7.5. See
+  [docs/upgrade.md](docs/upgrade.md#075--076).
+
+### Changed
+
+- **API Composer packages moved** (minor and patch updates): dedoc/scramble v0.13.53 → v0.13.55,
+  egulias/email-validator 4.0.4 → 4.0.5, firebase/php-jwt v7.2.1 → v7.2.2, guzzlehttp/guzzle 7.16.1
+  → 7.17.0, guzzlehttp/promises 2.6.0 → 2.6.2, guzzlehttp/psr7 2.13.3 → 2.13.6, laravel/framework
+  v12.72.0 → v12.74.0, laravel/horizon v5.51.0 → v5.52.0 and 33 more. The release's images carry
+  them.
+
 ## [0.7.5] - 2026-11-15
 
 ### Upgrade notes
@@ -4857,7 +4874,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.5...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.6...main
+[0.7.6]: https://github.com/brf-tech/runr/releases/tag/v0.7.6
 [0.7.5]: https://github.com/brf-tech/runr/releases/tag/v0.7.5
 [0.7.4]: https://github.com/brf-tech/runr/releases/tag/v0.7.4
 [0.7.3]: https://github.com/brf-tech/runr/releases/tag/v0.7.3
