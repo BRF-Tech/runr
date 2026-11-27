@@ -34,6 +34,11 @@ describe('describeWarmerCron (cronstrue)', () => {
     expect(describeWarmerCron('0 9 * * 1-5', 'tr-TR')).toContain('Pazartesi')
   })
 
+  it('joins a day of the month and weekdays with "and": the row fires on either', () => {
+    expect(describeWarmerCron('0 9 15 * 1-5', 'en')).toBe('At 09:00, on day 15 of the month, and Monday through Friday')
+    expect(describeWarmerCron('0 9 15 * 1-5', 'tr')).toBe('Saat 09:00, ayın 15. günü, ve Pazartesi ile Cuma arasında')
+  })
+
   it('is null for what cronstrue or the five-field rule rejects, instead of throwing', () => {
     expect(describeWarmerCron('61 9 * * *', 'en')).toBeNull()
     expect(describeWarmerCron('@hourly', 'en')).toBeNull()

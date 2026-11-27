@@ -65,7 +65,9 @@ async function devPreBundle(plugins) {
 
 describe('monaco-editor sanitizes with the dompurify package', () => {
   it('monaco-editor still imports its own copy where the plugin redirects it', () => {
-    expect(readFileSync(sanitizer, 'utf8')).toContain(`import purify from '${VENDORED_IMPORT}';`)
+    // its default import, whatever monaco-editor's build names it (purify in 0.57, purify_default in 0.58)
+    const quoted = VENDORED_IMPORT.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+    expect(readFileSync(sanitizer, 'utf8')).toMatch(new RegExp(`^import \\w+ from '${quoted}';$`, 'm'))
     expect(isVendoredDompurify(VENDORED_IMPORT, sanitizer)).toBe(true)
     expect(isVendoredDompurify(VENDORED_IMPORT, resolve(root, 'src/main.js'))).toBe(false)
     expect(isVendoredDompurify('dompurify', sanitizer)).toBe(false)

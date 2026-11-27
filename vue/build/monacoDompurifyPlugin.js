@@ -1,11 +1,12 @@
 // Vite plugin: Monaco's sanitizer (esm/vs/base/browser/domSanitize.js, which cleans the markdown
 // of hovers and suggestions) runs on the dompurify package instead of the DOMPurify copy that
-// monaco-editor ships in esm/vs/base/browser/dompurify/dompurify.js: monaco-editor 0.57.0 ships
-// DOMPurify 3.4.15, which the DOMPurify advisories up to 3.4.17 cover. That copy is dompurify's
-// own ESM build (dist/purify.es.mjs), so the package takes its place one to one; package.json
-// names dompurify as a dependency and its `overrides` give monaco-editor the same version, so the
-// version npm audit reads is the one in the bundle. In the build and in the dev server's
-// dependency pre-bundling alike (both Rolldown since Vite 8).
+// monaco-editor ships in esm/vs/base/browser/dompurify/dompurify.js: monaco-editor 0.58.0 ships
+// DOMPurify 3.4.17, which lacks the fixes of 3.5.0 (DOMPurify makes no further 3.4 release). That
+// copy is a build of dompurify's own ESM module (its default export, the DOMPurify instance), so
+// the package takes its place one to one; package.json names dompurify as a dependency and its
+// `overrides` give monaco-editor the same version, so the version npm audit reads is the one in
+// the bundle. In the build and in the dev server's dependency pre-bundling alike (both Rolldown
+// since Vite 8).
 //
 // A build in which the redirect did not happen fails: a monaco-editor that moves or drops its copy
 // is looked at (does it still ship an old DOMPurify?) instead of bundling it unnoticed.
