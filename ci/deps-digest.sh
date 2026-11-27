@@ -75,14 +75,34 @@ cmd_file() {
   done | jq -s . > "$work/findings.json"
   for f in "$dir"/held/*.json; do cat "$f"; echo; done | jq -s . > "$work/held.json"
   shopt -u nullglob
+  # a chart's or Knative's release a hold keeps (ci/deps/holds.txt, GROUP and NAME its DEPS_BOT
+  # name, as ci/deps-plan.sh reads it): its row is "held (<reason>)" (the check of the packages
+  # writes theirs to held/ itself)
+  jq -r '.[].title' "$work/findings.json" | while IFS= read -r title; do
+    if [[ "$title" =~ ^deps:\ ([a-z0-9-]+)\ ([^ ]+)\ released$ ]]; then printf '%s\t%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    elif [[ "$title" =~ ^Knative\ 1\.[0-9]+(,\ 1\.[0-9]+)*\ released: ]]; then
+      # its newest minor, as the summary's row has it
+      printf 'knative\t%s\n' "$(grep -oE '1\.[0-9]+' <<<"$title" | sort -V | tail -n 1)"
+    fi
+  done | (
+    # shellcheck disable=SC2034 # read by ci/deps/lib.sh
+    DEPS_ROOT="$ROOT"
+    # shellcheck source=ci/deps/lib.sh
+    source "$ROOT/ci/deps/lib.sh"
+    while IFS=$'\t' read -r name version; do
+      reason="$(deps_held "$name" "$name" "$version")" || continue
+      jq -nc --arg id "$name" --arg v "$version" --arg r "$reason" '{id: $id, version: $v, reason: $r}'
+    done
+  ) | jq -s . > "$work/heldcharts.json"
   if [ -f "$dir/checked" ]; then jq -Rs 'split("\n") | map(select(length > 0)) | unique' "$dir/checked"; else echo '[]'; fi > "$work/checked.json"
   # the last release (public main's): what a finding landed on next ships in once the check no
   # longer reports it
   release="${DEPS_RELEASE_VERSION:-$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' "$ROOT/helm/Chart.yaml" 2>/dev/null | head -n 1)}"
   jq -n -L "$LIB" --slurpfile issues "$issues" --slurpfile findings "$work/findings.json" --slurpfile held "$work/held.json" \
+    --slurpfile heldcharts "$work/heldcharts.json" \
     --slurpfile checked "$work/checked.json" --arg date "$date" --argjson week "$(week_json "$date")" --arg release "${release:-?}" \
-    'include "digest"; {issues: $issues[0], findings: $findings[0], held: $held[0], checked: $checked[0], date: $date, week: $week,
-      release: ($release | ltrimstr("v"))} | file_main'
+    'include "digest"; {issues: $issues[0], findings: $findings[0], held: $held[0], heldcharts: $heldcharts[0], checked: $checked[0],
+      date: $date, week: $week, release: ($release | ltrimstr("v"))} | file_main'
 }
 
 cmd_report() {

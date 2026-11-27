@@ -26,6 +26,8 @@
 #     finding for every module (the workflows' pin's, pins-ci--go), the groups read are listed;
 #   - the plan takes a group's newest finding with its updates and supersedes the older ones; a
 #     release outside the constraint is tested under its id, the old form of one is skipped;
+#   - a row the tree moved past since its check (its from gone: a release took it before the daily
+#     check closed it) is current, nothing changed; its other updates still move;
 #   - a release outside the constraint is attempted: the constraint moves mechanically (npm and
 #     composer ranges, a Go major path with its imports, a Python specifier, a Cargo requirement, an
 #     Actions pin or floating major, a Dockerfile base, a pin of a major line with its checksums) and
@@ -874,6 +876,27 @@ bump pins-ci '[{"name": "cloud-provider-kind", "from": "v0.10.0", "to": "v0.10.1
 bump pypi-sdk-workflows '[{"name": "pytest", "from": "7.4.4", "to": "9.0.1"}]'
 [ "$rc" = 2 ] && grep -qF 'keeps no lockfile' "$tmp/r-pypi-sdk-workflows/summary.md" || fail "a Python bump: rc ${rc}"
 echo "ok - pins: the version at every place and its published checksums (a sha256sum per arch, an npm file's sha256 and sha384), a checksums file the build reads, the image's own version, next only for a workflow's; a 504 through the API's asset endpoint; a checksum not published or the patched shim: a person, nothing left changed"
+
+# --- a row the tree moved past since its check -----------------------------------------------------------
+# (the rows of pins-images, npm-vue--monaco-editor and pypi-example-hf-weights--transformers were
+# written before 0.7.8, which took their updates: a deps-test run before the daily check refused
+# them, "pins scalar 1.85.0, not 1.78.1", "no longer names … it moved since the check") an update
+# whose starting point the tree no longer has is nothing to do: a row of only such updates is
+# current (its row closes, no issue), one with others too moves the others
+bump pins-images '[{"name": "scalar", "from": "1.70.0", "to": "1.74.0"}]'
+[ "$rc" = 3 ] && [ "$(cat "$tmp/r-pins-images/result")" = current ] && grep -qF 'the tree moved past scalar 1.74.0 since the check' "$tmp/r-pins-images/summary.md" \
+  && [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ] || fail "a stale pin: rc ${rc}, $(cat "$tmp/r-pins-images/summary.md" 2>/dev/null)"
+bump pins-images '[{"name": "helm", "from": "v3.16.0", "to": "v3.16.4", "files": ["api/Dockerfile", "api/Dockerfile.prod"]}, {"name": "scalar", "from": "1.70.0", "to": "1.74.0"}]'
+[ "$rc" = 0 ] && grep -qx 'ARG HELM_VERSION=v3.16.4' "$repo/api/Dockerfile.prod" && grep -qx 'ARG SCALAR_VERSION=1.75.1' "$repo/api/Dockerfile.prod" \
+  && grep -qF 'kept scalar: the tree moved past it since the check' "$tmp/r-pins-images/edits.log" \
+  || fail "a row with a stale pin and a live one: rc ${rc}, $(cat "$tmp/r-pins-images/summary.md" 2>/dev/null) $(tail -n 5 "$tmp/bump.log")"
+bump pypi-example-hf-weights--transformers '[{"name": "transformers", "from": "==5.19.0", "to": "5.21.0", "outside": true, "constraint": "==5.19.0", "line": "5.x", "why": "an exact pin", "where": "examples/ai/hf-python/weights/requirements.txt", "files": ["examples/ai/hf-python/weights/requirements.txt"]}]'
+[ "$rc" = 3 ] && [ "$(cat "$tmp/r-pypi-example-hf-weights--transformers/result")" = current ] && [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ] \
+  || fail "a stale release outside an exact pin: rc ${rc}, $(cat "$tmp/r-pypi-example-hf-weights--transformers/summary.md" 2>/dev/null) $(tail -n 5 "$tmp/bump.log")"
+bump npm-vue--vite '[{"name": "vite", "from": "5.4.0", "to": "6.0.0", "outside": true, "constraint": "^5.4.0", "line": "6.x", "why": "a new major", "where": "vue/package.json", "files": ["vue/package.json"]}]'
+[ "$rc" = 3 ] && [ "$(cat "$tmp/r-npm-vue--vite/result")" = current ] && [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ] \
+  || fail "a stale release outside a caret range: rc ${rc}, $(cat "$tmp/r-npm-vue--vite/summary.md" 2>/dev/null) $(tail -n 5 "$tmp/bump.log")"
+echo "ok - a row the tree moved past since its check (a release took it before the daily check closed it): current, nothing changed, no person; with live updates too, those move"
 
 # --- releases outside the constraint: attempted, the constraint moved mechanically --------------------
 # ob ID UPDATE_JSON — the bump of a release outside the constraint (its one update, "outside": true)

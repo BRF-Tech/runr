@@ -217,6 +217,21 @@ DEPS_PINS_UNTRACKED=(
   "api/Dockerfile*~APP_VERSION|RunR's own version: the release build sets it (--build-arg APP_VERSION=v<version>)"
 )
 
+# Third parties whose versions RunR's docs and code name ("Kind v0.33.0", "git 1.6.6 or newer",
+# "--k8s=1.37.0") and that no other table of the bot holds: a version right after one of these
+# names is that party's, never a RunR release's (ci/deps/release-pins.sh). The bot's dependencies
+# (DEPS_PINS, DEPS_BOT, the own images of DEPS_DOCKERFILES) and the packages of the tracked
+# package.json and requirements files count without a line here. Lower case, one name each.
+# shellcheck disable=SC2034 # read by ci/deps/release-pins.sh
+DEPS_NAMED=(
+  kubernetes k8s k3s kindest-node knative-serving kata gvisor cert-manager cloudnativepg cnpg
+  external-secrets openbao opentelemetry collector tempo grafana prometheus loki
+  git go golang node node.js nodejs python php rust zig tinygo wasi-sdk wasm-tools wasmtime
+  runwasi spin spin-sdk componentize-py torch torchvision frankenphp alpine debian ubuntu
+  postgres postgresql redis rclone kafka eclipse-mosquitto greenmail trivy nvm wcag
+  hf-serve wrapper text-embeddings-inference upstream tensorflow tensorflow-cpu keras spin-go-sdk
+)
+
 # The holds: packages a person pinned on purpose, with the reason (detection and the bump leave them)
 DEPS_HOLDS_FILE="${DEPS_ROOT}/ci/deps/holds.txt"
 

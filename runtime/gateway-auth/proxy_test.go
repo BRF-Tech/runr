@@ -71,6 +71,33 @@ func newMeter(t *testing.T, upstream string) (*Meter, *Recorder, *Tickets) {
 	return NewMeter(u, tickets, rec, nil), rec, tickets
 }
 
+// meterServer serves m on a listener of its own, as the proxy's Service does. Meter.ServeHTTP
+// records the answer in a deferred call, after the answer went out: a client that has read the
+// whole body can be ahead of the record (a busy CI runner). served gets a value once a call's
+// ServeHTTP has returned, its record made. (An upgraded call's tunnel bytes come later still:
+// ReverseProxy closes the connection to the function in a goroutine of its own, so
+// TestMeterPassesUpgradedConnections waits for them.)
+func meterServer(t *testing.T, m *Meter) (*httptest.Server, <-chan struct{}) {
+	t.Helper()
+	served := make(chan struct{}, 16)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() { served <- struct{}{} }()
+		m.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, served
+}
+
+// waitServed waits until the proxy has finished a call: what it records about it is there.
+func waitServed(t *testing.T, served <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-served:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the proxy did not finish the call within 5 s")
+	}
+}
+
 var meterUsage = UsageKey{Scope: "_", GatewayID: gwA, RouteID: routeK, ConsumerID: "c-org", KeyID: "k-org", Hour: time.Now().UTC().Truncate(time.Hour).Format(time.RFC3339)}
 
 func pendingRow(rec *Recorder, k UsageKey) UsageEntry {
@@ -112,8 +139,7 @@ func TestMeterHandsTheCallOnUnchangedAndRecordsTheAnswer(t *testing.T) {
 	upstream := httptest.NewServer(traefik)
 	defer upstream.Close()
 	m, rec, tickets := newMeter(t, upstream.URL)
-	proxy := httptest.NewServer(m)
-	defer proxy.Close()
+	proxy, served := meterServer(t, m)
 
 	req, _ := http.NewRequest(http.MethodPost, proxy.URL+"/orders/1?expand=items", strings.NewReader(`{"sku":"A-1"}`))
 	req.Host = "orders-acme.eu-1.runr.example"
@@ -130,6 +156,8 @@ func TestMeterHandsTheCallOnUnchangedAndRecordsTheAnswer(t *testing.T) {
 	if resp.StatusCode != 200 || string(body) != `{"ok":true}` {
 		t.Fatalf("answer %d %s", resp.StatusCode, body)
 	}
+	// the client has the answer; the proxy records it once its handler returns
+	waitServed(t, served)
 
 	seen, seenBody := traefik.last()
 	if seen.Host != "orders-acme.eu-1.runr.example" {
@@ -352,8 +380,7 @@ func TestACallerThatGoesAwayIsNoUpstreamError(t *testing.T) {
 	defer upstream.Close()
 	defer close(release)
 	m, rec, tickets := newMeter(t, upstream.URL)
-	proxy := httptest.NewServer(m)
-	defer proxy.Close()
+	proxy, served := meterServer(t, m)
 
 	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/slow", nil)
 	req.Header.Set(TicketHeader, tickets.Sign(TicketFor(meterUsage, time.Now())))
@@ -363,7 +390,9 @@ func TestACallerThatGoesAwayIsNoUpstreamError(t *testing.T) {
 		t.Fatal("the slow call answered")
 	}
 
-	time.Sleep(300 * time.Millisecond)
+	// the proxy's handler sees the caller go away and returns: only then does an empty row mean
+	// that nothing was counted
+	waitServed(t, served)
 	if row := pendingRow(rec, meterUsage); row.UpstreamErrors != 0 || row.Status2xx+row.Status5xx != 0 {
 		t.Errorf("a caller that went away was counted: %+v", row)
 	}

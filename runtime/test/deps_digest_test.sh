@@ -30,6 +30,8 @@
 #     gone leaves the summary;
 #   - a row that waits for a run that needs a person and that the check of its group no longer
 #     reports (a person's release has it): closed, and the run's issue with its last row;
+#   - a chart's release a hold keeps (ci/deps/holds.txt): its row held (<reason>), listed under Next
+#     update required, kept so, not tested by the plan;
 #   - a finding that landed on next and that the check no longer reports: shipped in the last
 #     release; a later week closes a summary with nothing open ("Closed at the end of the week:
 #     nothing was left open.") and opens none;
@@ -452,6 +454,38 @@ grep -qxF '| `zot` <!-- runr-deps:row:zot --> | 0.1.135 | closed | [run](https:/
   && ! jq -e 'any(.[]; .issue == 80)' "$tmp/w48-ops.json" >/dev/null && ! grep -qF '"issue":91' <<<"$(grep -o '<!-- deps-bot [^>]*' <<<"$wb")" \
   || fail "the run's issue with nothing that waits for it: $(cat "$tmp/w48-ops.json")"
 echo "ok - rows that wait for a run that needs a person: closed once the check of their group no longer reports them (a release has them), the run's issue closed with them; a row of a group that was not read, and one of an issue of its own, untouched"
+
+# --- a chart's release a hold keeps --------------------------------------------------------------------
+# (kata-deploy 4.4.0, held in ci/deps/holds.txt since 0.7.8: its row stayed "new" week after week,
+# the plan skipped it in its log only) the daily check writes its row "held (<reason>)", lists it
+# under Next update required and keeps it so; the plan tests no held row; a fresh week's row of it is
+# held from the start
+i95="$(jq -nc '{id: "kata-deploy", kind: "chart", group: "kata-deploy", version: "4.4.0", title: "deps: kata-deploy 4.4.0 released", state: "new", found: "2026-11-18", url: "https://example.test/run/44", note: "#91 was closed"}')"
+jq -n --arg b "$(printf 'Summary.\n\n<!-- deps-bot %s -->\n\n<!-- runr-deps:digest:2026-W48 -->\n' "$i95")" \
+  '[{number: 95, title: "deps: week 2026-W48", state: "OPEN", labels: [{name: "deps"}], body: $b, createdAt: "2026-11-23T05:30:00Z"}]' > "$tmp/w48h.json"
+mkdir -p "$tmp/f48h"
+chart "$tmp/f48h" kata-deploy 4.4.0
+printf '%s\n' kata-deploy > "$tmp/f48h/checked"
+bash "$D" file "$tmp/f48h" "$tmp/w48h.json" 2026-11-28 > "$tmp/w48h-ops.json" || fail "file: $(cat "$tmp/w48h-ops.json")"
+wb="$(jq -r '.[] | select(.op == "edit" and .issue == 95) | .body' "$tmp/w48h-ops.json")"
+grep -qE '^\| `kata-deploy` <!-- runr-deps:row:kata-deploy --> \| 4\.4\.0 \| held \(QEMU sandboxes do not start next to a Cloud Hypervisor VM on the node' <<<"$wb" \
+  && grep -qE '^- `kata-deploy` 4\.4\.0: held, QEMU sandboxes do not start' <<<"$wb" \
+  && grep -o '<!-- deps-bot {.*} -->' <<<"$wb" | sed 's/^<!-- deps-bot //; s/ -->$//' | jq -se 'map(select(.id == "kata-deploy")) | length == 1 and .[0].state == "held" and .[0].kind == "chart"' >/dev/null \
+  && ! jq -e 'any(.[]; .op == "create")' "$tmp/w48h-ops.json" >/dev/null \
+  || fail "a held chart release: its row not held: $(cat "$tmp/w48h-ops.json")"
+# the summary as it is now: the next check keeps the row held (no edit of it), the plan leaves it
+jq --arg b "$wb" 'map(if .number == 95 then .body = $b else . end)' "$tmp/w48h.json" > "$tmp/w48h2.json"
+bash "$D" file "$tmp/f48h" "$tmp/w48h2.json" 2026-11-29 > "$tmp/w48h2-ops.json" || fail "file: $(cat "$tmp/w48h2-ops.json")"
+! jq -e 'any(.[]; .op == "edit" and .issue == 95 and (.body | contains("| 4.4.0 | held (") | not))' "$tmp/w48h2-ops.json" >/dev/null \
+  || fail "a held chart release: the next check changed its row: $(cat "$tmp/w48h2-ops.json")"
+plan="$(bash "$root/ci/deps-plan.sh" "$tmp/w48h2.json")" || fail "plan: ${plan}"
+jq -e '[.tests[] | select(.dep == "kata-deploy")] | length == 0' <<<"$plan" >/dev/null || fail "the plan tests a held row: ${plan}"
+# a week without a summary: the finding's row is held from the start
+echo '[]' > "$tmp/none.json"
+bash "$D" file "$tmp/f48h" "$tmp/none.json" 2026-11-30 > "$tmp/w48h3-ops.json" || fail "file: $(cat "$tmp/w48h3-ops.json")"
+jq -r '.[] | select(.op == "create") | .body' "$tmp/w48h3-ops.json" | grep -qE '^\| `kata-deploy` <!-- runr-deps:row:kata-deploy --> \| 4\.4\.0 \| held \(QEMU' \
+  || fail "a held chart release in a new summary: $(cat "$tmp/w48h3-ops.json")"
+echo "ok - a chart's release a hold keeps (ci/deps/holds.txt): the daily check writes its row held (<reason>) and lists it under Next update required, keeps it so, and the plan does not test it"
 
 # --- landed on next, then shipped; a later week closes a summary with nothing open ---------------------
 r3="$tmp/r3"; mkdir -p "$r3"

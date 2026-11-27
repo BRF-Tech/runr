@@ -60,7 +60,7 @@ Deploy
 
 | Shim | Release | Runtime handler | RuntimeClass | Runs |
 |---|---|---|---|---|
-| Spin (required) | containerd-shim-spin v0.27.2-runr.2 — RunR's build of v0.27.2 (Spin runtime 4.2) | `spin-runr` | `wasmtime-spin-v2` | Spin apps — the five `wasm-*` runtimes, `wasm-exec` included |
+| Spin (required) | containerd-shim-spin v0.27.2-runr.2 — RunR's build of upstream v0.27.2 (Spin runtime 4.2) | `spin-runr` | `wasmtime-spin-v2` | Spin apps — the five `wasm-*` runtimes, `wasm-exec` included |
 | Wasmtime (optional) | containerd-shim-wasmtime v0.6.1 | `wasmtime-runr` | `wasmtime-v1` | WASI command modules and components packaged as OCI images, for platform runtimes that set `runtimeClass: wasmtime-v1` |
 
 The RuntimeClass name `wasmtime-spin-v2` is the one the Spin operator uses, so Spin apps written
@@ -73,16 +73,16 @@ and reports it instead of replacing it.
 
 RunR installs its own build of containerd-shim-spin: **v0.27.2-runr.2**, the image
 `ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.2`, built from `runtime/wasm-shim-spin`. It is the
-upstream tag v0.27.2 with one change in the runwasi library it is built on (containerd-shim-wasm
-1.0.1): the Linux containers of a Wasm pod run with the environment of their pod spec. The upstream
-releases since v0.16.0 start them with the shim's own environment, and Knative's queue-proxy, which
+upstream v0.27.2 tag with one change in the runwasi library it is built on (containerd-shim-wasm 1.0.1):
+the Linux containers of a Wasm pod run with the environment of their pod spec. Upstream's
+containerd-shim-spin v0.16.0 and later start them with the shim's own environment, and Knative's queue-proxy, which
 reads its configuration from its environment (`CONTAINER_CONCURRENCY`, `SERVING_*`, …), exits at
 start — no Wasm revision would become ready. The change is the one proposed to runwasi for exactly
 this; Wasm containers are unchanged.
 
 | | |
 |---|---|
-| Source | containerd-shim-spin tag v0.26.0 (commit `9227600`), containerd-shim-wasm 1.0.1 from crates.io with `patches/containerd-shim-wasm-1.0.1-linux-container-env.patch` |
+| Source | containerd-shim-spin v0.26.0 (the tag's commit `9227600`), containerd-shim-wasm 1.0.1 from crates.io with `patches/containerd-shim-wasm-1.0.1-linux-container-env.patch` |
 | Toolchain | Rust 1.95.0 (the shim's `rust-toolchain.toml`), the cross-rs musl images upstream builds its releases with, protoc and a static libseccomp as in upstream's `cross/Dockerfile` — every input pinned by digest or sha256 |
 | Binaries | static musl builds for amd64 and arm64, cross-compiled on amd64 |
 | Image | `/shim/containerd-shim-spin-v2`, `SHA256SUMS`, `VERSION`, `LICENSE` and `NOTICE` (Apache-2.0) on RunR's Alpine base |

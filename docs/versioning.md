@@ -15,12 +15,12 @@ Public endpoint, no authentication required.
 **Response:**
 ```json
 {
-  "version": "v1.2.0"
+  "version": "vX.Y.Z"
 }
 ```
 
 A bare commit SHA (7 to 40 hex digits) is returned with a `main-` prefix, e.g. `main-3c1a7d7`. Every
-other value is returned as is: a tag (`v1.2.0`), `dev`, or another label a build sets (`demo-1.2.0`,
+other value is returned as is: a tag (`vX.Y.Z`), `dev`, or another label a build sets (`demo-X.Y.Z`,
 `main-3c1a7d7` from `runtime/ci.sh`).
 
 ## Setting the version
@@ -35,7 +35,7 @@ The version comes from the `APP_VERSION` environment variable. The image bakes i
 docker compose build --build-arg APP_VERSION=$(git rev-parse --short HEAD) api
 
 # With an explicit version
-docker compose build --build-arg APP_VERSION=v1.0.0 api
+docker compose build --build-arg APP_VERSION=vX.Y.Z api
 ```
 
 ### `runtime/ci.sh` builds
@@ -50,7 +50,7 @@ The chart's ConfigMap sets `APP_VERSION` from `.Values.appVersion`, defaulting t
 `appVersion` (`helm/Chart.yaml`).
 
 ```bash
-helm upgrade --install runr brf-tech/runr --set appVersion=v1.0.0
+helm upgrade --install runr brf-tech/runr --set appVersion=vX.Y.Z
 ```
 
 ## Flow

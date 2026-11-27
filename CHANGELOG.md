@@ -8,6 +8,58 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-11-27
+
+### Upgrade notes
+
+- **Nothing an installation runs changes: upgrading from 0.7.8 changes the version only.** No
+  migration, no new value; the images are 0.7.8's code built again at 0.7.9, and the region Job
+  moves the agent and the event gateway to 0.7.9 as in every release ([0.7.8 → 0.7.9 in
+  upgrade.md](docs/upgrade.md#078--079)).
+- **Back to 0.7.8 is a `helm rollback`**; nothing runs on the database.
+
+### Fixed
+
+- **A third party's version that happens to be RunR's no longer stops the dependency test bot's
+  release.** The dry run of v0.7.9 (2026-11-27) refused to release because
+  `terraform-provider-runr/go.mod` requires `github.com/hashicorp/go-retryablehttp v0.7.8`, which
+  the release's pin check (`ci/deps/release-pins.sh`) took for a pin of RunR 0.7.8 that it did not
+  know. The check now leaves out a dependency manifest's requirement of a package that is not
+  RunR's own (`go.mod`, `package.json`, `composer.json`, `requirements*.txt`, `pyproject.toml`,
+  `Cargo.toml`), the toolchain's version there, and the version at a place of the bot's pins of
+  third-party tools (kubeconform v0.8.0 and cloud-provider-kind v0.12.0 would have stopped the
+  releases after RunR 0.8.0 and 0.12.0); RunR's own packages still count. The bot runs the released
+  tree's check, so this holds from the next release that carries it.
+- **No other third party's version is taken for RunR's either, in the docs the release edits
+  too.** The pin rules now also leave alone the tag of an image that is no release image of RunR
+  (a mirror of `reqs/`, an own image with its own version), a URL that is not RunR's, the value of
+  another thing's version key (the External Secrets Operator chart `0.19.2` of
+  `api/config/secrets.php`, the NVIDIA device plugin chart `0.17.0` of `helm/values.yaml`,
+  `api/config/ai.php` and the chart's ConfigMap, the policy-controller chart `0.10.0` of
+  `ci/helm-values/supply-chain.yaml`, a Markdown table's row of such a key), `helm … --version` of
+  another chart, a version right after a third party's name ("Kind v0.33.0", "Knative 1.21.3";
+  `DEPS_NAMED` of `ci/deps/packages.sh` and the bot's tables), comment lines and tests' data. A
+  release no longer rewrites such a version in `docs/helm-values.md` and the other docs it moves,
+  and a scan of every version the tree names from 0.7.9 to 3.0.0 leaves no third party's.
+- **The daily check holds a chart's release that `ci/deps/holds.txt` holds.** kata-deploy 4.4.0
+  (held since 0.7.8) stayed a `new` row of the weekly summary week after week: the check filed the
+  chart's release, and only the test bot's plan skipped it, in its log. The summary step now
+  applies the hold to a chart's or Knative's finding as the plan does (`GROUP` and `NAME` its
+  `DEPS_BOT` name): its row is `held (<reason>)`, listed under *Next update required*, and the
+  plan tests no held row.
+- **A row the tree moved past is nothing to do for the dependency test bot, whichever check runs
+  first.** The rows of pins-images, monaco-editor and transformers were written before 0.7.8, which
+  took their updates; a weekly run before the daily check closed them would have refused all three
+  (`pins scalar 1.85.0, not 1.78.1`, "it moved since the check") and opened `next update required`
+  issues. The bump now leaves out an update whose starting point the tree no longer has (the
+  lockfile, `go.mod` or the pin's places moved past its `from`, or the manifest no longer names its
+  constraint): a row of only such updates ends `current` and closes, the others still move.
+- **gateway-auth's metering proxy tests wait for the proxy to record a call.** The proxy records
+  the function's answer once its handler returns, after the answer went out: a test that read the
+  row as soon as the client had the body failed on a busy runner (public CI's Go job on main, twice
+  on `TestMeterHandsTheCallOnUnchangedAndRecordsTheAnswer`). The tests now wait for the handler to
+  return instead of reading at once or sleeping; the proxy itself is unchanged.
+
 ## [0.7.8] - 2026-11-27
 
 ### Upgrade notes
@@ -5199,7 +5251,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.8...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.9...main
+[0.7.9]: https://github.com/brf-tech/runr/releases/tag/v0.7.9
 [0.7.8]: https://github.com/brf-tech/runr/releases/tag/v0.7.8
 [0.7.7]: https://github.com/brf-tech/runr/releases/tag/v0.7.7
 [0.7.6]: https://github.com/brf-tech/runr/releases/tag/v0.7.6

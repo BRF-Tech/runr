@@ -413,7 +413,7 @@ binding of the project cannot leave the project before the binding is detached.
 ### Postgres across regions
 
 A dedicated Postgres binding attached to a global project becomes a **CloudNativePG distributed
-topology** (CloudNativePG 1.24 or later; RunR installs chart `0.26.0`, operator 1.27): every region
+topology** (CloudNativePG 1.24 or later; RunR installs the CloudNativePG chart `0.26.0`, operator 1.27): every region
 of the project runs a Cluster of the same name `pg-<binding>` in its data namespace.
 
 - **The home** (the project's primary region) runs the primary. It names itself in

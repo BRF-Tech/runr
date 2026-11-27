@@ -87,6 +87,32 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.7.8 → 0.7.9
+
+0.7.9 carries fixes of RunR's dependency test bot and of one of RunR's tests, and changes nothing
+an installation runs. There is no database migration, the images keep their names (0.7.8's code,
+built again at 0.7.9), and nothing has to be set ([Procedure](#procedure)); the region Job moves the
+region agent and the event gateway to 0.7.9 ([Order of operations](#order-of-operations)).
+
+- **The dependency test bot's release check** takes no third party's version for a pin of RunR
+  ([development.md](development.md#dependency-test-bot)): a dependency manifest's requirement of a
+  package that is not RunR's own, the toolchain's version there, the bot's pins of third-party
+  tools, and in the docs the release edits the tag of an image that is no release image of RunR, a
+  URL that is not RunR's, another component's version key, `helm … --version` of another chart and
+  a version right after a third party's name. After 0.7.8 it refused to release, because the
+  Terraform provider requires `github.com/hashicorp/go-retryablehttp v0.7.8`.
+- **The bot's weekly summary** holds a chart's release that `ci/deps/holds.txt` holds (kata-deploy
+  4.4.0 is `held` there, not `new`), and a row whose updates the tree already moved past is nothing
+  to do, whichever of the bot's checks runs first.
+- **gateway-auth's metering proxy tests** wait for the proxy to record a call before they read it;
+  the proxy is unchanged.
+
+### Back to 0.7.8
+
+A `helm rollback` (`helm history runr -n runr` lists the revisions); nothing runs on the database,
+and the region Job of the rollback moves the region agent and the event gateway back to 0.7.8.
+**Never uninstall** to go back.
+
 ## 0.7.7 → 0.7.8
 
 0.7.8 is a security release. Requests to URLs that users configure are pinned to the addresses

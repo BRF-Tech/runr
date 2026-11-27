@@ -10,7 +10,9 @@
 #   - a bump is made on the tag and gets the release commit of the next patch version: the chart's
 #     version, the docs' pins of the chart and the tag (not the CLI's, not landing/), CHANGELOG.md's
 #     section with its upgrade notes from [Unreleased], docs/upgrade.md's section; a pin the rules do
-#     not know sends it to a person, with nothing left changed;
+#     not know sends it to a person, with nothing left changed; a third party's version that is the
+#     release's (a manifest's requirement of another package than RunR's own, the toolchain's, a
+#     place of the bot's pins) is no pin, RunR's own packages and versions still are;
 #   - next takes the release as a fast-forward when it is still the tag, or as a merge whose
 #     CHANGELOG.md and docs/upgrade.md put the release's section under next's [Unreleased]; another
 #     conflict needs a person;
@@ -100,8 +102,12 @@ printf '%s\n' '      - uses: brf-tech/runr/actions/deploy@v1.2.3' '| `version` |
 echo 'git clone --branch v1.2.3 https://github.com/BRF-Tech/runr.git' > "$src/compose/README.md"
 echo 'curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v1.2.3 sh             # a specific release' > "$src/docs/cli.md"
 printf '%s\n' '      - uses: brf-tech/runr/actions/deploy@v1.2.3' '    RUNR_VERSION: v1.2.3' > "$src/docs/github-action.md"
-echo 'Every value of the Helm chart `runr` 1.2.3.' > "$src/docs/helm-values.md"
-echo 'helm upgrade runr brf-tech/runr --version 1.2.3 -n runr --reuse-values' > "$src/docs/install.md"
+# with third parties' versions that are the release's: they stay (a chart value's default, another
+# chart's helm command, a tool's version)
+printf '%s\n' 'Every value of the Helm chart `runr` 1.2.3.' \
+  '| `ai.gpu.devicePluginChartVersion` | `"1.2.3"` | NVIDIA device plugin chart version |' > "$src/docs/helm-values.md"
+printf '%s\n' 'helm upgrade runr brf-tech/runr --version 1.2.3 -n runr --reuse-values' \
+  'helm upgrade --install eso external-secrets/external-secrets --version 1.2.3' 'Kind v1.2.3 or later' > "$src/docs/install.md"
 echo 'docker build -t registry.example.com/runr/ui:1.2.3-mt .' > "$src/docs/modules.md"
 echo 'with `ui.image.tag: "1.2.3"` it runs ui:1.2.3-mt; Kata 11.2.3 and 1.2.30 stay.' > "$src/docs/tenancy.md"
 echo '<span>v1.2.3</span> "softwareVersion": "1.2.3"' > "$src/landing/index.html"
@@ -115,6 +121,11 @@ echo "const ZOT_IMAGE = 'ghcr.io/project-zot/zot:v2.1.0';" > "$src/api/zot-image
 # what bumps of next only move (the fake's actions and go-cli groups)
 mkdir -p "$src/cli"
 echo 'module example.test/cli' > "$src/cli/go.mod"
+# a third party's module whose version happens to be the release's (the provider's
+# github.com/hashicorp/go-retryablehttp v0.7.8 at RunR 0.7.8 stopped the bot's v0.7.9): no pin
+mkdir -p "$src/terraform-provider-runr"
+printf 'module github.com/brf-tech/runr/terraform-provider-runr\n\nrequire (\n\tgithub.com/hashicorp/go-retryablehttp v1.2.3 // indirect\n)\n' \
+  > "$src/terraform-provider-runr/go.mod"
 echo 'actions/checkout v7.0.1' > "$src/ci/actions-pins.txt"
 # the dependencies the tag's own bump knows (its DEPS_BOT rows; no ci/deps/packages.sh: the tag is
 # older than the package groups, as a release-path group's bump finds it)
@@ -327,6 +338,10 @@ show actions/deploy/README.md | grep -qF 'a tag such as `v1.2.3`' || fail "the a
 show docs/cli.md | grep -qF 'RUNR_VERSION=v1.2.3 sh' || fail "the CLI's pin moved"
 show docs/github-action.md | grep -qF 'RUNR_VERSION: v1.2.3' || fail "the action's CLI pin moved"
 show docs/tenancy.md | grep -qF '"1.2.4"` it runs ui:1.2.4-mt; Kata 11.2.3 and 1.2.30 stay.' || fail "tenancy.md: $(show docs/tenancy.md)"
+[ "$(show docs/helm-values.md)" = "$(printf '%s\n' 'Every value of the Helm chart `runr` 1.2.4.' '| `ai.gpu.devicePluginChartVersion` | `"1.2.3"` | NVIDIA device plugin chart version |')" ] \
+  || fail "helm-values.md: the chart's version moves, a third party's stays: $(show docs/helm-values.md)"
+[ "$(show docs/install.md)" = "$(printf '%s\n' 'helm upgrade runr brf-tech/runr --version 1.2.4 -n runr --reuse-values' 'helm upgrade --install eso external-secrets/external-secrets --version 1.2.3' 'Kind v1.2.3 or later')" ] \
+  || fail "install.md: the chart's version moves, a third party's stays: $(show docs/install.md)"
 [ -z "$(git -C "$clone" diff --name-only "$tag_commit" "$release" -- landing vue .github)" ] || fail "the release changed landing/, vue/ or .github/"
 show CHANGELOG.md > "$tmp/changelog"
 awk '$0 == "## [Unreleased]" { u = 1; next } u && /^## \[/ { print; exit } u && NF { print "UNRELEASED: " $0; exit }' "$tmp/changelog" | grep -qx '## \[1.2.4\] - 2026-11-14' \
@@ -357,6 +372,156 @@ grep -qF 'No suite ran, nothing was pushed' "$dir/bump/zot/summary.md" || fail "
 [ ! -s "$dir/bump/zot/head" ] && ! git -C "$clone" rev-parse -q --verify deps/zot >/dev/null || fail "zot: a branch for a bump that needs a person"
 [ -z "$(git -C "$clone" status --porcelain)" ] || fail "the clone is left changed: $(git -C "$clone" status --porcelain)"
 echo "ok - a pin the release's rules do not know sends the bump to a person, no suite runs, nothing is left changed"
+
+# --- release-pins.sh: a third party's version that is the release's is no pin ---------------------
+# A dependency manifest's requirement of a package that is not RunR's own, the toolchain's version
+# there, a package's own version, the version at a place of the bot's pins of third-party tools
+# (DEPS_PINS of ci/deps/packages.sh: api/Dockerfile~ARG~HELM_VERSION,
+# .github/workflows/*.yml~YAML~go-version, compose/kind-setup.sh~SH~CPK_VERSION,
+# ci/check-helm-chart.sh~AT~ghcr.io/yannh/kubeconform:), a third party's chart or image (the ESO
+# chart of api/config/secrets.php, the NVIDIA device plugin's of helm/values.yaml, api/config/ai.php
+# and the chart's ConfigMap, the policy-controller's of ci/helm-values/supply-chain.yaml, a mirror
+# of reqs/, an own image's tag), a helm command of another chart, a version right after a third
+# party's name, a Markdown table's row of a third party's key and tests' data are left alone;
+# RunR's own packages, keys, release images, its chart and every other line still count.
+pr="$tmp/pins"
+git init -q "$pr"
+mkdir -p "$pr"/{provider,own,sdk,sdk-own,api/config,api/app/Services/CertManager,py,py-own,rs,.github/workflows,compose,ci/helm-values,helm/templates,docs,runtime/image-upload,vue/tests/region,vue/e2e}
+cat > "$pr/provider/go.mod" <<'EOF'
+module github.com/brf-tech/runr/terraform-provider-runr
+
+go 1.2.3
+
+toolchain go1.2.3
+
+require (
+	github.com/brf-tech/runr/cli v0.0.0
+	github.com/hashicorp/go-retryablehttp v1.2.3 // indirect
+)
+
+require golang.org/x/time v1.2.3
+
+replace github.com/example/old v1.2.3 => github.com/example/new v1.2.3
+
+replace github.com/brf-tech/runr/cli => ../cli
+EOF
+printf 'module github.com/brf-tech/runr/own\n\nrequire github.com/brf-tech/runr/cli v1.2.3\n' > "$pr/own/go.mod"
+cat > "$pr/sdk/package.json" <<'EOF'
+{
+  "name": "@runr/sandbox",
+  "version": "0.1.0",
+  "packageManager": "npm@1.2.3",
+  "engines": { "node": ">=1.2.3" },
+  "dependencies": {
+    "left-pad": "^1.2.3",
+    "alias": "npm:other@1.2.3",
+    "@scope/pkg": "~1.2.3 || 2.x"
+  }
+}
+EOF
+printf '{\n  "name": "runr-example",\n  "version": "1.2.3",\n  "dependencies": { "@runr/workflows": "^1.2.3" }\n}\n' > "$pr/sdk-own/package.json"
+printf '{\n  "require": {\n    "php": "^1.2.3",\n    "laravel/framework": "1.2.3"\n  }\n}\n' > "$pr/api/composer.json"
+printf 'transformers==1.2.3 ; python_version >= "3.11"\nhttpx[http2]>=1.2.3  # the client\n' > "$pr/py/requirements.txt"
+printf 'runr-workflows>=1.2.3\n' > "$pr/py-own/requirements.txt"
+cat > "$pr/py/pyproject.toml" <<'EOF'
+[project]
+name = "runr-sandbox"
+version = "0.1.0"
+requires-python = ">=1.2.3"
+dependencies = ["httpx>=1.2.3", "pydantic[email] ==1.2.3"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=1.2.3",
+]
+
+[tool.poetry.dependencies]
+requests = "^1.2.3"
+EOF
+printf '[project]\nname = "runr-own"\nversion = "1.2.3"\n' > "$pr/py-own/pyproject.toml"
+cat > "$pr/rs/Cargo.toml" <<'EOF'
+[package]
+name = "runr-function"
+version = "0.1.0"
+rust-version = "1.2.3"
+
+[dependencies]
+spin-sdk = "1.2.3"
+serde = { version = "1.2.3", features = ["derive"] }
+EOF
+printf 'FROM scratch\nARG HELM_VERSION=v1.2.3\nARG APP_VERSION=1.2.3\n' > "$pr/api/Dockerfile"
+printf 'env:\n  APP_VERSION: v1.2.3\njobs:\n  go:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "1.2.3"\n' > "$pr/.github/workflows/ci.yml"
+printf '#!/usr/bin/env bash\nCPK_VERSION="v1.2.3"\n' > "$pr/compose/kind-setup.sh"
+printf '#!/usr/bin/env bash\nKUBECONFORM_IMAGE="${KUBECONFORM_IMAGE:-ghcr.io/yannh/kubeconform:v1.2.3}"\n' > "$pr/ci/check-helm-chart.sh"
+# the charts and images of third parties RunR installs
+# The mirror's host comes from a variable: ci/check-reqs-mirror.sh scans this file too, and the
+# fixture's image is not in the mirror
+reqs_mirror_host=ghcr.io/brf-tech/runr
+cat > "$pr/api/config/secrets.php" <<EOF
+<?php
+return ['external' => [
+        'chart_version' => env('RUNR_ESO_CHART_VERSION', '1.2.3'),
+        'image' => env('RUNR_ESO_IMAGE', '${reqs_mirror_host}/reqs/external-secrets:v1.2.3'),
+]];
+EOF
+printf "<?php\nreturn ['gpu' => [\n        'device_plugin_chart' => env('AI_GPU_DEVICE_PLUGIN_CHART_VERSION', '1.2.3'),\n]];\n" > "$pr/api/config/ai.php"
+printf "<?php\nfinal class CertManager\n{\n    public const CHART_VERSION = 'v1.2.3';\n}\n" > "$pr/api/app/Services/CertManager/CertManager.php"
+cat > "$pr/helm/values.yaml" <<'EOF'
+ui:
+  image:
+    tag: "1.2.3"
+ai:
+  gpu:
+    devicePluginChartVersion: "1.2.3"
+  images:
+    teiCpu: ghcr.io/huggingface/text-embeddings-inference:cpu-1.2.3
+EOF
+printf 'data:\n  AI_GPU_DEVICE_PLUGIN_CHART_VERSION: {{ $gpu.devicePluginChartVersion | default "1.2.3" | quote }}\n' > "$pr/helm/templates/configmap.yaml"
+cat > "$pr/ci/helm-values/supply-chain.yaml" <<'EOF'
+supplyChain:
+  toolsImage: registry.acme.example/runr/runr-supply-chain:1.2.3
+  policyController:
+    helmRepo: https://charts.acme.example/sigstore
+    chartVersion: "1.2.3"
+images:
+  uploadImage: registry.acme.example/runr/image-upload:1.2.3
+  apiImage: registry.acme.example/runr/api:1.2.3
+EOF
+printf 'FROM golang:1.2.3-alpine\nARG VERSION=1.2.3\n' > "$pr/runtime/image-upload/Dockerfile"
+cat > "$pr/docs/notes.md" <<'EOF'
+| `ai.gpu.devicePluginChartVersion` | `"1.2.3"` | NVIDIA device plugin chart version |
+| `ui.image.tag` | `"1.2.3"` | the console's image |
+`chartVersion` (`RUNR_POLICY_CONTROLLER_CHART_VERSION`, default `1.2.3`), `helmRepo`
+helm install gpu nvidia/gpu-operator --version v1.2.3
+helm upgrade runr brf-tech/runr --version 1.2.3
+Kind v1.2.3 or later; git 1.2.3 or newer; containerd-shim-spin-v1.2.3.patch; `--k8s=1.2.3`
+a group's updates (`` `axios` 1.2.2 → 1.2.3 ``); jetstack/cert-manager v1.2.3
+https://github.com/spinframework/containerd-shim-spin/releases/download/v1.2.3/shim.tar.gz
+https://github.com/BRF-Tech/runr/releases/download/v1.2.3/runr-linux-amd64
+Zot runs in every region since RunR 1.2.3.
+EOF
+printf '{ "devDependencies": { "axios": "1.2.2" } }\n' > "$pr/package.json"
+# tests' data
+printf "status({ chart_version: '1.2.3' })\n" > "$pr/vue/tests/region/ExternalSecretsCard.spec.js"
+printf "expect(card).toContainText('1.2.3')\n" > "$pr/vue/e2e/secrets.spec.ts"
+git -C "$pr" add -A
+: > "$tmp/no-keep"
+rc=0
+(cd "$pr" && bash "$root/ci/deps/release-pins.sh" 1.2.3 1.2.4 --server-only --check-only --keep="$tmp/no-keep") > "$tmp/pins.out" 2>&1 || rc=$?
+want='left .github/workflows/ci.yml:2:  APP_VERSION: v1.2.3
+left api/Dockerfile:3:ARG APP_VERSION=1.2.3
+left ci/helm-values/supply-chain.yaml:8:  apiImage: registry.acme.example/runr/api:1.2.3
+left docs/notes.md:10:Zot runs in every region since RunR 1.2.3.
+left docs/notes.md:2:| `ui.image.tag` | `"1.2.3"` | the console'"'"'s image |
+left docs/notes.md:5:helm upgrade runr brf-tech/runr --version 1.2.3
+left docs/notes.md:9:https://github.com/BRF-Tech/runr/releases/download/v1.2.3/runr-linux-amd64
+left helm/values.yaml:3:    tag: "1.2.3"
+left own/go.mod:3:require github.com/brf-tech/runr/cli v1.2.3
+left py-own/requirements.txt:1:runr-workflows>=1.2.3
+left sdk-own/package.json:4:  "dependencies": { "@runr/workflows": "^1.2.3" }'
+[ "$rc" = 2 ] && [ "$(LC_ALL=C sort "$tmp/pins.out")" = "$want" ] \
+  || fail "release-pins.sh on third parties' versions (exit ${rc}): $(cat "$tmp/pins.out")"
+echo "ok - release-pins.sh: a third party's version that is the release's (a manifest's requirement or a package's own version, the toolchain's, a place of the bot's pins, a third party's chart, image, key, helm command, URL or name, tests' data) is no pin; RunR's own packages, keys, release images and chart still are"
 
 # --- merge-next ---------------------------------------------------------------------------------------
 m="$(bash "$root/ci/deps-release.sh" merge-next "$clone" "$release" "$tag_commit")" && [ "$m" = "$release" ] || fail "next = the tag: not a fast-forward to the release: ${m}"

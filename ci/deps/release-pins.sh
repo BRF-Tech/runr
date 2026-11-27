@@ -19,14 +19,19 @@
 #                  release commits them apart (the landing/ commit carries other authors)
 #   --keep         literal strings that name PREV as history, not as a pin, one per line, #
 #                  comments (default: ci/deps/pin-keep.txt next to this script): the "measured on
-#                  RunR <PREV>" labels, a third-party version that happens to be the same
+#                  RunR <PREV>" labels
 #   --check-only   edit nothing, only check
 #
 # Then no pin of PREV (nor, in a full release, of the CLI's release) may be left in the tracked files
-# outside the release history (CHANGELOG.md, docs/upgrade.md), lock files, screenshots,
-# helm/Chart.yaml (the release commit sets it), API tests' data, the bot's own files and the keep
-# strings: a line that names it otherwise is a pin these rules do not know. Prints "edit FILE" per
-# file edited and "left FILE:LINE:TEXT" per pin left.
+# outside the release history (CHANGELOG.md, docs/upgrade.md), lock files, screenshots and images,
+# helm/Chart.yaml (the release commit sets it), tests' data, the patches and notices of upstream
+# sources, the bot's own files and the keep strings: a line that names it otherwise is a pin these
+# rules do not know. A third party's version that happens to be PREV is neither moved nor a pin
+# (ci/deps/release-pins.awk, with the bot's tables of ci/deps/lib.sh and packages.sh next to this
+# script): a dependency manifest's requirement of a package that is not RunR's own, a place of the
+# bot's pins of third-party tools, a third party's image, URL, version key or name, a helm command
+# of another chart, a comment line. Prints "edit FILE" per file edited and "left FILE:LINE:TEXT"
+# per pin left.
 #
 # Exit status: 0 done, 2 pins left (nothing is put back: the caller decides), 1 an error.
 set -euo pipefail
@@ -67,12 +72,72 @@ if [ "$server_only" = 0 ] && [ -z "$cli_from" ]; then
 fi
 [ -z "$cli_from" ] || [[ "$cli_from" =~ $re ]] || { echo "release-pins: --cli-from=${cli_from} is no version" >&2; exit 1; }
 
+# What the bot's tables (ci/deps/lib.sh and packages.sh next to this script) and this tree's
+# manifests say of the tree's versions (ci/deps/release-pins.awk):
+#   places      the places of the bot's pins of third-party tools, "FILE<TAB>SLOT<TAB>NAME" per line
+#               (DEPS_PINS' PLACES: FILE~SLOT~NAME, FILE a pathspec glob): the tools' versions
+#   relimages   the images tagged with RunR's version (DEPS_DOCKERFILES' release rows): only their
+#               tags pin a release
+#   ownimages   "DIR IMAGE …": the directories of RunR's own images with versions of their own
+#   thirdnames  the names of third parties, one per line: the bot's dependencies (DEPS_PINS,
+#               DEPS_BOT, the own images), DEPS_NAMED, and the packages of the tracked package.json
+#               and requirements files
+places="$(mktemp)"
+thirdnames="$(mktemp)"
+trap 'rm -f -- "$places" "$thirdnames"' EXIT
+relimages=""
+ownimages=""
+if [ -f "$here/lib.sh" ] && [ -f "$here/packages.sh" ]; then
+  tables() {
+    set -f
+    # shellcheck source=ci/deps/lib.sh disable=SC1091
+    DEPS_ROOT="$(cd "$here/../.." && pwd)" && . "$here/lib.sh" || return 1
+    case "$1" in
+      places)
+        for row in "${DEPS_PINS[@]}"; do
+          for place in $(deps_field "$row" 7); do
+            IFS='~' read -r glob slot name <<<"$place"
+            git ls-files -- "$glob" | while IFS= read -r f; do printf '%s\t%s\t%s\n' "$f" "$slot" "$name"; done
+          done
+        done ;;
+      relimages)
+        for row in "${DEPS_DOCKERFILES[@]}"; do
+          if [ "$(deps_field "$row" 3)" = release ]; then deps_field "$row" 2; fi
+        done | sort -u | paste -sd ' ' - ;;
+      ownimages)
+        for row in "${DEPS_DOCKERFILES[@]}"; do
+          if [ "$(deps_field "$row" 3)" = own ]; then printf '%s %s\n' "$(dirname "$(deps_field "$row" 1)")" "$(deps_field "$row" 2)"; fi
+        done | paste -sd ' ' - ;;
+      names)
+        for row in "${DEPS_PINS[@]}"; do name="$(deps_field "$row" 2)"; printf '%s\n%s\n' "$name" "${name%-[0-9]*}"; done
+        for row in "${DEPS_BOT[@]}"; do deps_field "$row" 1; done
+        for row in "${DEPS_DOCKERFILES[@]}"; do
+          if [ "$(deps_field "$row" 3)" = own ]; then deps_field "$row" 2; fi
+        done
+        printf '%s\n' "${DEPS_NAMED[@]}" ;;
+    esac
+  }
+  (tables places) > "$places" || { echo "release-pins: cannot read the pin places of ${here}/packages.sh" >&2; exit 1; }
+  relimages="$(tables relimages)" || { echo "release-pins: cannot read the release images of ${here}/packages.sh" >&2; exit 1; }
+  ownimages="$(tables ownimages)" || { echo "release-pins: cannot read the own images of ${here}/packages.sh" >&2; exit 1; }
+  (tables names) > "$thirdnames" || { echo "release-pins: cannot read the third parties' names of ${here}/packages.sh" >&2; exit 1; }
+fi
+# the tree's npm and Python packages (the names a doc names their versions with)
+if command -v jq >/dev/null 2>&1; then
+  git ls-files -z -- '*package.json' ':!**/node_modules/**' | xargs -0 -r jq -r \
+    '[.dependencies, .devDependencies, .peerDependencies, .optionalDependencies] | map(select(. != null) | keys[]) | .[]
+     | if test("^@runr/") then empty else ., sub("^@[^/]+/"; "") end' \
+    >> "$thirdnames" 2>/dev/null || true
+fi
+git ls-files -z -- '*requirements*.txt' | xargs -0 -r sed -nE 's/^[[:space:]]*([A-Za-z][A-Za-z0-9._-]*).*/\1/p' >> "$thirdnames" 2>/dev/null || true
+
 # edit FILE PREV CLIPREV — FILE's pins of PREV (and its CLI lines' of CLIPREV, when given) to NEW
 edit() {
   local f="$1" out rc=0
   [ -f "$f" ] || { echo "release-pins: ${f} missing" >&2; exit 1; }
   out="$(mktemp)"
   awk -v mode=edit -v prev="$2" -v new="$new" -v cliprev="$3" -v keep="$keep" -v path="$f" \
+    -v relimages="$relimages" -v ownimages="$ownimages" -v thirdnames="$thirdnames" \
     -f "$here/release-pins.awk" "$f" > "$out" || rc=$?
   case "$rc" in
     0) cat "$out" > "$f"; echo "edit ${f}" ;;
@@ -94,15 +159,24 @@ if [ "$check_only" = 0 ]; then
   fi
 fi
 
-# left VERSION CLIKEEP [PATHSPEC…] — the lines that still pin VERSION
+# left VERSION CLIKEEP [PATHSPEC…] — the lines that still pin VERSION, of the files that name it
+# (read whole: a YAML key's parents name what it is of). Tests' data is no pin (a test that needs
+# the release's version fails on the release commit), nor are images and the patches and notices
+# of upstream sources RunR builds
 left() {
-  local v="$1" clikeep="$2"
+  local v="$1" clikeep="$2" files=()
   shift 2
-  git grep -n -I -F -e "$v" -- . \
-    ':!CHANGELOG.md' ':!docs/upgrade.md' ':!**/package-lock.json' ':!**/go.sum' ':!**/*.lock' \
-    ':!landing/shots/**' ':!vue/shots/**' ':!helm/Chart.yaml' ':!api/tests/**' \
-    ':!ci/deps/**' ':!ci/deps-*.sh' ':!runtime/test/deps_*_test.sh' "$@" 2>/dev/null \
-    | awk -v mode=left -v ver="$v" -v clikeep="$clikeep" -v keep="$keep" -f "$here/release-pins.awk" || true
+  mapfile -d '' files < <(git grep -l -z -I -F -e "$v" -- . \
+    ':!CHANGELOG.md' ':!docs/upgrade.md' ':!**/package-lock.json' ':!**/npm-shrinkwrap.json' \
+    ':!**/pnpm-lock.yaml' ':!**/go.sum' ':!**/go.work.sum' ':!**/*.lock' \
+    ':!landing/shots/**' ':!vue/shots/**' ':!**/*.svg' ':!helm/Chart.yaml' \
+    ':!**/tests/**' ':!**/testdata/**' ':!**/*_test.go' ':!**/runrtest/**' ':!**/*.spec.*' ':!**/*.test.*' \
+    ':!vue/e2e/**' ':!runtime/test/**' ':!**/*.patch' ':!**/NOTICE' \
+    ':!ci/deps/**' ':!ci/deps-*.sh' "$@" 2>/dev/null || true)
+  [ "${#files[@]}" -gt 0 ] || return 0
+  awk -v mode=left -v ver="$v" -v clikeep="$clikeep" -v keep="$keep" -v places="$places" \
+    -v relimages="$relimages" -v ownimages="$ownimages" -v thirdnames="$thirdnames" \
+    -f "$here/release-pins.awk" "${files[@]}" || true
 }
 
 found=""

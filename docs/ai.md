@@ -543,8 +543,8 @@ checks the disk before the cluster is created. Under Docker's root it needs:
 - `kind load`'s temporary archive, or that much in `RUNR_E2E_TMPDIR` when that is on another
   filesystem.
 
-With the default Kind cluster (a control-plane, two workers and the GPU worker) and hf-serve
-1.1.1 this comes to about 35 GiB; with `KIND_WORKERS=1 KIND_PRELOAD=0` (three nodes), about
+With the default Kind cluster (a control-plane, two workers and the GPU worker) and
+hf-serve 1.1.1 this comes to about 35 GiB; with `KIND_WORKERS=1 KIND_PRELOAD=0` (three nodes), about
 25 GiB. When the run would not fit, `test-ai` does not start and prints what it needs and what
 is free; `RUNR_E2E_GPU=0` runs the CPU cases without the GPU worker.
 

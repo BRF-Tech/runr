@@ -199,7 +199,7 @@ def item_cell:
 def oneline: tostring | gsub("[\r\n]+"; " ") | sub("\\s+$"; "");
 def next_section($ls; $max):
   [$ls[] | select(is_next_required)] as $n
-  | [$ls[] | select(.kind == "held" and .state == "held")] as $h
+  | [$ls[] | select(.state == "held")] as $h
   | if ($n | length) + ($h | length) == 0 then ""
     else "### Next update required\n\n"
       + ([$n[] | "- `\(.id)` \(version_cell($max) | oneline)"
@@ -316,7 +316,11 @@ def file_main:
                        and ((.labels | index("deps: passed")) == null))]) as $sep
   | ([$all[] | select(.loose == true)] | sort_by(.number)) as $loose
   | ([$in.findings[] | parse_finding]) as $parsed
-  | ([$parsed[] | select(.type == "finding")] | unique_by(lkey)) as $F
+  | ($in.heldcharts // []) as $HC
+  # a chart's or Knative's release a hold keeps carries the hold's reason (held)
+  | ([$parsed[] | select(.type == "finding")] | unique_by(lkey)
+     | map(. as $f | ([$HC[] | select(.id == $f.id and (.version | tostring) == ($f.version | tostring))][0]) as $h
+           | if $h != null and ($f.kind | IN("chart", "knative")) then . + {held: $h.reason} else . end)) as $F
   | ([$F[] | .id]) as $fids
   | ($in.held // []) as $H
   # the earlier bot's issues of major versions: an open "major versions need a decision" issue, and a
@@ -360,7 +364,16 @@ def file_main:
       ($f | lkey) as $k
       | . as $st
       | ([$sep[] | select(.key == $k and ((.number | IN($st.gone[])) | not))][0]) as $s
-      | if $s != null then
+      # a chart's release a hold keeps: its row "held (<reason>)", never tested (ci/deps-plan.sh
+      # tests no held row); one the hold no longer keeps is new again
+      | if ($f.held // null) != null then
+          (if any(.lines[]; lkey == $k and .state == "held" and .note == $f.held) then .
+           else (([.lines[] | select(.id == $f.id) | .found][0]) // $date) as $fd
+             | drop_id($f.id) | .lines += [$f | line_new($fd) | .state = "held" | .note = $f.held]
+             | (if ($k | IN($known[])) then . else .move = true | touch($k) end) end)
+        elif any(.lines[]; lkey == $k and .state == "held" and .kind != "held") then
+          .lines |= map(if lkey == $k then .state = "new" | del(.note) else . end) | .move = true | touch($k)
+        elif $s != null then
           (if has_key($k) then .
            else drop_id($f.id) | .lines += [$f | line_new($date) | .issue = $s.number | .item_kind = "issue"
                   | .state = issue_state($s.labels)] end)

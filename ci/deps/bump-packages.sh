@@ -935,6 +935,79 @@ pkg_suites_json() {
   [ -z "$(git -C "$ROOT" diff --name-only -- api)" ] || echo 1 > "$report/unit"
 }
 
+# pkg_moved NAME FROM CONSTRAINT WHERE — has the tree moved past an update since its check: the
+# manifest no longer names NAME as CONSTRAINT (a release outside it), or the lockfile, go.mod or
+# the pin's places no longer have NAME at FROM (to the update's version or past it, as a person's
+# release did)? Status 0 when it has, 1 when not or when the kind does not tell (actions and docker
+# keep a pin that is there already themselves; pypi and cargo have no lockfile)
+pkg_moved() {
+  local n="$1" from="${2#v}" c="$3" where="$4" cur row place glob slot var file seen=0
+  if [ -n "$c" ]; then
+    case "$pkg_kind" in
+      npm) cur="$(jq -r --arg n "$n" '[.dependencies, .devDependencies, .peerDependencies, .optionalDependencies] | map(select(. != null) | .[$n] // empty) | .[0] // ""' "${where:-$pkg_dir/package.json}" 2>/dev/null)" || return 1 ;;
+      composer) cur="$(jq -r --arg n "$n" '((.require // {})[$n] // (."require-dev" // {})[$n]) // ""' "${where:-$pkg_dir/composer.json}" 2>/dev/null)" || return 1 ;;
+      pypi)
+        [ -f "$where" ] || return 1
+        NAME="$n" C="$c" perl -0 -ne 'BEGIN { $f = 0 }
+          while (m{(?<![A-Za-z0-9._-])\Q$ENV{NAME}\E\s*(?:\[[^\]\n]*\])?\s*([<>=!~][^"\x27#;\n]*?)(?=\s*(?:["\x27#;\]]|$))}gm) { (my $s = $1) =~ s/\s+//g; $f = 1 if $s eq $ENV{C} }
+          END { exit($f ? 1 : 0) }' "$where"
+        return ;;
+      cargo)
+        [ -f "$where" ] || return 1
+        cur="$(python3 -I "$ROOT/ci/deps/manifests.py" cargo "$where" 2>/dev/null | awk -F'\t' -v n="$n" '$1 == n { print $2; exit }')" || return 1 ;;
+      go) grep -qE "^[[:space:]]*(require[[:space:]]+)?${c//./\\.}[[:space:]]+v" "$pkg_dir/go.mod" && return 1; return 0 ;;
+      *) return 1 ;;
+    esac
+    # a manifest that names it no more, or not readable: the kind's own bump says
+    [ -n "$cur" ] && [ "$cur" != "$c" ]
+    return
+  fi
+  case "$pkg_kind" in
+    npm) cur="$(jq -r --arg n "$n" '.packages["node_modules/" + $n].version // ""' "$pkg_dir/package-lock.json" 2>/dev/null)" || return 1 ;;
+    composer) cur="$(jq -r --arg n "$n" '[(.packages // [])[], (."packages-dev" // [])[] | select(.name == $n) | .version][0] // ""' "$pkg_dir/composer.lock" 2>/dev/null)" || return 1 ;;
+    go) cur="$(awk -v n="$n" '$1 == n && $2 ~ /^v/ { print $2; exit } $1 == "require" && $2 == n { print $3; exit }' "$pkg_dir/go.mod" 2>/dev/null)" || return 1 ;;
+    pins)
+      row="$(deps_pin_row "$pkg_group" "$n")" || return 1
+      for place in $(deps_field "$row" 7); do
+        IFS='~' read -r glob slot var <<<"$place"
+        while IFS= read -r file; do
+          [ -n "$file" ] || continue
+          while IFS= read -r cur; do
+            [ -n "$cur" ] || continue
+            seen=1
+            [ "${cur#v}" != "$from" ] || return 1
+          done < <(deps_pin_read "$file" "$slot" "$var")
+        done < <(deps_pin_files "$glob")
+      done
+      [ "$seen" = 1 ]
+      return ;;
+    *) return 1 ;;
+  esac
+  [ -n "$cur" ] && [ "${cur#v}" != "$from" ]
+}
+
+# pkg_drop_moved — the updates the tree has moved past since their check leave the finding (a row
+# written before a release that took them: the daily check would close it, and deps-test may run
+# first); none left: nothing to do (current, the row closes)
+pkg_drop_moved() {
+  local i n name from to c where kept=() gone=()
+  n="$(jq length "$updates_file")"
+  for ((i = 0; i < n; i++)); do
+    IFS=$'\x1f' read -r name from to c where < <(jq -r --argjson i "$i" '.[$i] | [.name, (.from // ""), .to,
+      (if .outside == true then (.constraint // "") else "" end), (.where // (.files // [])[0] // "")] | join("\u001f")' "$updates_file")
+    if [ -n "$from$c" ] && pkg_moved "$name" "$from" "$c" "$where"; then gone+=("${name} ${to}"); else kept+=("$i"); fi
+  done
+  [ "${#gone[@]}" -gt 0 ] || return 0
+  if [ "${#kept[@]}" -eq 0 ]; then
+    printf 'the last release has every update of %s already, or a newer one (the tree moved past %s since the check).\n' "$dep" "$(printf '%s, ' "${gone[@]}" | sed 's/, $//')" > "$report/summary.md"
+    deps_revert_all
+    finish current 3
+  fi
+  for i in "${gone[@]}"; do echo "kept ${i%% *}: the tree moved past it since the check" >> "$report/edits.log"; done
+  jq --argjson keep "$(printf '%s\n' "${kept[@]}" | jq -sc .)" '[. as $u | $keep[] | $u[.]]' "$updates_file" > "$work/updates.kept.json"
+  updates_file="$work/updates.kept.json"
+}
+
 bump_packages() {
   local tag edited touched list n label_line key path img held_reason name after
   [ -n "${updates_file:-}" ] && [ -s "$updates_file" ] || { echo "${dep}: a package group needs --updates=FILE (the finding's updates)" >&2; exit 1; }
@@ -942,6 +1015,8 @@ bump_packages() {
   # the updates as the bump takes them: an array (the marker's updates), names and versions checked
   jq -e 'type == "array"' "$updates_file" >/dev/null 2>&1 || { jq -c '.updates // []' "$updates_file" > "$work/updates.json"; cp "$updates_file" "$work/meta.json"; updates_meta="$work/meta.json"; updates_file="$work/updates.json"; }
   pkg_safe || { echo "${dep}: the updates name a package, a version, a digest or a file the bot does not take as is" >&2; exit 1; }
+  # what the tree has already (a release since the check took it) is nothing to do
+  pkg_drop_moved
   # a held package is never moved, whatever the finding says
   while IFS=$'\t' read -r name after; do
     held_reason="$(deps_held "$pkg_group" "$name" "$after")" && reasons+=("${name} ${after} is held: ${held_reason}")

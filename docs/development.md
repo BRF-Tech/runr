@@ -779,9 +779,21 @@ Each version is first made and tested alone:
    `[Unreleased]` held, and its links; `docs/upgrade.md`'s section `x.y.z → x.y.z+1` with the bump's
    line and the suites that ran. A dependency release builds no CLI and no Terraform provider and
    does not change runr.sh: the docs' CLI pins (`RUNR_VERSION=…`, "CLI release") and `landing/` keep
-   the last full release, whose CLI they name. A docs line that names the base version where the pin
-   rules do not know it as a pin or as history (`ci/deps/pin-keep.txt`: the "measured on RunR …"
-   labels, a third-party version that happens to be the same) sends the bump to a person.
+   the last full release, whose CLI they name. A third party's version that happens to be the base
+   version is no pin, neither moved in the docs nor reported (`ci/deps/release-pins.awk`): a
+   dependency manifest's requirement of another package than RunR's own (`go.mod`, `package.json`,
+   `composer.json`, `requirements*.txt`, `pyproject.toml`, `Cargo.toml`, a template's package.json;
+   a package with `runr` as a word of its name is RunR's) and a package's own version; the version
+   at a place of the bot's pins of third-party tools (`DEPS_PINS`); the tag of an image that is no
+   release image of RunR (`DEPS_DOCKERFILES`' release rows: api, ui, agent, queue-consumer); a URL
+   that is not RunR's; the value of another thing's version key (`devicePluginChartVersion`,
+   `RUNR_ESO_CHART_VERSION`, `supplyChain.policyController.chartVersion` through its YAML parent,
+   a PHP class's or an own image's `VERSION`, a Markdown table's key row, a Terraform variable's
+   default); `helm … --version` of another chart; a version right after a third party's name
+   (`DEPS_NAMED`, the bot's dependencies, the tracked package.json and requirements files'
+   packages, a repo/chart or Go module path: "Kind v0.33.0", "Knative 1.21.3"); comment lines and
+   tests' data. A line that names the base version where the pin rules do not know it as a pin or as
+   history (`ci/deps/pin-keep.txt`: the "measured on RunR …" labels) sends the bump to a person.
 3. **Next must take the release** (`ci/deps-release.sh merge-next`): a fast-forward when `next` is
    still the tag, otherwise a merge of the release into `next`, by the bot: what git merges, with
    `CHANGELOG.md` and `docs/upgrade.md` taking the release's section above `next`'s newest one
@@ -959,8 +971,8 @@ filex's dependency bot (bot name `runr-deps` here):
   public `main`, in that release); `next update required` (its bump failed, is not mechanical or
   failed together with the run's other bumps: an issue of its own, the Item; the Note says which
   suite failed or why; tried again every weekly run); `needs attention` (the run needs a person:
-  the Item is the run's issue); `held (<reason>)` (a major a hold keeps, the reason of
-  `ci/deps/holds.txt`); `closed` (closed without shipping: superseded, the last release has it, no
+  the Item is the run's issue); `held (<reason>)` (an update or a chart's release a hold keeps,
+  the reason of `ci/deps/holds.txt`); `closed` (closed without shipping: superseded, the last release has it, no
   longer found, its issue closed). Rows of the older `red` state read as `next update required`.
 - **Next update required**: a section of its own under the table, when it has something: one line
   per row in that state (its version, why, its issue and the run) and one per hold with its reason
@@ -1066,8 +1078,10 @@ as `go-toolchain`, with the advisories' finding), never a bump.
 **Holds** (`ci/deps/holds.txt`, `GROUP NAME VERSIONS REASON`): what a person pinned on purpose.
 The check leaves them and names each one with its reason (an update it keeps back, a major or a
 minor one, is a `held (<reason>)` row of the weekly summary, listed under *Next update required*,
-never an issue); the plan skips an
-update a hold keeps, and a bump that would move one is not mechanical. Today: the Spin
+never an issue; so is a chart's or Knative's release a hold keeps, whose `GROUP` and `NAME` are its
+`DEPS_BOT` name: the daily check's summary step applies the hold to the chart check's finding);
+the plan skips an update a hold keeps and tests no held row, and a bump that would move one is not
+mechanical. Today: the Spin
 shim's Rust and cross-rs images (by digest, with upstream's toolchain) and its protoc, libseccomp
 and containerd-shim-wasm pins (upstream's build inputs, which move with containerd-shim-spin), the
 Terraform provider's `github.com/brf-tech/runr/cli` (RunR's own module, moved by the manual
@@ -1088,7 +1102,10 @@ finding that stayed on its old version, another Go line or a held package that m
 mechanical, with nothing left changed. An update the checkout has
 already (a release a person made took it: the new tag, pin or version is in place) is nothing to
 do: the bump ends `current`, and an issue of its own that the weekly run retries closes with "the
-last release has it". An image whose own version moves (gateway-auth, image-upload, supply-chain,
+last release has it". So is an update whose starting point the checkout no longer has (the
+lockfile, `go.mod` or the pin's places moved past its `from`, the manifest no longer names its
+constraint): a row written before a release that took it, which the daily check would close, is
+`current` whichever of the two runs first; the finding's other updates still move. An image whose own version moves (gateway-auth, image-upload, supply-chain,
 the Spin shim) moves it wherever its tag is named; a version only RunR's build has
 (`v0.27.2-runr.1`) also wherever it is named alone, but on a line of the past. A bump that changes
 anything under `api/` (an image's version in the API's config and tests) runs PHPUnit as well.
@@ -1321,9 +1338,9 @@ GitHub Actions is the repository's CI; the workflows live in `.github/workflows/
 
 By hand: Actions → the workflow → **Run workflow**, or `gh workflow run e2e.yml -f suite=kind`
 (`suite`: `all`, `kind`, `ui-stack`; `workers`: `1` for a runner short of disk). CI runs the
-newest Kubernetes only: the `k8s` input (a `kindest-node` tag of the reqs mirror) is `1.37.0` by
-default, the newest node image of Kind v0.33.0, with kubectl 1.37; the dependency bot's suites run
-it too, and a Knative minor that needs a newer Kubernetes waits for Kind's next node image.
+newest Kubernetes only: the `k8s` input (a `kindest-node` tag of the reqs mirror) is by default
+Kubernetes `1.37.0`, the newest node image of Kind v0.33.0, with kubectl 1.37; the dependency bot's
+suites run it too, and a Knative minor that needs a newer Kubernetes waits for Kind's next node image.
 
 The two e2e suites run on standard GitHub-hosted runners (4 vCPUs, 16 GB, the runner's own
 Docker). `ci.sh test` needs neither `/dev/kvm` nor a GPU: its sandbox cases run the gVisor
