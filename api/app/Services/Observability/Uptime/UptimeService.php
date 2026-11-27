@@ -65,14 +65,14 @@ class UptimeService
             foreach ($chunk as $check) {
                 $check->forceFill(['next_check_at' => $now->copy()->addSeconds(max(10, $check->interval_seconds))])->save();
 
-                [$url, $error] = $this->resolveTarget($check);
+                [$url, $error, $options] = $this->resolveTarget($check);
                 if ($url === null) {
                     $this->record($check, UptimeCheck::CONTROL_PLANE, false, null, null, $error, $now);
                     $ran++;
 
                     continue;
                 }
-                $targets[$check->id] = [$check, $url];
+                $targets[$check->id] = [$check, $url, $options];
             }
 
             if (! $targets) {
@@ -82,11 +82,11 @@ class UptimeService
             $started = microtime(true);
             $responses = Http::pool(function (Pool $pool) use ($targets) {
                 $out = [];
-                foreach ($targets as $id => [$check, $url]) {
+                foreach ($targets as $id => [$check, $url, $options]) {
                     $out[] = $pool->as($id)
                         ->timeout(max(1, $check->timeout_seconds))
                         ->connectTimeout(max(1, min(10, $check->timeout_seconds)))
-                        ->withOptions(['allow_redirects' => false, 'http_errors' => false])
+                        ->withOptions(['allow_redirects' => false, 'http_errors' => false] + $options)
                         ->withUserAgent('runr-uptime/1 (control plane)')
                         ->withHeaders($check->headers ?? [])
                         ->send($check->method ?: 'GET', $url);
@@ -107,24 +107,37 @@ class UptimeService
     }
 
     /**
-     * The URL a check probes: its absolute URL (SSRF-guarded) or the project's endpoint + path.
+     * The URL a check probes: its absolute URL or the project's endpoint + path, checked with the
+     * request options that pin it to the addresses the guard checked (probe right after this
+     * call). An absolute URL is always held to the guard; the project's endpoint when its
+     * function domain is the organization's own (OutboundUrlGuard::project()).
      *
-     * @return array{0: string|null, 1: string|null} [url, error]
+     * @return array{0: string|null, 1: string|null, 2: array<string, mixed>} [url, error, request options]
      */
     public function resolveTarget(UptimeCheck $check): array
     {
+        $allowPrivate = (bool) config('observability.uptime.allow_private_targets', false);
         if ($check->url) {
-            $reason = $this->guard->check($check->url, (bool) config('observability.uptime.allow_private_targets', false));
+            $target = $this->guard->target($check->url, $allowPrivate);
 
-            return $reason === null ? [$check->url, null] : [null, $reason];
+            return $target->allowed() ? [$check->url, null, $target->options()] : [null, $target->reason, []];
         }
 
+        $url = $this->endpointUrl($check);
+        if ($url === null) {
+            return [null, __('observability.uptime.no_endpoint'), []];
+        }
+        $target = $this->guard->project($url, $allowPrivate);
+
+        return $target->allowed() ? [$url, null, $target->options()] : [null, $target->reason, []];
+    }
+
+    /** The project's endpoint + the check's path; null without a function URL. */
+    private function endpointUrl(UptimeCheck $check): ?string
+    {
         $base = $check->project ? $this->replay->targetUrl($check->project) : null;
-        if ($base === null) {
-            return [null, __('observability.uptime.no_endpoint')];
-        }
 
-        return [$base.'/'.ltrim($check->path ?: '/', '/'), null];
+        return $base === null ? null : $base.'/'.ltrim($check->path ?: '/', '/');
     }
 
     /**
@@ -375,13 +388,26 @@ class UptimeService
                 if (! self::runsIn($check, $region)) {
                     continue;
                 }
-                [$url] = $this->resolveTarget($check);
+                // The agent checks every address it connects to (an agent without
+                // allow_private_targets blocks private targets): an absolute URL as the control
+                // plane does; the project's own endpoint — RunR's ingress, private in many
+                // regions — only when its function domain is the organization's own and the
+                // agent's region is not the organization's own cluster
+                $allowPrivate = (bool) config('observability.uptime.allow_private_targets', false);
+                if ($check->url) {
+                    [$url] = $this->resolveTarget($check);
+                } else {
+                    $url = $this->endpointUrl($check);
+                    $allowPrivate = $allowPrivate || $url === null || ! $this->guard->organizationControlled($url)
+                        || ($tenantId !== null && (string) ($region->owner_tenant_id ?? '') === $tenantId);
+                }
                 if ($url === null) {
                     continue;
                 }
                 $out[] = [
                     'key' => ($tenantId ?? '_').':'.$check->id,
                     'url' => $url,
+                    'allow_private_targets' => $allowPrivate,
                     'method' => $check->method ?: 'GET',
                     'headers' => (object) ($check->headers ?? []),
                     'interval_seconds' => $check->interval_seconds,

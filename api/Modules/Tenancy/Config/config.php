@@ -22,6 +22,16 @@ return [
      */
     'enabled' => env('TENANCY_ENABLED', false),
 
+    /**
+     * Organizations' own regions (App\Services\Kubeconfigs\TenantKubeconfigs, docs/security.md#tenant-region-kubeconfigs):
+     * the server of their kubeconfig must be a public address. true accepts private addresses
+     * as well (organizations whose clusters sit on the installation's private network) — never
+     * loopback, link-local, unspecified or multicast ones; the connection stays pinned.
+     */
+    'region_kubeconfig' => [
+        'allow_private_servers' => (bool) env('TENANCY_REGIONS_ALLOW_PRIVATE', false),
+    ],
+
     'tenant_model' => Tenant::class, // Overridden by TenancyServiceProvider when module is active
     'id_generator' => UUIDGenerator::class,
 

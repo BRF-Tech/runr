@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Resources\KnativeRegionResource;
 use App\Jobs\MigrateRegionJob;
 use App\Models\KnativeRegion;
+use App\Rules\RegionKubeconfig;
 use App\Services\DomainMigrateService;
 use App\Services\RegionMigrateService;
 use App\Services\Residency\RegionPolicy;
@@ -21,8 +22,9 @@ class RegionMigrateController extends Controller
      */
     public function startMigration(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
+        // an organization's own region moves to a kubeconfig KubeconfigPolicy accepts
         $request->validate([
-            'kubeconfig' => 'required|string',
+            'kubeconfig' => ['required', 'string', RegionKubeconfig::forRegion($knativeRegion)],
         ]);
 
         if ($knativeRegion->is_migrating) {

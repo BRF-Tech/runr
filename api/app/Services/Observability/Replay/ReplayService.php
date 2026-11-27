@@ -6,6 +6,7 @@ use App\Models\Observability\ProjectObservabilitySetting;
 use App\Models\Observability\ReplayCapture;
 use App\Models\Project;
 use App\Models\Setting;
+use App\Services\Observability\OutboundUrlGuard;
 use App\Services\Observability\ReplayTokens;
 use App\Services\Observability\TenantScope;
 use App\Support\Secrets\SecretRedactor;
@@ -190,7 +191,14 @@ class ReplayService
             $body = (string) base64_decode($body, true);
         }
 
-        $request = Http::withOptions([
+        // The project's own URL; under the organization's own base domain it is held to the
+        // outbound guard and sent to the addresses that were checked (OutboundUrlGuard::project())
+        $target = app(OutboundUrlGuard::class)->project($url, (bool) config('observability.replay.allow_private_targets', false));
+        if (! $target->allowed()) {
+            throw new ReplayNotPossibleException((string) $target->reason);
+        }
+
+        $request = Http::withOptions($target->options() + [
             'verify' => (bool) config('observability.replay.verify_tls', true),
             'allow_redirects' => false,
             'http_errors' => false,

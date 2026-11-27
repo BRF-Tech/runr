@@ -126,6 +126,12 @@ DEPS_UNTRACKED=(
 # shellcheck disable=SC2034 # read by ci/deps/bump-packages.sh
 DEPS_NPM_BUILD_ROOTS="vite @vitejs/plugin-vue @tailwindcss/postcss tailwindcss postcss esbuild"
 
+# The npm packages of the console that only its end-to-end suites run: Playwright, whose version
+# names the Chromium CI installs (npx playwright install chromium). A bump that moves one runs
+# ui-stack besides ui, also when it lands on next (ci/deps/bump-packages.sh)
+# shellcheck disable=SC2034 # read by ci/deps/bump-packages.sh
+DEPS_NPM_E2E_ROOTS="@playwright/test playwright playwright-core"
+
 # ── The version pins of the pins groups ───────────────────────────────────────
 # The tools RunR's images download (Dockerfile ARGs) and the tools of the workflows (env and with:
 # inputs): each row one pin, the same version at every place it is named.

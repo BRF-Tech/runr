@@ -150,7 +150,7 @@ edition: multi-tenant              # Tenancy + AuthProvider modules, the multi-t
 ```
 
 In the multi-tenant edition the chart appends `ui.image.multiTenantSuffix` (default `-mt`) to the
-UI tag: with `ui.image.tag: "0.7.7"` it runs `ghcr.io/brf-tech/runr/ui:0.7.7-mt`, with the default
+UI tag: with `ui.image.tag: "0.7.8"` it runs `ghcr.io/brf-tech/runr/ui:0.7.8-mt`, with the default
 (empty) tag the chart's release, `<appVersion>-mt`, as with the tag `latest`, which has no
 multi-tenant variant. A UI image of your own that carries the
 modules under its plain tag needs `ui.image.multiTenantSuffix: ""`
@@ -520,7 +520,12 @@ Of the platform regions, a tenant sees and deploys to its assigned ones only.
   applied to its project namespace. Platform regions are read-only for tenant members. An own
   region set inactive or to maintenance gets its status block like a platform region, and
   `region:reconcile` keeps that block as the region's status wants it
-  ([Regions: status](regions.md#region-status)).
+  ([Regions: status](regions.md#region-status)). Its kubeconfig connects with data alone — a
+  ServiceAccount token or a client certificate, the current context only, no credential plugin,
+  file, proxy or impersonation — to an API server at a public address
+  (`tenancy.allowPrivateRegionServers` accepts private ones), and RunR connects to the address it
+  checked; a failed connection tells the tenant's members a short reason
+  ([security.md](security.md#tenant-region-kubeconfigs)).
 
 ### Shared regions with billing
 
@@ -575,7 +580,10 @@ least two labels, and the platform's own base domain cannot be a tenant's domain
 RunR adds `<region name>.<domain>` to the Knative domain configuration of every platform region
 assigned to the tenant, for the workloads labelled `runr/tenant: <tenant slug>`. The tenant's own
 regions take `<region name>.<domain>` as their function domain. Point a wildcard DNS record
-`*.<region name>.<domain>` at each region's ingress address.
+`*.<region name>.<domain>` at each region's ingress address — a public one: RunR's control plane
+and the platform's regions call the functions under the tenant's domain (uptime checks of their
+endpoint, request replay, workflows, the MCP gateway) only at public addresses unless the platform
+allows private ones ([outbound requests](security.md#outbound-requests-to-user-configured-urls)).
 
 **Changing the domain** — a first one, or another one — moves the tenant's functions the way a
 changed platform base domain moves a region ([Regions: changing the base domain](regions.md#changing-the-base-domain)):

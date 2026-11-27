@@ -60,7 +60,7 @@ Deploy
 
 | Shim | Release | Runtime handler | RuntimeClass | Runs |
 |---|---|---|---|---|
-| Spin (required) | containerd-shim-spin v0.27.2-runr.1 — RunR's build of v0.27.2 (Spin runtime 4.2) | `spin-runr` | `wasmtime-spin-v2` | Spin apps — the five `wasm-*` runtimes, `wasm-exec` included |
+| Spin (required) | containerd-shim-spin v0.27.2-runr.2 — RunR's build of v0.27.2 (Spin runtime 4.2) | `spin-runr` | `wasmtime-spin-v2` | Spin apps — the five `wasm-*` runtimes, `wasm-exec` included |
 | Wasmtime (optional) | containerd-shim-wasmtime v0.6.1 | `wasmtime-runr` | `wasmtime-v1` | WASI command modules and components packaged as OCI images, for platform runtimes that set `runtimeClass: wasmtime-v1` |
 
 The RuntimeClass name `wasmtime-spin-v2` is the one the Spin operator uses, so Spin apps written
@@ -71,8 +71,8 @@ and reports it instead of replacing it.
 
 ### The Spin shim RunR installs
 
-RunR installs its own build of containerd-shim-spin: **v0.27.2-runr.1**, the image
-`ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1`, built from `runtime/wasm-shim-spin`. It is the
+RunR installs its own build of containerd-shim-spin: **v0.27.2-runr.2**, the image
+`ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.2`, built from `runtime/wasm-shim-spin`. It is the
 upstream tag v0.27.2 with one change in the runwasi library it is built on (containerd-shim-wasm
 1.0.1): the Linux containers of a Wasm pod run with the environment of their pod spec. The upstream
 releases since v0.16.0 start them with the shim's own environment, and Knative's queue-proxy, which
@@ -298,7 +298,7 @@ WASI command — a preview 1 module (`wasm32-wasip1`, a `_start` export) or a WA
 it writes to stdout is the response. This is Spin's **WAGI** executor (`executor = { type = "wagi" }`
 of an HTTP trigger).
 
-**Why it works on the pinned shim.** RunR's containerd-shim-spin v0.27.2-runr.1 (`WasmShim.php`)
+**Why it works on the pinned shim.** RunR's containerd-shim-spin v0.27.2-runr.2 (`WasmShim.php`)
 embeds Spin 4.2.6; its `spin-trigger-http` crate has the WAGI executor (`crates/trigger-http/src/wagi.rs` at
 `v4.2.6`: CGI headers in the environment, the body on stdin, argv from `argv`, the module's
 `wasi:cli/run` called once per request), and the shim turns a preview 1 command module into a
@@ -597,7 +597,7 @@ and BRF-Tech/runr-runtimes builds a version with a directory of its own
 
 | Component | Version |
 |---|---|
-| containerd-shim-spin | v0.27.2-runr.1: v0.27.2 built by RunR (Spin runtime 4.2.6, runwasi containerd-shim-wasm 1.0.1 with the pod environment for Linux containers) |
+| containerd-shim-spin | v0.27.2-runr.2: v0.27.2 built by RunR (Spin runtime 4.2.6, runwasi containerd-shim-wasm 1.0.1 with the pod environment for Linux containers) |
 | containerd-shim-wasmtime | v0.6.1 |
 | Spin CLI in the build images | 4.3.0 (every build image the same) |
 | Rust | 4.1: 1.99, `wasm32-wasip1`, spin-sdk 5.2 · 4.2: 1.99, `wasm32-wasip2`, spin-sdk 8.0 |

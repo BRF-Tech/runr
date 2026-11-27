@@ -4,7 +4,7 @@ namespace App\Services\Observability\Alerts\Channels;
 
 use App\Models\Observability\AlertChannel;
 use App\Services\Observability\Alerts\AlertMessage;
-use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
 
 /**
  * Generic webhook: the alert as JSON, signed like RunR's billing webhook —
@@ -23,20 +23,11 @@ class WebhookChannel extends HttpChannel
     public function send(AlertChannel $channel, AlertMessage $message): DeliveryResult
     {
         $url = (string) ($channel->config['url'] ?? '');
-        $reason = $this->guard->check($url, (bool) config('observability.alerts.allow_private_targets', false));
-        if ($reason !== null) {
-            return DeliveryResult::failed($reason, false);
-        }
-
         $body = (string) json_encode($message->toWebhookPayload(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $timestamp = (string) now()->timestamp;
         $headers = self::headers($body, $timestamp, (string) ($channel->config['secret'] ?? ''), $message);
 
-        try {
-            return DeliveryResult::fromResponse($this->client()->withHeaders($headers)->withBody($body, 'application/json')->post($url));
-        } catch (ConnectionException $e) {
-            return DeliveryResult::failed($e->getMessage());
-        }
+        return $this->request($url, false, fn (PendingRequest $http) => $http->withHeaders($headers)->withBody($body, 'application/json')->post($url));
     }
 
     /** @return array<string, string> */

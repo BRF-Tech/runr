@@ -35,7 +35,11 @@
 #   - the bumps: composer and npm move only their lockfile and decide release or next from what
 #     moved (composer.lock's packages, the npm packages the bundle takes), a lockfile that does not
 #     come out the same twice, a moved constraint or a held package goes to a person with nothing
-#     left changed; go moves go.mod and go.sum and the image's own version; an Actions pin moves
+#     left changed; an npm update that npm update leaves (peers that pin each other's release) is
+#     installed at its version with package.json put back, one that does not move at all goes to a
+#     person; a bump that moves Playwright runs ui-stack, also on next; the finding's own updates
+#     come first in the changelog line, the commit and the summary; go moves go.mod and go.sum
+#     and the image's own version; an Actions pin moves
 #     its commit and comment on next only; a Dockerfile base moves its tag and digest and the own
 #     version of its image;
 #   - a bump of next only is made and tested on next and lands on the origin's next alone, a
@@ -70,14 +74,19 @@ done
 while read -r group name versions reason; do
   case "$group" in ''|'#'*) continue ;; esac
   [ -n "$reason" ] && [[ "$versions" =~ ^(\*|\>=.+)$ ]] || fail "holds.txt: ${group} ${name} without its versions or its reason"
-  deps_pkg_row "$group" >/dev/null || fail "holds.txt: ${group} is no group"
+  deps_pkg_row "$group" >/dev/null || { deps_bot_row "$group" >/dev/null && [ "$name" = "$group" ]; } || fail "holds.txt: ${group} is no group (nor a chart of DEPS_BOT with its own name)"
 done < "$root/ci/deps/holds.txt"
 for row in "${DEPS_DOCKERFILES[@]}"; do [ -f "$root/${row%%|*}" ] || fail "DEPS_DOCKERFILES: ${row%%|*} is gone"; done
 for row in "${DEPS_PKG[@]}"; do
   d="$(deps_field "$row" 3)"
   [ "$d" = - ] || [ -d "$root/$d" ] || fail "DEPS_PKG: ${row%%|*}'s ${d} is gone"
 done
-deps_held npm-vue cronstrue 9.9.9 >/dev/null || fail "a * hold"
+printf '%s\n' 'npm-vue cronstrue * a test hold' 'npm-vue vite >=9.0.0 a test hold of a line' > "$tmp/holds.txt"
+holds_file="$DEPS_HOLDS_FILE"
+DEPS_HOLDS_FILE="$tmp/holds.txt"
+deps_held npm-vue cronstrue 9.9.9 >/dev/null && deps_held npm-vue vite 9.0.1 >/dev/null && ! deps_held npm-vue vite 8.9.9 >/dev/null \
+  || fail "a * hold, a >= hold"
+DEPS_HOLDS_FILE="$holds_file"
 deps_bump_patch 1.0.0 | grep -qx 1.0.1 && deps_bump_patch v0.26.0-runr.1 | grep -qx v0.26.0-runr.2 || fail "deps_bump_patch"
 echo "ok - every manifest is a group's, a Dockerfile of the table or untracked with a reason; the console's build roots cover its imports; every hold has its reason"
 
@@ -85,6 +94,7 @@ echo "ok - every manifest is a group's, a Dockerfile of the table or untracked w
 # a path its files agree with (no .github/ in a release, no shipped file on next only), known suites
 while read -r group name versions reason; do
   case "$group" in ''|'#'*) continue ;; esac
+  deps_pkg_row "$group" >/dev/null || continue
   [ "$(deps_field "$(deps_pkg_row "$group")" 2)" != pins ] || deps_pin_row "$group" "$name" >/dev/null || fail "holds.txt: ${group} has no pin ${name}"
 done < "$root/ci/deps/holds.txt"
 for row in "${DEPS_PINS[@]}"; do
@@ -190,7 +200,11 @@ esac
 EOF
 # npm: view answers $FAKE/npm-latest ("name version": a name it lacks is not on the registry),
 # $FAKE/npm-wanted ("name@range version") and $FAKE/npm-all ("name version", every release), audit
-# $FAKE/npm-audit.json; update sets $FAKE/npm-versions ("path version") in package-lock.json
+# $FAKE/npm-audit.json; update and install set $FAKE/npm-versions ("path version") in
+# package-lock.json, but not a package of $FAKE/npm-peer-pinned (one name per line: npm keeps
+# packages whose peers pin each other's release where they are), and the lockfile's ranges are
+# package.json's; install NAME@VERSION also sets NAME, but not one of $FAKE/npm-stuck, and writes
+# ^VERSION into package.json, as npm does
 cat > "$tmp/bin/npm" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
@@ -205,9 +219,21 @@ case "$1" in
     [ "$2" = fix ] && exit 0
     cat "$FAKE/npm-audit.json" 2>/dev/null || echo '{}' ;;
   update|install)
+    if [ "$1" = install ]; then
+      for a in "${@:2}"; do
+        [[ "$a" == ?*@* ]] || continue
+        n="${a%@*}" v="${a##*@}"
+        grep -qxF "$n" "$FAKE/npm-stuck" 2>/dev/null && continue
+        jq --arg p "node_modules/$n" --arg v "$v" '.packages[$p].version = $v' package-lock.json > l.tmp && mv l.tmp package-lock.json
+        jq --arg n "$n" --arg r "^$v" 'if (.dependencies // {}) | has($n) then .dependencies[$n] = $r else .devDependencies[$n] = $r end' package.json > p.tmp && mv p.tmp package.json
+      done
+    fi
     while read -r p v; do
+      grep -qxF "${p#node_modules/}" "$FAKE/npm-peer-pinned" 2>/dev/null && continue
       jq --arg p "$p" --arg v "$v" '.packages[$p].version = $v' package-lock.json > l.tmp && mv l.tmp package-lock.json
-    done < "$FAKE/npm-versions" ;;
+    done < "$FAKE/npm-versions"
+    jq --slurpfile m package.json '.packages[""].dependencies = ($m[0].dependencies // {}) | .packages[""].devDependencies = ($m[0].devDependencies // {})' \
+      package-lock.json > l.tmp && mv l.tmp package-lock.json ;;
   *) echo "npm: unexpected $*" >&2; exit 2 ;;
 esac
 EOF
@@ -288,6 +314,9 @@ done
 printf 'package main\n\nimport (\n\t"github.com/a/lib"\n\t"github.com/a/lib/sub"\n\t"github.com/a/libx"\n)\n' > "$repo/runtime/agent/main.go"
 # a hold on the path a new major replaces (the bump of the new path keeps it)
 echo 'go-proxy github.com/a/lib * a test hold: the path a new major replaces stays' >> "$repo/ci/deps/holds.txt"
+# a hold of an exact pin of the console (the check leaves it and names it, a bump that would move it
+# is not mechanical)
+echo "npm-vue cronstrue * pinned exactly in vue/package.json: a test hold of the warmer editor's wording" >> "$repo/ci/deps/holds.txt"
 # a module without go.sum (the TinyGo example: the region's build resolves it)
 mkdir -p "$repo/examples/wasm/go"
 printf 'module runr-function\n\ngo 1.22\n\nrequire github.com/a/lib v1.2.0\n' > "$repo/examples/wasm/go/go.mod"
@@ -646,14 +675,45 @@ bump npm-vue '[{"name": "eslint", "from": "10.0.0", "to": "10.5.0"}]'
 [ "$rc" = 0 ] && [ "$(cat "$tmp/r-npm-vue/path")" = next ] && [ "$(git -C "$repo" diff --name-only | sort | paste -sd ' ')" = "CHANGELOG.md vue/package-lock.json" ] \
   && [ "$(jq -c '[.[].command]' "$tmp/r-npm-vue/suites.json")" = '["ui"]' ] && [ ! -s "$tmp/r-npm-vue/unit" ] \
   || fail "npm test tooling: rc ${rc}, path $(cat "$tmp/r-npm-vue/path" 2>/dev/null), $(cat "$tmp/r-npm-vue/suites.json" 2>/dev/null), $(tail -n 5 "$tmp/bump.log")"
-printf '%s\n' 'node_modules/esbuild 0.25.9' > "$FAKE/npm-versions"
-bump npm-vue '[{"name": "vite", "from": "6.4.5", "to": "6.4.9"}]'
+printf '%s\n' 'node_modules/eslint 10.5.0' 'node_modules/esbuild 0.25.9' > "$FAKE/npm-versions"
+bump npm-vue '[{"name": "eslint", "from": "10.0.0", "to": "10.5.0"}]'
 [ "$rc" = 0 ] && [ "$(cat "$tmp/r-npm-vue/path")" = release ] && [ "$(jq -c '[.[].command]' "$tmp/r-npm-vue/suites.json")" = '["ui","ui-stack"]' ] \
   || fail "npm build tooling (vite's esbuild): rc ${rc}, path $(cat "$tmp/r-npm-vue/path" 2>/dev/null)"
-printf '%s\n' 'node_modules/follow-redirects 1.15.9' > "$FAKE/npm-versions"
+# the finding's own update comes first in the changelog line, the commit and the summary, then what
+# moved with it (esbuild sorts before eslint)
+[ "$(grep -m 1 '^- ' "$tmp/r-npm-vue/summary.md")" = '- eslint 10.0.0 → 10.5.0' ] \
+  && [ "$(grep '^- ' "$tmp/r-npm-vue/commit-msg.txt" | paste -sd '|' -)" = '- eslint 10.0.0 → 10.5.0|- esbuild 0.25.0 → 0.25.9' ] \
+  && [ "$(tr '\n' ' ' < "$repo/CHANGELOG.md" | grep -o 'updates): eslint 10.0.0 → 10.5.0, *esbuild')" != '' ] \
+  || fail "the finding's update is not named first: $(cat "$tmp/r-npm-vue/summary.md") $(sed -n '1,12p' "$repo/CHANGELOG.md")"
+printf '%s\n' 'node_modules/axios 1.21.1' 'node_modules/follow-redirects 1.15.9' > "$FAKE/npm-versions"
 bump npm-vue '[{"name": "axios", "from": "1.7.0", "to": "1.21.1"}]'
 [ "$rc" = 0 ] && [ "$(cat "$tmp/r-npm-vue/path")" = release ] || fail "npm bundle (axios' follow-redirects): rc ${rc}"
 echo "ok - npm: only package-lock.json moves; the bundle's and the build's packages release, test tooling lands on next"
+
+# npm update leaves a package whose peers pin each other's release where it is (vitest and
+# @vitest/coverage-v8): the bump installs the finding's version and puts package.json and the
+# lockfile's ranges back; one that npm moves in neither way goes to a person, nothing left changed
+printf '%s\n' 'node_modules/eslint 10.5.0' 'node_modules/minimatch 9.0.5' > "$FAKE/npm-versions"
+echo eslint > "$FAKE/npm-peer-pinned"
+bump npm-vue '[{"name": "eslint", "from": "10.0.0", "to": "10.5.0"}]'
+[ "$rc" = 0 ] && [ "$(jq -r '.packages["node_modules/eslint"].version' "$repo/vue/package-lock.json")" = 10.5.0 ] \
+  && [ "$(jq -r '.packages["node_modules/minimatch"].version' "$repo/vue/package-lock.json")" = 9.0.5 ] \
+  && [ "$(jq -r '.packages[""].devDependencies.eslint' "$repo/vue/package-lock.json")" = '^10.0.0' ] \
+  && [ "$(git -C "$repo" diff --name-only | sort | paste -sd ' ')" = "CHANGELOG.md vue/package-lock.json" ] \
+  && grep -qF 'eslint 10.0.0 → 10.5.0' "$tmp/r-npm-vue/commit-msg.txt" \
+  || fail "a peer-pinned npm update: rc ${rc}, $(cat "$tmp/r-npm-vue/summary.md" 2>/dev/null) $(tail -n 5 "$tmp/bump.log") $(git -C "$repo" diff --name-only)"
+echo eslint > "$FAKE/npm-stuck"
+bump npm-vue '[{"name": "eslint", "from": "10.0.0", "to": "10.5.0"}, {"name": "axios", "from": "1.7.0", "to": "1.21.1"}]'
+rm -f "$FAKE/npm-peer-pinned" "$FAKE/npm-stuck"
+[ "$rc" = 2 ] && grep -qF 'npm leaves eslint on the old version' "$tmp/r-npm-vue/summary.md" && [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ] \
+  || fail "an npm update that does not move: rc ${rc}, $(cat "$tmp/r-npm-vue/summary.md" 2>/dev/null) $(git -C "$repo" status --porcelain)"
+# Playwright (the e2e's runner and its Chromium) is test tooling, which lands on next, but ui runs
+# none of it: its bump runs ui-stack too
+printf '%s\n' 'node_modules/@playwright/test 1.65.1' 'node_modules/playwright 1.65.1' 'node_modules/playwright-core 1.65.1' > "$FAKE/npm-versions"
+bump npm-vue '[{"name": "@playwright/test", "from": "1.64.0", "to": "1.65.1"}]'
+[ "$rc" = 0 ] && [ "$(cat "$tmp/r-npm-vue/path")" = next ] && [ "$(jq -c '[.[].command]' "$tmp/r-npm-vue/suites.json")" = '["ui","ui-stack"]' ] \
+  || fail "a Playwright bump: rc ${rc}, path $(cat "$tmp/r-npm-vue/path" 2>/dev/null), $(cat "$tmp/r-npm-vue/suites.json" 2>/dev/null), $(tail -n 5 "$tmp/bump.log")"
+echo "ok - npm: an update npm update leaves (peers that pin each other) is installed at its version with package.json put back, one that does not move goes to a person; a Playwright bump runs ui-stack on next too"
 
 # go: go.mod and go.sum; gateway-auth's own version moves with it, not a line of the past or the legacy name
 bump go-gateway-auth '[{"name": "github.com/a/lib", "from": "v1.2.0", "to": "v1.3.0"}]'
@@ -678,7 +738,7 @@ bump actions "[{\"name\": \"actions/checkout\", \"from\": \"v7.0.1\", \"to\": \"
 # docker: the tag (and the digest of a pinned one) in the Dockerfiles; a shipped image's own version
 bump docker '[{"name": "ghcr.io/brf-tech/runr/reqs/alpine", "from": "3.21", "to": "3.22", "files": ["runtime/gateway-auth/Dockerfile", "proxy/Dockerfile"]}]'
 [ "$rc" = 0 ] && [ "$(cat "$tmp/r-docker/path")" = release ] && grep -qF 'reqs/alpine:3.22' "$repo/proxy/Dockerfile" && grep -qF 'ARG VERSION=1.0.1' "$repo/runtime/gateway-auth/Dockerfile" \
-  || fail "docker bump: rc ${rc}, $(tail -n 5 "$tmp/bump.log")"
+  || fail "docker bump: rc ${rc}, $(tail -n 5 "$tmp/bump.log") $(cat "$tmp/r-docker/summary.md" 2>/dev/null)"
 [ "$(jq -c '[.[].command]' "$tmp/r-docker/suites.json")" = '["image:runtime/gateway-auth/Dockerfile","test-api-product","image:proxy/Dockerfile"]' ] || fail "docker's suites: $(cat "$tmp/r-docker/suites.json")"
 bump docker '[{"name": "ghcr.io/brf-tech/runr/reqs/alpine", "from": "3.21", "to": "3.22", "files": ["proxy/Dockerfile"]}]'
 [ "$rc" = 0 ] && [ "$(cat "$tmp/r-docker/path")" = next ] || fail "the dev stack's Dockerfile: next only: rc ${rc}"
@@ -688,7 +748,46 @@ bump docker '[{"name": "ghcr.io/aquasecurity/trivy", "from": "0.58.1", "to": "0.
   || fail "an ARG's base: rc ${rc}, $(cat "$tmp/r-docker/summary.md" 2>/dev/null)"
 bump docker '[{"name": "ghcr.io/brf-tech/runr/reqs/alpine", "from": "3.21", "to": "3.22; rm -rf /", "files": ["proxy/Dockerfile"]}]'
 [ "$rc" = 1 ] || fail "an update the bot does not take as is"
-echo "ok - actions: the pin's commit and comment, on next only; docker: the Dockerfiles' tags, a shipped image's own version, the dev stack's on next; a malformed update refused"
+# an update the checkout has already (a release a person made took it): nothing to do, not a
+# person's (the retried issue closes); one whose old and new pin are both gone still needs a person
+bump docker '[{"name": "ghcr.io/brf-tech/runr/reqs/alpine", "from": "3.20", "to": "3.21", "files": ["proxy/Dockerfile"]}]'
+[ "$rc" = 3 ] && [ "$(cat "$tmp/r-docker/result")" = current ] && [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ] \
+  || fail "a Dockerfile on the new tag already: rc ${rc}, $(cat "$tmp/r-docker/summary.md" 2>/dev/null)"
+bump docker '[{"name": "ghcr.io/aquasecurity/trivy", "from": "0.58.0", "to": "0.58.1", "files": ["runtime/supply-chain/Dockerfile"]}]'
+[ "$rc" = 3 ] || fail "an ARG on the new tag already: rc ${rc}, $(cat "$tmp/r-docker/summary.md" 2>/dev/null)"
+bump docker '[{"name": "ghcr.io/brf-tech/runr/reqs/alpine", "from": "3.19", "to": "3.2", "files": ["proxy/Dockerfile"]}]'
+# (the image in a variable, so that ci/check-reqs-mirror.sh does not take the message for a reference)
+gone_tag=3.19
+[ "$rc" = 2 ] && grep -qF "no Dockerfile names ghcr.io/brf-tech/runr/reqs/alpine:${gone_tag} any more" "$tmp/r-docker/summary.md" \
+  || fail "a Dockerfile on neither tag (3.21 is not 3.2): rc ${rc}"
+bump actions '[{"name": "actions/setup-node", "from": "v7.0.0", "to": "v7.1.0", "sha": "2222222222222222222222222222222222222222", "old_sha": "3333333333333333333333333333333333333333"}]'
+[ "$rc" = 3 ] && [ "$(cat "$tmp/r-actions/result")" = current ] || fail "a workflow on the new pin already: rc ${rc}, $(cat "$tmp/r-actions/summary.md" 2>/dev/null)"
+bump actions '[{"name": "actions/setup-node", "from": "v7.0.0", "to": "v7.2.0", "sha": "4444444444444444444444444444444444444444", "old_sha": "3333333333333333333333333333333333333333"}]'
+[ "$rc" = 2 ] && grep -qF 'no workflow pins actions/setup-node@3333333333333333333333333333333333333333 # v7.0.0 any more' "$tmp/r-actions/summary.md" \
+  || fail "a workflow on neither pin: rc ${rc}"
+echo "ok - actions: the pin's commit and comment, on next only; docker: the Dockerfiles' tags, a shipped image's own version, the dev stack's on next; a malformed update refused; an update the checkout has already is nothing to do"
+
+# the Spin shim's own version (RunR's build of an upstream, v0.27.2-runr.1): every mention of it
+# moves, bare ones too (a test's VERSION file, the docs, the Dockerfile's comment), a line of the
+# past stays; the API's tests it edits run PHPUnit
+git -C "$repo" checkout -q -f main && git -C "$repo" clean -qfd
+printf '# RunR'"'"'s build of containerd-shim-spin v0.27.2, versioned v0.27.2-runr.1.\nARG BASE_IMAGE=ghcr.io/brf-tech/runr/reqs/alpine:3.21\nFROM ${BASE_IMAGE}\nARG VERSION=v0.27.2-runr.1\n' > "$repo/runtime/wasm-shim-spin/Dockerfile"
+echo 'echo "ghcr.io/brf-tech/runr/containerd-shim-spin:$(sed -n "s/^ARG VERSION=//p" "$d/wasm-shim-spin/Dockerfile" | head -n 1)"' >> "$repo/runtime/ci.sh"
+mkdir -p "$repo/api/app/Services/Wasm" "$repo/api/tests/Unit/Wasm"
+printf "<?php\n            'version' => 'v0.27.2-runr.1',\n            'image' => 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1',\n" > "$repo/api/app/Services/Wasm/WasmShim.php"
+printf "<?php\n        \$this->assertStringContainsString('from image ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1 (v0.27.2-runr.1)', \$out);\n" > "$repo/api/tests/Unit/Wasm/WasmNodeScriptTest.php"
+printf '%s\n' 'RunR installs its own build of containerd-shim-spin: **v0.27.2-runr.1**, the image' \
+  '`ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1`.' 'RunR 0.7.0 brought v0.27.2-runr.1 (from v0.26.0-runr.1).' > "$repo/docs/wasm.md"
+(cd "$repo" && git add -A && git commit -q -m "the Spin shim")
+bump docker '[{"name": "ghcr.io/brf-tech/runr/reqs/alpine", "from": "3.21", "to": "3.22", "files": ["runtime/wasm-shim-spin/Dockerfile"]}]'
+[ "$rc" = 0 ] && grep -qx 'ARG VERSION=v0.27.2-runr.2' "$repo/runtime/wasm-shim-spin/Dockerfile" && grep -qF 'versioned v0.27.2-runr.2.' "$repo/runtime/wasm-shim-spin/Dockerfile" \
+  && grep -qF "'version' => 'v0.27.2-runr.2'" "$repo/api/app/Services/Wasm/WasmShim.php" \
+  && grep -qF 'containerd-shim-spin:v0.27.2-runr.2 (v0.27.2-runr.2)' "$repo/api/tests/Unit/Wasm/WasmNodeScriptTest.php" \
+  && grep -qF '**v0.27.2-runr.2**' "$repo/docs/wasm.md" && grep -qxF 'RunR 0.7.0 brought v0.27.2-runr.1 (from v0.26.0-runr.1).' "$repo/docs/wasm.md" \
+  && [ "$(cat "$tmp/r-docker/unit")" = 1 ] \
+  || fail "the Spin shim's own version: rc ${rc}, $(cat "$tmp/r-docker/summary.md" 2>/dev/null) $(git -C "$repo" diff)"
+git -C "$repo" checkout -q -f main && git -C "$repo" reset -q --hard HEAD~1
+echo "ok - the Spin shim's own version moves wherever it is named as the current one, bare too (not a line of the past), and the API's tests it edits run PHPUnit"
 
 # pins: the version at every place, and the published checksums of the old version replaced with
 # the new one's (helm's .sha256sum per arch; Scalar's file in the npm tarball the registry's

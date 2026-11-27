@@ -146,7 +146,7 @@ JWT settings of a route (`jwt` object):
 
 | Field | Meaning |
 | --- | --- |
-| `jwks_url` | the issuer's JWKS (required). It is fetched from inside the region, so an issuer in the cluster (`http://keycloak.idp.svc…`) works. Cached for 10 minutes and fetched again when a token names an unknown `kid` (at most every 30 seconds) |
+| `jwks_url` | the issuer's JWKS (required), on a public address: it is fetched from inside the region, and gateway-auth connects to public addresses only, without a proxy or redirects, unless `apiProduct.jwksAllowPrivateTargets` — then an issuer in the cluster (`http://keycloak.idp.svc…`) works ([outbound requests](security.md#outbound-requests-to-user-configured-urls)). A RunR function on the function domain of a platform region (`https://issuer.<region>.<base domain>/`) is RunR's own name and may answer on the region's private ingress; one under an organization's own base domain is held to the guard. Cached for 10 minutes and fetched again when a token names an unknown `kid` (at most every 30 seconds) |
 | `issuer`, `audience` | expected `iss` and `aud` (optional; `aud` may be a list in the token) |
 | `subject_claim` | the claim that names the consumer (default `sub`), matched against the consumer's `jwt_subject` |
 | `require_consumer` | `true`: a valid token whose subject is not a consumer gets 403. `false` (default): it passes, without a plan, and its usage is counted under the subject |

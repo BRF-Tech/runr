@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\KnativeRegion;
 
+use App\Rules\RegionKubeconfig;
 use App\Services\Helpers\MonitoringEndpointAccess;
 use App\Services\KnativeRedisService;
 use Illuminate\Foundation\Http\FormRequest;
@@ -18,7 +19,7 @@ class StoreKnativeRegionRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:63', 'unique:knative_regions,name', 'regex:/^[a-z][a-z0-9\-]*[a-z0-9]$/'],
-            'kubeconfig' => 'required|string',
+            'kubeconfig' => ['required', 'string', RegionKubeconfig::forNewRegion()],
             'nodes' => 'present|array',
             'nodes.*' => 'string',
             'is_active' => 'sometimes|boolean',

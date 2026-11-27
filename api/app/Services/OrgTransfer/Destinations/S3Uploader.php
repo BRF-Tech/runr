@@ -2,6 +2,8 @@
 
 namespace App\Services\OrgTransfer\Destinations;
 
+use App\Services\Observability\OutboundUrlGuard;
+use App\Services\Observability\TenantScope;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
@@ -11,6 +13,11 @@ use Illuminate\Support\Facades\Http;
  * PART_BYTES (one PUT for a smaller package), aborted when a part fails. The credentials are the
  * job's only — never stored, never logged. Its signed send() also serves the ranged reads of an
  * import from a bucket (S3Reader).
+ *
+ * An organization's bucket (an export or import in a tenant's context) must be on the internet:
+ * every request is checked right before it is sent and goes to the addresses that check saw,
+ * without redirects (OutboundUrlGuard::target()). The platform's own transfers may use a bucket on
+ * its network.
  */
 class S3Uploader
 {
@@ -147,11 +154,24 @@ class S3Uploader
 
         $url = "{$scheme}://{$hostHeader}{$path}".($canonicalQuery !== '' ? '?'.$canonicalQuery : '');
         $request = Http::withHeaders($headers + $extra)->timeout(600)->connectTimeout(15);
+        if ($this->inTenant()) {
+            $outbound = app(OutboundUrlGuard::class)->target($url);
+            if (! $outbound->allowed()) {
+                throw new DestinationException((string) $outbound->reason);
+            }
+            $request = $request->withOptions($outbound->options());
+        }
         if ($body !== '' || in_array($method, ['PUT', 'POST'], true)) {
             $request = $request->withBody($body, $contentType);
         }
 
         return $request->send($method, $url);
+    }
+
+    /** The transfer runs for an organization of the multi-tenant edition (a tenant's context). */
+    protected function inTenant(): bool
+    {
+        return TenantScope::current() !== null;
     }
 
     private function expect(Response $response, string $step): Response

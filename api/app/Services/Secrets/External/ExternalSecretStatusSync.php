@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\ProjectSecret;
 use App\Models\SecretStore;
 use App\Services\KubernetesClient;
+use App\Services\Observability\TenantScope;
 use App\Services\Secrets\SecretScope;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -89,6 +90,10 @@ class ExternalSecretStatusSync
             $scope = SecretScope::forProject($project, $region);
             $item = $items->get($scope->externalName);
             [$status, $message, $syncedAt] = self::statusOf($item);
+            // A tenant sees that the reference failed, not what the store's address answered
+            if ($status === ProjectSecret::SYNC_FAILED && TenantScope::current() !== null) {
+                $message = __('api.secret.reference_failed');
+            }
 
             foreach ($project->secrets as $secret) {
                 if (! $secret->isExternal()) {

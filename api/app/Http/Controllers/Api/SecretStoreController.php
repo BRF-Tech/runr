@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\KnativeRegion;
 use App\Models\RegionSecretSetting;
 use App\Models\SecretStore;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\KubernetesClient;
 use App\Services\Secrets\External\ClusterIssuer;
 use App\Services\Secrets\External\ExternalSecretManifests;
@@ -170,7 +171,7 @@ class SecretStoreController extends Controller
         try {
             $trust = app(ClusterIssuer::class)->trust($secretStore, $region);
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 503);
+            return response()->json(['message' => TenantKubeconfigs::messageFor($e, $region)], 503);
         }
 
         return response()->json(['data' => $trust + [
@@ -194,6 +195,10 @@ class SecretStoreController extends Controller
         if (! RegionSecretSetting::forRegion($region)->esoReady()) {
             return response()->json(['message' => __('api.secret.eso_not_installed', ['region' => $region->name])], 422);
         }
+        // Checked again before the region connects to it: DNS changes
+        if ($problem = $secretStore->addressProblem()) {
+            return response()->json(['message' => $problem[1], 'errors' => ["settings.{$problem[0]}" => [$problem[1]]]], 422);
+        }
 
         try {
             $ready = app(ClusterIssuer::class)->verify($secretStore, $region);
@@ -201,6 +206,8 @@ class SecretStoreController extends Controller
             return response()->json(['message' => __('api.secret.region_unreachable', ['region' => $region->name])], 503);
         }
         $secretStore->recordStatus((string) $region->id, $ready['status'], $ready['message']);
+        // A tenant sees the generic message of a failure (recordStatus())
+        $ready['message'] = $secretStore->statusIn((string) $region->id)['message'] ?? $ready['message'];
 
         return response()->json(['data' => $ready + ['region_id' => $region->id]]);
     }
@@ -236,7 +243,12 @@ class SecretStoreController extends Controller
         $rules['settings.role_arn'][] = 'regex:/^arn:aws[a-z-]*:iam::\d{12}:role\/.+$/';
 
         $validator = Validator::make($request->all(), $rules);
-        $validator->after(function ($validator) use ($request, $known, $provider) {
+        $validator->after(function ($validator) use ($request, $known, $provider, $store) {
+            // An organization's store on a public address (SecretStore::addressProblem())
+            $settings = array_merge((array) ($store->settings ?? []), array_filter((array) $request->input('settings', []), 'is_string'));
+            if ($problem = ($store ?? new SecretStore)->addressProblem($settings)) {
+                $validator->errors()->add("settings.{$problem[0]}", $problem[1]);
+            }
             // Only the provider's settings: a store authenticates with the region's identity,
             // RunR takes no credential (token, password, key) for it
             foreach (array_keys((array) $request->input('settings', [])) as $key) {

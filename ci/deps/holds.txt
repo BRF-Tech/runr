@@ -2,16 +2,13 @@
 # daily check and the bumps leave them; the check's output names each one with its reason.
 #
 #   GROUP NAME VERSIONS REASON…
+#     GROUP     a package group (ci/deps/packages.sh), or a chart of DEPS_BOT (ci/deps/lib.sh) with
+#               its name as NAME too
 #     VERSIONS  *     never moved by the bot
 #               >=X   X and newer are left to a person (older updates still move)
 #
 # A hold is never written without its reason; remove the line when the reason is gone.
 
-# vue/package.json pins it exactly: the warmer editor's unit and e2e tests compare cronstrue's
-# wording (tests/utils/warmSchedule.spec.js, e2e/timed-warmer.spec.ts)
-npm-vue cronstrue * pinned exactly in vue/package.json: the warmer editor's tests compare cronstrue's wording, a person moves it with them
-# CI installs the Chromium of this version (ci.yml, e2e.yml: npx playwright install chromium)
-npm-vue @playwright/test * pinned exactly in vue/package.json: each version brings its own Chromium, which the e2e suites and shots/ run on
 # runtime/wasm-shim-spin/Dockerfile: the Rust toolchain of upstream's rust-toolchain.toml and the
 # cross-rs images upstream builds its release binaries with, by digest
 docker ghcr.io/brf-tech/runr/reqs/rust * the Spin shim builds with the Rust toolchain of upstream's rust-toolchain.toml (runtime/wasm-shim-spin/Dockerfile): it moves with SHIM_WASM_VERSION
@@ -35,3 +32,8 @@ pypi-example-workflows runr-workflows * RunR's own Workflow SDK (sdk/python): th
 # spin-go-sdk v2: v3 and newer build with componentize-go, which needs WASIp3 in Go itself
 # (golang/go#76775). Burak's decision (#31, RunR 0.7.0): they move once a Go release ships it
 go-example-wasm github.com/spinframework/spin-go-sdk/v2 * spin-go-sdk v3 and newer build with componentize-go, which needs WASIp3 support in Go itself (golang/go#76775): examples/wasm/go stays on TinyGo and spin-go-sdk v2 until a Go release ships it (#31)
+# kata-deploy 4.4.0 (measured on RunR 0.7.8's final test, Kind with /dev/kvm): QEMU cannot start
+# while a Cloud Hypervisor VM on the node holds the shared guest image; 4.3.1 runs both (ci.sh
+# test-sandbox-api, SANDBOX_KATA=1 RUNR_E2E_SANDBOX_CASES=kata: 13/13 on 4.3.1, 11/13 twice on
+# 4.4.0). GitHub's runners have no /dev/kvm, so the bot's suites cannot catch it
+kata-deploy kata-deploy >=4.4.0 QEMU sandboxes do not start next to a Cloud Hypervisor VM on the node (qemu-system-x86_64: Failed to get "consistent read" lock on kata-ubuntu-resolute.image): measured with ci.sh test-sandbox-api and Kata on a host with /dev/kvm, which the bot's runners lack; a person moves it once a release runs both

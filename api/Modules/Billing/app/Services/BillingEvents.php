@@ -2,7 +2,6 @@
 
 namespace Modules\Billing\Services;
 
-use App\Services\Dns\DnsResolver;
 use App\Services\Observability\Alerts\Channels\WebhookChannel;
 use App\Services\Observability\OutboundUrlGuard;
 use Illuminate\Database\QueryException;
@@ -84,7 +83,6 @@ class BillingEvents
     public function __construct(
         private readonly BillingSettings $settings,
         private readonly OutboundUrlGuard $guard,
-        private readonly DnsResolver $dns,
     ) {}
 
     /**
@@ -110,38 +108,16 @@ class BillingEvents
 
     /**
      * Where a delivery may go: the reason it may not, or the request options that pin the host to
-     * the addresses that were checked (a name cannot resolve to a private address between the check
-     * and the request).
+     * the addresses that were checked (OutboundUrlGuard::target(): a name cannot resolve to a
+     * private address between the check and the request).
      *
      * @return array{0: string|null, 1: array<string, mixed>}
      */
     private function target(string $url): array
     {
-        $fromEnvironment = $this->settings->webhookUrlSource() === 'config';
-        $reason = $this->urlProblem($url, $fromEnvironment);
-        if ($reason !== null || $this->allowsPrivate($fromEnvironment)) {
-            return [$reason, []];
-        }
+        $target = $this->guard->target($url, $this->allowsPrivate($this->settings->webhookUrlSource() === 'config'));
 
-        $host = trim((string) parse_url($url, PHP_URL_HOST), '[]');
-        if (filter_var($host, FILTER_VALIDATE_IP)) {
-            return [null, []];
-        }
-        $addresses = $this->dns->addresses($host);
-        if ($addresses === []) {
-            return [__('observability.url.unresolvable'), []];
-        }
-        foreach ($addresses as $ip) {
-            if (! OutboundUrlGuard::isPublicIp($ip)) {
-                return [__('observability.url.private'), []];
-            }
-        }
-
-        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-        $port = (int) (parse_url($url, PHP_URL_PORT) ?: ($scheme === 'https' ? 443 : 80));
-        $ip = $addresses[0];
-
-        return [null, ['curl' => [CURLOPT_RESOLVE => [$host.':'.$port.':'.(str_contains($ip, ':') ? '['.$ip.']' : $ip)]]]];
+        return [$target->reason, $target->allowed() ? $target->options() : []];
     }
 
     /** A delivery error as stored and shown: a tenant sees what happened, not where the request went. */

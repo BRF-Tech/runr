@@ -8,6 +8,7 @@ use App\Jobs\InstallCertManagerJob;
 use App\Models\KnativeRegion;
 use App\Services\CertManager\CertManager;
 use App\Services\CertManager\CertManagerService;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\KubernetesClient;
 use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
@@ -49,7 +50,7 @@ class CertManagerController extends Controller
             try {
                 $cluster = $this->clusterState($region);
             } catch (Throwable $e) {
-                $error = $e->getMessage();
+                $error = TenantKubeconfigs::messageFor($e, $region);
             }
         }
 
@@ -147,7 +148,7 @@ class CertManagerController extends Controller
         try {
             $inUse = $this->service->domainCertificates($knativeRegion, new KubernetesClient($knativeRegion->kubeconfig));
         } catch (Throwable $e) {
-            return response()->json(['message' => __('api.cert_manager.cluster_unreachable', ['error' => $e->getMessage()])], 422);
+            return response()->json(['message' => __('api.cert_manager.cluster_unreachable', ['error' => TenantKubeconfigs::messageFor($e, $knativeRegion)])], 422);
         }
         if ($inUse !== []) {
             return response()->json(['message' => __('api.cert_manager.in_use', ['count' => count($inUse)]), 'certificates' => $inUse], 422);
@@ -189,7 +190,7 @@ class CertManagerController extends Controller
         try {
             $pem = $service->caCertificate($region);
         } catch (Throwable $e) {
-            return response()->json(['message' => __('api.cert_manager.cluster_unreachable', ['error' => $e->getMessage()])], 422);
+            return response()->json(['message' => __('api.cert_manager.cluster_unreachable', ['error' => TenantKubeconfigs::messageFor($e, $region)])], 422);
         }
         if ($pem === null) {
             return response()->json(['message' => __('api.cert_manager.ca_missing')], 404);

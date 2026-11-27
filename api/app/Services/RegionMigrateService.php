@@ -40,6 +40,7 @@ use App\Services\GitDeploy\PreviewVersionScope;
 use App\Services\GitDeploy\TenantContext;
 use App\Services\Helpers\KataRuntime;
 use App\Services\Images\UploadedImages;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\Manifests\ProjectDomainManifests;
 use App\Services\Projects\QueuedDeploys;
 use App\Services\Projects\VersionRebuilds;
@@ -153,8 +154,16 @@ class RegionMigrateService
      */
     public function migrateInfrastructure(KnativeRegion $region, string $newKubeconfig): void
     {
+        // An organization's own region moves to a cluster whose kubeconfig the policy accepts: it
+        // stores the policy's rebuild and connects through the checked address (TenantKubeconfigs)
+        $connect = $newKubeconfig;
+        if (TenantKubeconfigs::restricts($region)) {
+            $tenant = app(TenantKubeconfigs::class);
+            [$newKubeconfig, $connect] = [$tenant->forStorage($newKubeconfig), $tenant->forUse($newKubeconfig)];
+        }
+
         $this->saveOldState($region);
-        $version = $this->validateNewKubeconfig($newKubeconfig);
+        $version = $this->validateNewKubeconfig($connect);
 
         $region->update([
             'kubeconfig' => $newKubeconfig,
@@ -703,7 +712,8 @@ class RegionMigrateService
         $since = self::movedAt($saved) ?? $region->migration_started_at;
 
         $region->forceFill(array_merge($oldState, [
-            'kubeconfig' => $oldKubeconfig,
+            // as it was stored (an organization's region: not the pinned copy of this read)
+            'kubeconfig' => $region->storedMigrationOldKubeconfig() ?? $oldKubeconfig,
             'external_ip' => $oldIp,
             'migration_status' => null,
             'migration_started_at' => null,
@@ -1059,7 +1069,8 @@ class RegionMigrateService
 
         $region->forceFill([
             'migration_old_ip' => $region->external_ip,
-            'migration_old_kubeconfig' => $region->kubeconfig,
+            // as stored (an organization's region: not the pinned copy of this read)
+            'migration_old_kubeconfig' => $region->storedKubeconfig(),
             'migration_old_state' => $state + [
                 self::OTHER_TABLES => $this->otherTablesState($region),
                 self::RUNTIME_BUILDS => $this->runtimeBuildsState($region),

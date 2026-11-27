@@ -10,6 +10,7 @@ use App\Services\GlobalDns\GlobalDnsServerService;
 use App\Services\GlobalDns\GlobalDnsZone;
 use App\Services\GlobalDns\GlobalZoneBuilder;
 use App\Services\GlobalDns\GlobalZoneSync;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\Runtimes\RuntimeRegistry;
 use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -124,7 +125,7 @@ class GlobalDnsController extends Controller
             $userId = $request->user()?->getKey();
             $server = $this->servers->enable($knativeRegion, $userId !== null ? (string) $userId : null);
         } catch (Throwable $e) {
-            return response()->json(['message' => __('api.global_dns.install_failed', ['message' => $e->getMessage()])], 422);
+            return response()->json(['message' => __('api.global_dns.install_failed', ['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)])], 422);
         }
 
         return response()->json($this->serverObject($knativeRegion, $server, $this->zone->name()) + ['eligible' => true, 'reason' => null], 202);
@@ -151,7 +152,7 @@ class GlobalDnsController extends Controller
         try {
             $server = $this->servers->setGeoip($knativeRegion, $server, $data);
         } catch (Throwable $e) {
-            return response()->json(['message' => __('api.global_dns.install_failed', ['message' => $e->getMessage()])], 422);
+            return response()->json(['message' => __('api.global_dns.install_failed', ['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)])], 422);
         }
         Cache::forget('global_dns_geoip:'.$knativeRegion->getKey());
 
@@ -172,7 +173,7 @@ class GlobalDnsController extends Controller
         try {
             $this->servers->reloadGeoip($knativeRegion, $server);
         } catch (Throwable $e) {
-            return response()->json(['message' => __('api.global_dns.install_failed', ['message' => $e->getMessage()])], 422);
+            return response()->json(['message' => __('api.global_dns.install_failed', ['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)])], 422);
         }
         Cache::forget('global_dns_geoip:'.$knativeRegion->getKey());
 
@@ -186,7 +187,7 @@ class GlobalDnsController extends Controller
         try {
             $server = $this->servers->disable($knativeRegion);
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            return response()->json(['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)], 422);
         }
 
         $reason = $this->servers->ineligibilityReason($knativeRegion);

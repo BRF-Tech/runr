@@ -54,6 +54,10 @@ PEM),
     // suite serves a repository in the cluster this way). Off: https://, ssh:// and git@host:path
     'allow_insecure' => (bool) env('RUNR_RUNTIME_SOURCES_ALLOW_INSECURE', false),
 
+    // true: an organization's sources may name private, loopback or cluster-internal hosts (their
+    // registries and Git hosts are held to the outbound guard otherwise); platform sources may always
+    'allow_private_targets' => (bool) env('RUNR_RUNTIME_SOURCES_ALLOW_PRIVATE', false),
+
     // Further git protocols a Git source may use besides https / ssh: the test suite's file://
     // repositories only (not read from the environment)
     'git_extra_protocols' => [],

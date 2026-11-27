@@ -8,6 +8,292 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-11-27
+
+### Upgrade notes
+
+- **Upgrading from 0.7.7 runs no migration, and every new Helm value keeps its check on**
+  (`tenancy.allowPrivateRegionServers`, `secretStores.allowPrivateTargets`,
+  `secretStores.privateEgressCidrs`, `apiProduct.jwksAllowPrivateTargets`,
+  `observability.replay.allowPrivateTargets`). An installation that reaches private targets on
+  purpose sets them with the upgrade: a JWT route whose JWKS is on a private address, an uptime
+  check of an absolute URL that runs in regions, an organization's runtime source, custom runtime or
+  secret store on a private host, the platform's own secret store on a private address read on a
+  platform region of the multi-tenant edition, a project on its organization's own domain whose
+  names answer private addresses ([Private targets before the
+  upgrade](docs/upgrade.md#private-targets-before-the-upgrade)). Behind an egress proxy these
+  requests reach it as a `CONNECT` to the checked address, never the name.
+- **Multi-tenant edition: an organization's region whose stored kubeconfig 0.7.8 refuses is not
+  used until the kubeconfig is replaced** (a credential plugin, a token, certificate or CA in a
+  file, `proxy-url`, impersonation, an entry the current context does not use, or an API server
+  that is not `https://` at a public address). The region Job's `region:reconcile` lists each one
+  and counts it as unreachable (exit 4, which does not fail the upgrade); the organization's Owner
+  or Admin replaces the kubeconfig with one of a ServiceAccount ([Kubeconfigs of organizations' own
+  regions](docs/upgrade.md#kubeconfigs-of-organizations-own-regions)). Single-tenant installations
+  and platform regions are not affected.
+- **External Secrets Operator's controller restarts once** (`region:reconcile`, step
+  `external-secrets`), where a region has the operator: the release gets this release's values on
+  the same chart 0.19.2 (four reconciles at a time, `--concurrent=4`). The step now also upgrades a
+  release whose values differ from RunR's (`helm get values`), not only another chart version. The
+  Secrets it filled stay.
+- **Zot chart 0.1.135 (Zot v2.1.23, as before) does not reach an installed registry by itself:**
+  `php artisan registry:upgrade-zot <region>` moves it when it suits the region (the registry
+  restarts). Registries set up after the upgrade get it.
+- **kube-prometheus-stack 94.1.0 does not reach an installed region by itself:**
+  `php artisan cluster:patch-observability [REGION-ID]` moves it when it suits the region
+  (node-exporter restarts once on every node: 1.12.1 → 1.13.1). The new major changes nothing RunR
+  sets (RunR runs no Alertmanager or Thanos Ruler, whose service account token it stops mounting,
+  and sets no node-exporter arguments); the Prometheus Operator stays v0.95.2 with the same CRDs,
+  so no CRD step is needed.
+- **The region Traefik moves to chart 43.0.0 and Traefik v3.8.0 by itself** (`region:reconcile`,
+  step `traefik-chart`, one pod at a time), a new major of the chart. A region whose nodes pull
+  through a mirror of their own needs `ghcr.io/brf-tech/runr/reqs/traefik:v3.8.0` there first.
+  With `knative.traefikImage` set, the region keeps that image on the new chart; it must be
+  v3.7.17 or newer, as before (chart 43.0.0 takes no Traefik before v3.7.0 at all). No CRD step is
+  needed: chart 43.0.0 brings the CRDs of 42.4.0, and RunR uses none of Traefik v3.8's new fields.
+  Your own Traefik objects that use them (ServersTransport `peerCertSANs`, the `tap` middleware,
+  buffering's `disableRequestBuffer` / `disableResponseBuffer`, IngressRoute `respondingTimeouts`,
+  mirroring's `streamBody`) need the chart's CRDs on a region installed before 0.6.8:
+  `helm show crds traefik --repo https://traefik.github.io/charts --version 43.0.0 | kubectl apply
+  --server-side --force-conflicts -f -`.
+- **WebAssembly regions move to the Spin shim v0.27.2-runr.2 by themselves** (`region:reconcile`,
+  step `wasm-sandbox`): the same build of containerd-shim-spin v0.27.2 in an image on alpine 3.22;
+  the installer replaces the binary on each Wasm node in place, without a container runtime
+  restart, and running Wasm pods keep the shim they started with.
+- **A region that pulls through a mirror of its own** needs this release's new image versions there
+  first, besides `agent` and `queue-consumer` at 0.7.8: `gateway-auth:1.1.2`, `supply-chain:1.1.3`,
+  `containerd-shim-spin:v0.27.2-runr.2` (all under `ghcr.io/brf-tech/runr/`) and
+  `ghcr.io/brf-tech/runr/reqs/traefik:v3.8.0`.
+- **Back to 0.7.7 is a `helm rollback`**; nothing runs on the database. The region Traefik stays
+  on chart 43.0.0, the External Secrets Operator keeps this release's values (four reconciles at a
+  time), and a region moved to kube-prometheus-stack 94.1.0 or Zot chart 0.1.135 stays on it ([Back
+  to 0.7.7](docs/upgrade.md#back-to-077)).
+
+### Changed
+
+- **Queue consumer Go modules moved** (minor and patch updates): github.com/alicebob/miniredis/v2
+  v2.40.0 → v2.41.0, github.com/eclipse/paho.mqtt.golang v1.5.1 → v1.5.2,
+  github.com/gorilla/websocket v1.5.3 → v1.5.4-0.20240701034025-d67f41855da4,
+  github.com/nats-io/nats.go v1.55.0 → v1.56.0, github.com/rabbitmq/amqp091-go v1.16.0 → v1.17.0,
+  github.com/redis/go-redis/v9 v9.23.0 → v9.24.0, golang.org/x/sys v0.48.0 → v0.50.0,
+  golang.org/x/crypto v0.57.0 → v0.59.0, golang.org/x/net v0.60.0 → v0.62.0, golang.org/x/sync
+  v0.23.0 → v0.25.0, golang.org/x/text v0.42.0 → v0.44.0. The release's images carry them.
+- **Region agent Go modules moved** (minor and patch updates): k8s.io/api v0.37.2 → v0.37.3,
+  k8s.io/apimachinery v0.37.2 → v0.37.3, k8s.io/client-go v0.37.2 → v0.37.3, golang.org/x/net
+  v0.60.0 → v0.62.0, golang.org/x/sys v0.48.0 → v0.49.0, golang.org/x/term v0.46.0 → v0.47.0,
+  golang.org/x/text v0.42.0 → v0.43.0. The release's images carry them.
+- **Terraform provider Go modules moved** (minor and patch updates, the provider's release):
+  golang.org/x/crypto v0.57.0 → v0.58.0, golang.org/x/net v0.60.0 → v0.62.0, golang.org/x/sync
+  v0.23.0 → v0.24.0, golang.org/x/text v0.42.0 → v0.43.0, golang.org/x/tools v0.49.0 → v0.51.0.
+  govulncheck reported GO-2026-6866 and GO-2026-6860 (golang.org/x/net) in the region agent, the
+  queue consumer and the provider, and GO-2026-5932 (golang.org/x/crypto) in the queue consumer, in
+  modules they require but none called; it reports nothing now.
+- **Gateway-auth Go modules moved** (minor and patch updates): github.com/alicebob/miniredis/v2
+  v2.40.0 → v2.41.0, github.com/redis/go-redis/v9 v9.23.0 → v9.24.0, golang.org/x/sys v0.48.0 →
+  v0.50.0, gateway-auth image 1.1.1 → 1.1.2 (its own version: release-images.yml builds it). The
+  release's images carry them.
+- **Sentry tunnel Go modules moved** (minor and patch updates, nothing a release image ships):
+  github.com/redis/go-redis/v9 v9.23.0 → v9.24.0, golang.org/x/sys v0.48.0 → v0.50.0.
+- **Sandbox SDK (Node) npm packages moved** (minor and patch updates, nothing a release image
+  ships): @types/node 26.6.6 → 26.6.11.
+- **GitHub Actions pins moved** (minor and patch updates, nothing a release image ships):
+  actions/setup-go v7.0.0 → v7.1.0, actions/create-github-app-token v3.3.0 → v3.4.0.
+- **CI tool pins moved** (minor and patch updates, nothing a release image ships): kubectl v1.37.2 →
+  v1.37.3, govulncheck v1.9.0 → v1.10.0.
+- **Image tool pins moved** (minor and patch updates): kubectl-1.35 v1.35.10 → v1.35.11,
+  kubectl-1.37 v1.37.2 → v1.37.3, scalar 1.78.1 → 1.85.0, syft 1.57.1 → 1.57.2, cosign 3.1.4 →
+  3.1.6, oras 1.3.6 → 1.4.0, supply-chain image 1.1.2 → 1.1.3 (its own version: release-images.yml
+  builds it). The release's images carry them.
+- **Zot chart 0.1.135** (from 0.1.134; Zot v2.1.23, as before). Registries set up from now on run
+  it; an installed Zot keeps its chart and version until `php artisan registry:upgrade-zot
+  <region>`, which restarts the registry.
+- **kube-prometheus-stack 94.1.0** (from 93.3.0, a new major version; Prometheus Operator v0.95.2,
+  as before). Regions installed from now on run it; an installed region keeps its chart until `php
+  artisan cluster:patch-observability`, a change back to RunR's own monitoring or a new Serving
+  install moves it.
+- **Region Traefik chart 43.0.0** (from 42.4.0, a new major version; Traefik v3.7.18 → v3.8.0). New
+  regions install it; `region:reconcile` moves the Traefik of an existing region to it (step
+  `traefik-chart`), one pod at a time. Its image is `ghcr.io/brf-tech/runr/reqs/traefik:v3.8.0`, the
+  reqs mirror's copy of `docker.io/library/traefik:v3.8.0`. The chart takes Traefik v3.7.0 or newer
+  only and brings the same CRDs as 42.4.0; RunR uses none of the Traefik v3.8 changes that need new
+  CRDs, and does not run Traefik's Gateway API provider (whose v3.8 needs the Gateway API v1.7.0
+  CRDs). With `sanitizePath` (Traefik's default, which RunR keeps) Traefik v3.8 resolves a
+  dot-segment with path parameters like a plain one: `/a/.;x/b` is forwarded as `/a/b`.
+- **Hugging Face weights example packages: transformers 5.24.1** (outside the constraint:
+  transformers ==5.23.0 → 5.24.1, outside `==5.23.0` before; now `==5.24.1` in
+  examples/ai/hf-python/weights/requirements.txt). Nothing a release image ships changes: it lands
+  on next.
+- **Dockerfile base images moved** (minor and patch updates): ghcr.io/brf-tech/runr/reqs/alpine 3.21
+  → 3.22, containerd-shim-spin image v0.27.2-runr.1 → v0.27.2-runr.2 (its own version:
+  release-images.yml builds it). The images build on the new bases.
+- **Console npm packages moved** (minor and patch updates): @lucide/vue 1.73.0 → 1.81.0,
+  @sentry/vue 11.12.0 → 11.19.0, dompurify 3.4.17 → 3.5.0, pdfmake 0.3.14 → 0.3.15, vue 3.5.45 →
+  3.5.46, vue-i18n 11.4.20 → 11.4.24, vue-router 5.5.1 → 5.5.3 and vite 8.3.8 → 8.4.0; for the
+  console's tests vitest and @vitest/coverage-v8 5.1.0 → 5.1.2 and @vue/test-utils 2.5.1 → 2.6.0.
+  The release's images carry them.
+- **The console's code editors run Monaco Editor 0.58** (`monaco-editor` `^0.57.0` → `^0.58.0`).
+  Markdown in the editor's hovers and suggestions no longer loads remote images (`data:` images
+  still show); the console's editors show none. Monaco's sanitizer still runs on the dompurify
+  package (3.5.0), not on the DOMPurify 3.4.17 copy monaco-editor ships.
+- **The timed warmer describes its rows with cronstrue 3.51.0** (from 3.30.0, pinned exactly).
+  Every row reads as before in English and Turkish, but one that names both a day of the month and
+  weekdays: English now joins them with "and" ("At 09:00, on day 15 of the month, and Monday
+  through Friday"), as Turkish did, since the row fires on either.
+- **The console's end-to-end suites and screenshots run on Playwright 1.65.1** (from 1.64.0,
+  pinned exactly), with its Chromium 159.
+- **The dependency test bot no longer holds cronstrue and `@playwright/test`.** Each release of
+  either is a finding of its own outside its exact pin (`npm-vue--cronstrue`,
+  `npm-vue--playwright-test`), and its suites decide: the warmer editor's tests compare cronstrue's
+  wording, and a bump that moves Playwright runs the console's end-to-end suite against the dev
+  stack (`ui-stack`), also when it lands on next.
+
+### Fixed
+
+- **The dependency test bot holds a chart's release too, and holds kata-deploy 4.4.0.** A hold of
+  `ci/deps/holds.txt` whose group and name are a chart of the bot (`kata-deploy kata-deploy
+  >=4.4.0 …`) keeps its releases from the bot's runs, with the hold's reason, as a package's hold
+  does. kata-deploy 4.4.0 is held: a QEMU sandbox does not start next to a Cloud Hypervisor VM on
+  the same node (`qemu-system-x86_64: … Failed to get "consistent read" lock` on the shared guest
+  image), measured with `ci.sh test-sandbox-api` and Kata (13 of 13 cases on 4.3.1, 11 of 13 on
+  4.4.0), which the bot's runners cannot run (no `/dev/kvm`). RunR stays on kata-deploy 4.3.1.
+- **The Terraform provider's tests get 20 minutes in CI** (`go test -timeout 20m`, ci.yml's `go`
+  job and the bot's `go:terraform-provider-runr` check): with the race detector its real plans
+  take about six minutes on an idle host, and went past go test's default 10 minutes on a busy one.
+- **The dev stack's console no longer rewrites `vue/package-lock.json`.** The Compose `vue`
+  service installs the console's packages with `npm install --no-save`: the npm of its image (10)
+  rewrote the lockfile npm 11 writes, which left the checkout changed after every start.
+- **The dependency test bot no longer fails on its own scratch repository.** The weekly run of
+  2026-W47 (#91) and the run of 2026-11-24 stopped with `rm: cannot remove '…/public.git/objects':
+  Directory not empty` before any test: the fetch of the public release tag ends with Git's
+  automatic maintenance, which runs in the background (and, since Git 2.54, repacks and writes the
+  commit-graph), and it was still writing into the throwaway repository while the bot removed it.
+  The bot's scratch repositories now run no automatic maintenance, and a scratch directory it cannot
+  remove is a warning instead of "the bot cannot release now".
+- **Rows of the weekly summary that wait for a run that needs a person close once a release has
+  them.** A row the bot could not release (`needs attention`, the run's issue) stayed open after a
+  person released the update by hand, and so did the run's issue: the daily check now closes such a
+  row when it no longer finds its update, and the run's issue with its last row.
+- **The dependency test bot's bumps keep what was measured and finish what a release took.** A
+  measurement table (README's cold starts per Kata hypervisor) and the notes after it keep the
+  versions they were measured with, and a measured line of the landing page no longer holds a
+  chart bump: kata-deploy 4.4.0 would have waited for a person on both. A Dockerfile base or an
+  action pin that a release already moved is nothing to do (its issue closes) instead of "not
+  mechanical". The Spin shim's own version (v0.27.2-runr.N) moves wherever it is named as the
+  current one, and a bump that changes the API's code or tests runs PHPUnit.
+- **The dependency test bot's console bump moves every update of its finding.** `npm update` left
+  vitest and @vitest/coverage-v8 on 5.1.0 (each peers the other's own release) while the bump
+  reported them as moved. Such an update is now installed at the finding's version
+  (`npm install <name>@<version> --package-lock-only`, with package.json put back), and one that
+  still does not move goes to a person.
+- **A package bump of the dependency test bot names its finding's updates first** in its changelog
+  line, commit and summary, then what moved with them; the line named the first eight in
+  alphabetical order, which for the console were dependencies of its packages and packages the
+  lockfile dropped (`@emnapi/core 2.0.0-beta.2 → none`) instead of the updates themselves.
+
+### Security
+
+- **URLs that users configure can no longer reach RunR's internal network through DNS rebinding or
+  IPv6 transition addresses**
+  ([GHSA-2c93-rcvw-qpq2](https://github.com/BRF-Tech/runr/security/advisories/GHSA-2c93-rcvw-qpq2),
+  0.5.0 to 0.7.7, reported by golam71, with i-vt). The outbound guard of alert channels (webhook,
+  Slack, Teams), uptime checks of an absolute URL, billing webhooks and an organization's OpenID
+  Connect provider resolved a name for its check and let the HTTP client resolve it again, so a
+  name could answer a public address to the check and an internal one — the cloud metadata address
+  `169.254.169.254` among them — to the connection; it also counted 6to4 (`2002::/16`), NAT64
+  (`64:ff9b::/96`, `64:ff9b:1::/48`) and IPv4-compatible IPv6 addresses carrying a private IPv4
+  address, and site-local `fec0::/10`, as public. A developer (`uptime.manage`) could read answers
+  back through an uptime check's status and body pattern; an alert channel's "send test" showed the
+  start of a non-2xx answer. Every such request now resolves the name once, requires every address
+  to be public and is pinned to those addresses (curl `CURLOPT_RESOLVE`), with redirects off;
+  behind the API's egress proxy (`HTTPS_PROXY`, `http_proxy`, unless `NO_PROXY` names the host) it
+  goes through the proxy as a `CONNECT` to the first checked address (`CURLOPT_CONNECT_TO`), so
+  the proxy cannot resolve the name again either, and TLS still verifies the name.
+  IPv4-mapped, IPv4-compatible, 6to4 and NAT64 addresses are judged by the IPv4 address they carry
+  (`::ffff:8.8.8.8` is public, `2002:a9fe:a9fe::` is not); IPv6 outside global unicast `2000::/3`,
+  Teredo, benchmarking, ORCHID and documentation prefixes are refused, and so is a host written in
+  another notation (one number, hex, non-ASCII). A workflow app's endpoint override, which was
+  checked only when saved and with a narrower range list, is checked with the same ranges before
+  every request and pinned the same way, and two URLs of an organization of the multi-tenant
+  edition that had no check at all are held to the guard as well: its self-managed GitLab sign-in
+  and the S3 bucket of an export or import. The region agent, which probed regional uptime checks
+  without any check, refuses a private address of an absolute URL at the moment it connects (after
+  its own resolution) and ignores `HTTP_PROXY` / `HTTPS_PROXY` for these probes;
+  `observability.uptime.allowPrivateTargets` allows private targets in the regions as on the
+  control plane ([docs/security.md](docs/security.md#outbound-requests-to-user-configured-urls)).
+- **More outbound requests an organization steers are held to the same guard**
+  (with GHSA-2c93-rcvw-qpq2). An organization's runtime sources and custom runtimes: every request
+  to their OCI registry, the token service of a Bearer challenge and each redirect (followed by
+  hand, at most five, the registry's credentials never to another host) is checked and pinned,
+  and a Git source's host is checked and pinned too — https through `http.curloptResolve` without
+  redirects (behind the API's egress proxy through a local pin proxy that sends a `CONNECT` to the
+  checked address through it), SSH straight to the checked address under the host's name
+  (`HostName`, `HostKeyAlias`) — `git://` is refused for them; a failed read shows the
+  organization a short reason instead of
+  git's or the registry's answer. The JWKS URL of a gateway's JWT route is checked when saved,
+  and gateway-auth 1.1.2 refuses a private address when it connects (after its own resolution,
+  no proxy, no redirects); a JWKS served by a RunR function on the function domain of a platform
+  region is RunR's own name and may answer on the region's private ingress, one under an
+  organization's own base domain is held to the guard. An organization's secret store (Vault / OpenBao `server`, Azure
+  `vault_url`, multi-tenant edition) must name a public address when it is saved, verified and
+  deployed, and its failures show a short reason; on the platform regions the External Secrets
+  Operator controller, which resolves a store's name itself, gets the egress NetworkPolicy
+  `runr-eso-egress` (a CiliumNetworkPolicy on Cilium): DNS, the API server, the region's OpenBao,
+  public addresses and `secretStores.privateEgressCidrs` only, applied with the install and by
+  `region:reconcile` (step `external-secrets-egress`), which restarts the controller when it creates
+  or changes the policy, so the connections it opened before end. The controller runs four
+  reconciles at a time (the chart's `concurrent`, 1 before): a store whose connection is dropped
+  holds one until the Vault client gives up (60 s), no longer every other organization's syncs on
+  the region. A project's own URL whose function domain is
+  under the organization's own base domain — uptime checks of the endpoint (control plane and
+  region agents), request replay, the workflow function URL, the MCP gateway — is checked and
+  pinned like a URL its users set; RunR's own domain keeps working with a private ingress. Private
+  targets stay possible where the platform wants them: `apiProduct.jwksAllowPrivateTargets`,
+  `observability.replay.allowPrivateTargets`, `secretStores.allowPrivateTargets` and
+  `secretStores.privateEgressCidrs` (new Helm values), `RUNR_RUNTIME_SOURCES_ALLOW_PRIVATE` and
+  `MCP_GATEWAY_ALLOW_PRIVATE`; a JWT route whose JWKS is on a private address, an organization's
+  source or store on one, or a platform store on a private address read on a platform region of
+  the multi-tenant edition, needs its setting before the upgrade
+  ([docs/security.md](docs/security.md#outbound-requests-to-user-configured-urls)).
+- **The kubeconfig of an organization's own region could run programs in RunR's pods, read their
+  files and reach RunR's internal network** (0.3.0 to 0.7.7: every release of the multi-tenant
+  edition). An organization's Owner or Admin (`regions.manage`, `sandbox.manage` or
+  `registry.manage`) registers the organization's own regions with a kubeconfig, which RunR stored
+  and handed to kubectl, helm and its own Kubernetes client as it was written. A credential plugin
+  (`users[].user.exec`, `auth-provider`) ran a command in the API, queue worker and terminal pods;
+  a `tokenFile`, `client-certificate`, `client-key` or `certificate-authority` read a file there,
+  RunR's own ServiceAccount token among them; the `server` (and `proxy-url`) could name any
+  internal address, and `POST /knative-regions/validate-kubeconfig` and the other region checks
+  answered with the connection's error and with the version and names they read — a probe of
+  RunR's network. A global project's health check asked the address an organization's region
+  reported, an internal one included. The kubeconfig of an organization's region is now held to a
+  fixed set of fields — the current context with its cluster and user; a token, client
+  certificate data, or user name and password; no credential plugin, file, proxy, impersonation or
+  extension — when it is sent and every time it is used, and it is stored as RunR rebuilds it
+  from the checked values. Its server must be `https://` at a public address
+  (`tenancy.allowPrivateRegionServers` accepts private ones, never loopback or link-local), and
+  every connection goes to the addresses checked: RunR's client through `CURLOPT_RESOLVE` without
+  redirects, the native exec client to the first of them, kubectl and helm through a local proxy
+  that tunnels to those addresses only, so a redirect of the API server leads nowhere. Behind the
+  API's egress proxy (`HTTPS_PROXY`, unless `NO_PROXY` names the server) they reach the cluster
+  through it, still at the checked address: RunR's client and the local proxy send a `CONNECT` to
+  the address, never the name, and sandbox commands and terminals of such a region run through
+  kubectl. The organization's users read a short reason of a failed connection — also in every
+  read of the region that reaches its cluster (its nodes, a component's install, the Sandbox
+  API's checks, a model service's logs) and in the messages RunR stored about it (its status, a
+  component's install status, the setup of its registry); platform administrators keep the
+  details. The health check asks an organization's region at a public
+  address only and follows no redirect. A region whose stored kubeconfig does not pass is not used
+  until the kubeconfig is replaced, and `region:reconcile` lists it
+  ([docs/upgrade.md](docs/upgrade.md#kubeconfigs-of-organizations-own-regions),
+  [docs/security.md](docs/security.md#tenant-region-kubeconfigs)). Platform regions keep their
+  kubeconfigs as they are.
+- **The event gateway's MQTT source masks its WebSocket frames with a cryptographically random key**
+  (GO-2026-6278, GHSA-w67g-5rqw-f597). gorilla/websocket v1.5.3, which paho.mqtt.golang uses for a
+  `ws://` or `wss://` broker, took a client's frame mask key from a weak PRNG; govulncheck reaches it
+  from the MQTT source's connect. No tagged release has the fix, so `queue-consumer` takes the fix
+  commit itself, `v1.5.4-0.20240701034025-d67f41855da4` ("Use crypto/rand for mask key", 14 commits
+  after v1.5.3), the version the advisory names as fixed; govulncheck then reports nothing.
+
 ## [0.7.7] - 2026-11-26
 
 ### Upgrade notes
@@ -4913,7 +5199,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.7...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.8...main
+[0.7.8]: https://github.com/brf-tech/runr/releases/tag/v0.7.8
 [0.7.7]: https://github.com/brf-tech/runr/releases/tag/v0.7.7
 [0.7.6]: https://github.com/brf-tech/runr/releases/tag/v0.7.6
 [0.7.5]: https://github.com/brf-tech/runr/releases/tag/v0.7.5

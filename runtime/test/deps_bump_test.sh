@@ -322,7 +322,55 @@ bump traefik 42.3.1 --no-render
 grep -qF 'cannot be moved mechanically' "$report/summary.md" || fail "the console's pin: $(cat "$report/summary.md")"
 grep -qF 'vue/src/app.js:1' "$report/summary.md" || fail "the summary does not name the console's line: $(cat "$report/summary.md")"
 [ -z "$(changed)" ] || fail "a bump that needs a person left $(changed)"
-echo "ok - nothing to do at or below the pin; a dirty checkout, an unknown dependency, a non-version refused; the console's pin goes to a person"
+# a line of the console or the landing page that records the past (a measurement of a RunR
+# release, a date) names no pin: it stays as it is, and the bump goes on
+echo "export const traefikChart = 'x' // measured with Traefik chart 42.3.0 on RunR 0.6.8" > "$repo/vue/src/app.js"
+mkdir -p "$repo/landing"
+echo '<p>RunR measurement: v0.6.8, 2026-11-08, Traefik chart 42.3.0</p>' > "$repo/landing/index.html"
+(cd "$repo" && git add -A && git commit -q -m "vue, landing: history")
+bump traefik 42.3.1 --no-render
+[ "$rc" = 0 ] && grep -qF '42.3.0 on RunR 0.6.8' "$repo/vue/src/app.js" && grep -qF 'Traefik chart 42.3.0</p>' "$repo/landing/index.html" \
+  || fail "a line of the past in the console or the landing page stopped the bump: exit ${rc}: $(cat "$report/summary.md" 2>/dev/null)"
+git -C "$repo" checkout -q -- .
+echo "ok - nothing to do at or below the pin; a dirty checkout, an unknown dependency, a non-version refused; the console's pin goes to a person, a line of the past there does not"
+
+# --- a measurement keeps the versions it was measured with --------------------------------------------
+# a paragraph that speaks of a measurement, and the table it introduces (whose rows name the
+# version without a date or a release of their own), keep the pin; the lines that name it as the
+# current one move
+new_repo
+cat > "$repo/docs/measure.md" <<'EOF'
+Cold starts, median (p90), n = 12, on the same VM:
+
+| | Traefik 42.3.0 | Traefik 40.3.0 |
+|---|---|---|
+| Traefik chart 42.3.0 + QEMU | 3.96 s | 3.89 s |
+
+Where the time goes: the boot is the longest
+part on Traefik 42.3.0, the medians of 12 runs.
+
+The region Traefik runs chart 42.3.0 now.
+EOF
+cat > "$repo/api/app/Services/Helpers/Measured.php" <<'EOF'
+<?php
+/*
+ * - Traefik 42.3.0 (the same VM; median (p90), n = 12): 3.19 s,
+ *   QEMU 3.96 s; both inside Traefik 42.3.0.
+ *
+ * The pinned Traefik chart is 42.3.0.
+ */
+EOF
+(cd "$repo" && git add -A && git commit -q -m "measurements")
+bump traefik 42.3.1 --no-render
+[ "$rc" = 0 ] || fail "the measurement fixture: exit ${rc}: $(cat "$out")"
+[ "$(grep -c '42\.3\.0' "$repo/docs/measure.md")" = 3 ] && grep -qxF 'The region Traefik runs chart 42.3.1 now.' "$repo/docs/measure.md" \
+  && grep -qF '| Traefik chart 42.3.0 + QEMU | 3.96 s |' "$repo/docs/measure.md" && grep -qF '| | Traefik 42.3.0 | Traefik 40.3.0 |' "$repo/docs/measure.md" \
+  && grep -qF 'part on Traefik 42.3.0, the medians' "$repo/docs/measure.md" \
+  || fail "a measurement's paragraph or table moved, or the current line did not: $(cat "$repo/docs/measure.md")"
+grep -qF 'both inside Traefik 42.3.0.' "$repo/api/app/Services/Helpers/Measured.php" && grep -qF 'The pinned Traefik chart is 42.3.1.' "$repo/api/app/Services/Helpers/Measured.php" \
+  || fail "a measurement in a comment: $(cat "$repo/api/app/Services/Helpers/Measured.php")"
+grep -qF 'kept docs/measure.md:5:' "$report/edits.log" || fail "the kept table row is not reported: $(cat "$report/edits.log")"
+echo "ok - a measurement's paragraph and the table it introduces keep the versions they were measured with, in docs and in comments; the current pin moves"
 
 # --- the chart checks ------------------------------------------------------------------------------
 new_repo

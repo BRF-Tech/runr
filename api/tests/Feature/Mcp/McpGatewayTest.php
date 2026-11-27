@@ -7,7 +7,9 @@ use App\Mcp\Models\HostedServer;
 use App\Mcp\Models\HostedServerCall;
 use App\Models\AuditEvent;
 use App\Models\Project;
+use App\Services\Dns\DnsResolver;
 use App\Services\KnativeLogService;
+use App\Services\Observability\OutboundUrlGuard;
 use App\Workflows\Engine\Signature;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
@@ -246,6 +248,35 @@ class McpGatewayTest extends TestCase
 
         $this->gateway()->assertStatus(502)->assertJsonPath('error.code', -32603);
 
+        $this->assertSame('unreachable', HostedServerCall::sole()->outcome);
+    }
+
+    /**
+     * A server whose function domain is under its organization's own base domain (DNS the
+     * organization controls): checked before the forward, nothing goes to an internal address.
+     */
+    public function test_a_server_on_the_organizations_own_domain_is_guarded(): void
+    {
+        $this->serve(HostedServer::PUBLIC);
+        $this->upstream();
+        $this->app->instance(OutboundUrlGuard::class, new class(new class extends DnsResolver
+        {
+            public function addresses(string $name): array
+            {
+                return $name === 'weather.op.fn.test' ? ['64:ff9b::a9fe:a9fe'] : [];
+            }
+        }) extends OutboundUrlGuard
+        {
+
+            public function organizationControlled(string $url): bool
+            {
+                return str_ends_with((string) parse_url($url, PHP_URL_HOST), '.op.fn.test');
+            }
+        });
+
+        $this->gateway()->assertStatus(502);
+
+        $this->assertSame([], $this->forwarded);
         $this->assertSame('unreachable', HostedServerCall::sole()->outcome);
     }
 

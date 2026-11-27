@@ -4,10 +4,12 @@ namespace App\Services\RegionReconcile;
 
 use App\Models\KnativeRegion;
 use App\Services\Helpers\RunrClusterIdentity;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\KubernetesClient;
 use App\Services\RegionReconcile\Steps\AdmissionPolicyStep;
 use App\Services\RegionReconcile\Steps\CertManagerStep;
 use App\Services\RegionReconcile\Steps\DedicatedWorkerTolerationStep;
+use App\Services\RegionReconcile\Steps\ExternalSecretsEgressStep;
 use App\Services\RegionReconcile\Steps\ExternalSecretsStep;
 use App\Services\RegionReconcile\Steps\GatewayAuthStep;
 use App\Services\RegionReconcile\Steps\GatewayRoutesStep;
@@ -105,6 +107,8 @@ class RegionReconciler
             new WasmSandboxStep,
             // the pinned chart of External Secrets Operator where a region has it (secret store references)
             new ExternalSecretsStep,
+            // the operator controller's egress on platform regions of the multi-tenant edition
+            new ExternalSecretsEgressStep,
             // the region's OpenBao: pinned image, TLS certificate (after the operator it needs)
             new OpenBaoStep,
             // the API product's gateway-auth where a region runs it: a new image of the release
@@ -232,7 +236,7 @@ class RegionReconciler
     public function reconcile(?string $regionId, bool $dryRun, Closure $out, ?int $deadline = null): ReconcileOutcome
     {
         $outcome = new ReconcileOutcome;
-        $targets = $this->targets($regionId);
+        $targets = $this->withoutRefusedKubeconfigs($this->targets($regionId), $dryRun, $out, $outcome);
         if (! $targets) {
             $out('info', 'No regions to reconcile.');
         } else {
@@ -246,6 +250,43 @@ class RegionReconciler
         }
 
         return $outcome;
+    }
+
+    /**
+     * $targets without the organizations' own regions whose kubeconfig RunR refuses
+     * (TenantKubeconfigs::refusal(): KubeconfigPolicy, or its server's address — a kubeconfig an
+     * earlier release stored): nothing runs against them. Each is reported (unreachable, the
+     * reason on the region's record) and marked on its row (cluster_status unreachable, the
+     * reason as its message) until its kubeconfig is replaced.
+     *
+     * @param  list<ReconcileTarget>  $targets
+     * @param  Closure(string $level, string $message): void  $out
+     * @return list<ReconcileTarget>
+     */
+    private function withoutRefusedKubeconfigs(array $targets, bool $dryRun, Closure $out, ReconcileOutcome $outcome): array
+    {
+        $kept = [];
+        foreach ($targets as $target) {
+            $refusal = app(TenantKubeconfigs::class)->refusal($target->region);
+            if ($refusal === null) {
+                $kept[] = $target;
+
+                continue;
+            }
+
+            $outcome->unreachable[] = "region {$target->label()}";
+            $outcome->region([$target], "kubeconfig refused: {$refusal}");
+            $out('error', "Region {$target->label()}: not reconciled — {$refusal}");
+            if (! $dryRun) {
+                try {
+                    $target->run(fn () => $target->region->forceFill(['cluster_status' => 'unreachable', 'cluster_status_message' => $refusal])->save());
+                } catch (Throwable $e) {
+                    Log::warning('Region reconcile: the refused kubeconfig was not marked on the region', ['region' => $target->region->id, 'error' => $e->getMessage()]);
+                }
+            }
+        }
+
+        return $kept;
     }
 
     /**
@@ -267,6 +308,12 @@ class RegionReconciler
 
         foreach (self::$blockSources as $source) {
             foreach ($source($regionId) as $target) {
+                // reported with the cluster pass (withoutRefusedKubeconfigs()): nothing runs against it
+                if (app(TenantKubeconfigs::class)->refusal($target->region) !== null) {
+                    $out('warn', "[status-block] region {$target->region->name} ({$target->scope}): skipped — RunR does not use its kubeconfig");
+
+                    continue;
+                }
                 try {
                     $lines = $target->run(fn () => app(RegionStatusService::class)->syncBlock($target->region, $dryRun));
                 } catch (Throwable $e) {

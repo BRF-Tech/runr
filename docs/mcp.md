@@ -719,6 +719,7 @@ Every table is in the central schema, in both editions (tenant rows carry `tenan
 | `MCP_GATEWAY_PER_MINUTE` | 600 | requests per minute and caller for one hosted server |
 | `MCP_GATEWAY_CONNECT_TIMEOUT` | 10 | seconds to connect to a hosted server |
 | `MCP_GATEWAY_TIMEOUT` | 900 | longest forwarded request, SSE streams included (seconds) |
+| `MCP_GATEWAY_ALLOW_PRIVATE` | `false` | let the gateway forward to a private address of a server whose function domain is under its organization's own base domain ([outbound requests](security.md#outbound-requests-to-user-configured-urls)) |
 | `MCP_GATEWAY_VERIFY_TLS` | `true` | check the TLS certificate of the function URL |
 | `MCP_GATEWAY_CALLS_RETENTION_DAYS` | 30 | call log retention (`0` keeps every call) |
 

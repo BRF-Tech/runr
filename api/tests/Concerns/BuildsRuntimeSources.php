@@ -3,6 +3,7 @@
 namespace Tests\Concerns;
 
 use App\Models\RuntimeSource;
+use App\Services\Dns\DnsResolver;
 use App\Services\Runtimes\BuiltinCatalog;
 use App\Services\Runtimes\Patches\RuntimePatches;
 use App\Services\Runtimes\Sources\CatalogPayload;
@@ -14,7 +15,8 @@ use Symfony\Component\Yaml\Yaml;
  * Runtime source fixtures (docs/runtimes.md#runtime-sources): signed OCI catalogs in the fake
  * registry of BuildsRuntimePatches (the way `oras push` + `cosign sign --key` leave them), RunR's
  * default catalog built from the bundle, and local Git repositories of runtimes/<id>/runtime.yaml
- * read over file:// (runtime_sources.git_extra_protocols).
+ * read over file:// (runtime_sources.git_extra_protocols). The registry and Git hosts of *.test
+ * resolve to a public address: an organization's source is read through the outbound guard.
  */
 trait BuildsRuntimeSources
 {
@@ -35,6 +37,13 @@ trait BuildsRuntimeSources
         BuiltinCatalog::flush();
         RuntimePatches::flushSources();
         $this->fakeRegistry();
+        $this->app->instance(DnsResolver::class, new class extends DnsResolver
+        {
+            public function addresses(string $name): array
+            {
+                return str_ends_with(rtrim($name, '.'), '.test') ? ['93.184.216.34'] : [];
+            }
+        });
     }
 
     protected function tearDownRuntimeSources(): void

@@ -2,6 +2,7 @@
 
 namespace App\Models\Concerns;
 
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\Manifests\ZotManifests;
 use Symfony\Component\Yaml\Yaml;
 use Throwable;
@@ -20,12 +21,55 @@ trait KnativeRegionAccessorsTrait
     }
 
     /**
-     * Kubeconfig accessor with pluggable resolver.
-     * When a module registers a resolver, it may fetch from an alternate connection.
-     * The stored value is encrypted (cast App\Casts\Encrypted); an accessor receives the raw
-     * column value, so it is decrypted here.
+     * The kubeconfig RunR connects with. A module's resolver may fetch it from another connection
+     * (a tenant's copy of a platform region: from central). The stored value is encrypted (cast
+     * App\Casts\Encrypted); an accessor receives the raw column value, so it is decrypted here.
+     *
+     * An organization's own region (TenantKubeconfigs::restricts()) gets its kubeconfig through
+     * TenantKubeconfigs::usable(): held to KubeconfigPolicy with the server's address checked and
+     * pinned on every read — null when it is refused (a kubeconfig stored by an earlier release:
+     * nothing runs with it; KnativeStatusService and region:reconcile report why).
      */
     public function getKubeconfigAttribute($value)
+    {
+        $stored = $this->resolveStoredKubeconfig($value);
+        if ($stored === null || $stored === '' || $stored === 'demo' || ! TenantKubeconfigs::restricts($this)) {
+            return $stored;
+        }
+
+        return app(TenantKubeconfigs::class)->usable($this, $stored);
+    }
+
+    /**
+     * The kubeconfig as stored (resolved like the kubeconfig attribute), without the checks of an
+     * organization's region: what the region shows and hands out (has_kubeconfig, its server, the
+     * download) and what is kept when it is copied (a migration's old cluster). Never connect with it.
+     */
+    public function storedKubeconfig(): ?string
+    {
+        return $this->resolveStoredKubeconfig($this->attributes['kubeconfig'] ?? null);
+    }
+
+    /** The old cluster's kubeconfig of a region move, held to the same checks as kubeconfig. */
+    public function getMigrationOldKubeconfigAttribute($value)
+    {
+        $stored = $value === null ? null : $this->castAttribute('migration_old_kubeconfig', $value);
+        if ($stored === null || $stored === '' || ! TenantKubeconfigs::restricts($this)) {
+            return $stored;
+        }
+
+        return app(TenantKubeconfigs::class)->usable($this, $stored);
+    }
+
+    /** The old cluster's kubeconfig of a region move as stored (to restore it). */
+    public function storedMigrationOldKubeconfig(): ?string
+    {
+        $value = $this->attributes['migration_old_kubeconfig'] ?? null;
+
+        return $value === null ? null : $this->castAttribute('migration_old_kubeconfig', $value);
+    }
+
+    private function resolveStoredKubeconfig($value): ?string
     {
         if ($value !== null) {
             return $this->castAttribute('kubeconfig', $value);
@@ -43,7 +87,7 @@ trait KnativeRegionAccessorsTrait
      */
     public function getServerUrlAttribute(): ?string
     {
-        $raw = $this->kubeconfig;
+        $raw = $this->storedKubeconfig();
         if (! $raw || $raw === 'demo') {
             return null;
         }

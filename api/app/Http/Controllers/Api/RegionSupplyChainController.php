@@ -8,6 +8,7 @@ use App\Models\ImageSecurityReport;
 use App\Models\KnativeRegion;
 use App\Models\RegionSupplyChainSetting;
 use App\Models\RuntimeBuild;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\SupplyChain\AdmissionPolicyService;
 use App\Services\SupplyChain\ScannerDbMirrorService;
 use App\Services\SupplyChain\SigningKeyService;
@@ -81,7 +82,7 @@ class RegionSupplyChainController extends Controller
         try {
             $keys->generate($knativeRegion, rotate: $current->hasSigningKey());
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 409);
+            return response()->json(['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)], 409);
         }
 
         return response()->json(['data' => $this->payload($knativeRegion)], 202);
@@ -132,7 +133,7 @@ class RegionSupplyChainController extends Controller
         try {
             $mirror->refresh($knativeRegion);
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            return response()->json(['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)], 422);
         }
 
         return response()->json(['data' => $this->payload($knativeRegion)], 202);
@@ -151,7 +152,7 @@ class RegionSupplyChainController extends Controller
         try {
             $admission->requestInstall($knativeRegion);
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            return response()->json(['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)], 422);
         }
 
         return response()->json(['data' => $this->payload($knativeRegion)], 202);

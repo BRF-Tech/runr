@@ -77,6 +77,8 @@ data:
 
   # Tenancy
   TENANCY_ENABLED: {{ include "runr.tenancyEnabled" . | quote }}
+  # Private API server addresses for organizations' own regions (api Modules/Tenancy/config/config.php)
+  TENANCY_REGIONS_ALLOW_PRIVATE: {{ dig "allowPrivateRegionServers" false (.Values.tenancy | default dict) | ternary "true" "false" | quote }}
 
   # AuthProvider
   AUTH_PROVIDER_ENABLED: {{ include "runr.authProviderEnabled" . | quote }}
@@ -86,6 +88,10 @@ data:
 
   # Project secret values: region (pass-through) or database (values projectSecrets.storage, api config/secrets.php)
   RUNR_SECRET_STORAGE: {{ (.Values.projectSecrets | default dict).storage | default "region" | quote }}
+  # Secret stores of organizations (values secretStores.*, api config/secrets.php external.*)
+  {{- $ss := .Values.secretStores | default dict }}
+  RUNR_SECRET_STORES_ALLOW_PRIVATE: {{ dig "allowPrivateTargets" false $ss | ternary "true" "false" | quote }}
+  RUNR_SECRET_STORES_PRIVATE_EGRESS_CIDRS: {{ dig "privateEgressCidrs" list $ss | join "," | quote }}
   # Audit log retention (0 = keep forever) + SIEM forwarding (values audit.*, api config/audit.php).
   # `--reuse-values` with older values has no audit key → defaults.
   {{- $audit := .Values.audit | default dict }}
@@ -278,6 +284,7 @@ data:
   OBS_REPLAY_RETENTION_DAYS: {{ dig "replay" "retentionDays" 7 $obs | toString | quote }}
   OBS_REPLAY_MAX_CAPTURES: {{ dig "replay" "maxCaptures" 500 $obs | toString | quote }}
   OBS_INGEST_URL: {{ dig "replay" "ingestUrl" "" $obs | quote }}
+  OBS_REPLAY_ALLOW_PRIVATE: {{ dig "replay" "allowPrivateTargets" false $obs | ternary "true" "false" | quote }}
   OBS_UPTIME_MIN_INTERVAL: {{ dig "uptime" "minIntervalSeconds" 30 $obs | toString | quote }}
   OBS_UPTIME_RETENTION_DAYS: {{ dig "uptime" "resultsRetentionDays" 90 $obs | toString | quote }}
   OBS_UPTIME_ALLOW_PRIVATE: {{ dig "uptime" "allowPrivateTargets" false $obs | ternary "true" "false" | quote }}
@@ -519,6 +526,7 @@ data:
   {{- with $ap.usageRetentionDays }}
   RUNR_API_USAGE_RETENTION_DAYS: {{ . | quote }}
   {{- end }}
+  RUNR_GATEWAY_JWKS_ALLOW_PRIVATE: {{ dig "jwksAllowPrivateTargets" false $ap | ternary "true" "false" | quote }}
 
   # Organization export / import (docs/org-export.md) — empty values keep the application defaults
   {{- $ot := .Values.orgTransfer | default dict }}

@@ -199,7 +199,7 @@ class TraefikChartReconcileStepTest extends TestCase
         $this->assertArrayNotHasKey('logs', $values);
         $this->assertSame(['level' => 'INFO'], $values['log']);
         $this->assertSame('keep', $values['accessLog']['fields']['defaultMode']);
-        $this->assertSame('v3.7.18', $values['image']['tag']);
+        $this->assertSame('v3.8.0', $values['image']['tag']);
         $this->assertSame('delete', $values['global']['aliasHeadersStrategy']);
         // an empty list stays one (the chart's schema refuses a map there), an empty map stays one
         $this->assertStringContainsString('"trustedIPs":[]', $this->valuesFiles[0]);
@@ -348,7 +348,7 @@ class TraefikChartReconcileStepTest extends TestCase
         $this->deployedChart = $this->pinned();
         $this->deployedStatus = 'failed';
         $this->traefikArgs[] = TraefikChartValues::ALIAS_HEADERS_ARG.'delete';
-        $this->storedValues = '{"log":{"level":"INFO"},"accessLog":{"enabled":true},"image":{"registry":"ghcr.io","repository":"brf-tech/runr/reqs/traefik","tag":"v3.7.18"}}';
+        $this->storedValues = '{"log":{"level":"INFO"},"accessLog":{"enabled":true},"image":{"registry":"ghcr.io","repository":"brf-tech/runr/reqs/traefik","tag":"v3.8.0"}}';
 
         $lines = (new TraefikChartStep)->run($this->cluster(), false);
 
@@ -436,12 +436,12 @@ class TraefikChartReconcileStepTest extends TestCase
 
     public function test_an_image_override_of_the_pinned_version_moves_with_the_chart(): void
     {
-        config(['knative.traefik_image' => 'registry.example.com:5000/mirror/traefik:v3.7.18']);
+        config(['knative.traefik_image' => 'registry.example.com:5000/mirror/traefik:v3.8.0']);
 
         (new TraefikChartStep)->run($this->cluster(), false);
 
         $this->assertSame(
-            ['registry' => 'registry.example.com:5000', 'repository' => 'mirror/traefik', 'tag' => 'v3.7.18'],
+            ['registry' => 'registry.example.com:5000', 'repository' => 'mirror/traefik', 'tag' => 'v3.8.0'],
             json_decode($this->valuesFiles[0], true)['image'],
         );
     }
@@ -462,7 +462,7 @@ class TraefikChartReconcileStepTest extends TestCase
         $this->deployedChart = null;   // helm list hides it
         $this->history = [
             ['revision' => 4, 'updated' => '2026-09-30T08:01:44.118904203Z', 'status' => 'deployed', 'chart' => 'traefik-40.3.0', 'app_version' => 'v3.7.4', 'description' => 'Upgrade complete'],
-            ['revision' => 5, 'updated' => now()->subMinutes($minutesAgo)->format('Y-m-d\TH:i:s.uP'), 'status' => $status, 'chart' => $this->pinned(), 'app_version' => 'v3.7.18', 'description' => 'Preparing upgrade'],
+            ['revision' => 5, 'updated' => now()->subMinutes($minutesAgo)->format('Y-m-d\TH:i:s.uP'), 'status' => $status, 'chart' => $this->pinned(), 'app_version' => 'v3.8.0', 'description' => 'Preparing upgrade'],
         ];
     }
 
@@ -516,7 +516,7 @@ class TraefikChartReconcileStepTest extends TestCase
     public function test_the_time_limit_is_back_after_the_upgrade(): void
     {
         $helm = app(HelmService::class);
-        $helm->upgradeToChartVersion('traefik', 'traefik/traefik', 'knative-serving', 'kubeconfig', '42.4.0', '{}');
+        $helm->upgradeToChartVersion('traefik', 'traefik/traefik', 'knative-serving', 'kubeconfig', '43.0.0', '{}');
         $helm->repoUpdate();
 
         $this->assertSame(660, $this->processTimeouts['repo']);

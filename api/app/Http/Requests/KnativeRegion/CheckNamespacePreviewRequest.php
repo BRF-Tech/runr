@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\KnativeRegion;
 
+use App\Rules\RegionKubeconfig;
 use Illuminate\Foundation\Http\FormRequest;
 
 class CheckNamespacePreviewRequest extends FormRequest
@@ -14,7 +15,7 @@ class CheckNamespacePreviewRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'kubeconfig' => 'required|string',
+            'kubeconfig' => ['required', 'string', RegionKubeconfig::forNewRegion()],
             'name' => 'required|string|max:63',
         ];
     }

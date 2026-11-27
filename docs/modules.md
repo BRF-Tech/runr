@@ -65,7 +65,7 @@ the module off that route does not exist.
 Build the UI image with the flags of your modules (`vue/Dockerfile`):
 
 ```bash
-docker build -t registry.example.com/runr/ui:0.7.7-mt \
+docker build -t registry.example.com/runr/ui:0.7.8-mt \
   --build-arg VITE_WS_PROXY=true \
   --build-arg VITE_REVERB_KEY=runr-key \
   --build-arg VITE_TENANCY_ENABLED=true \
@@ -80,7 +80,7 @@ Helm, `ui.image.repository` and `ui.image.tag` select the UI image; the tag defa
 chart's `appVersion`. `edition: multi-tenant` appends `ui.image.multiTenantSuffix` (default `-mt`)
 to the tag and runs the published multi-tenant UI, `<version>-mt`, built with the Tenancy and
 AuthProvider screens; with
-`repository: registry.example.com/runr/ui` and `tag: "0.7.7"` it runs the image built above. A
+`repository: registry.example.com/runr/ui` and `tag: "0.7.8"` it runs the image built above. A
 multi-tenant UI of your own under its plain tag needs `multiTenantSuffix: ""`. In the
 single-tenant edition the tag is used as it is — with `authProvider.enabled: true` or the Ticket
 screens, point `ui.image.tag` at a build with those flags
@@ -168,7 +168,7 @@ Per driver:
 | Google | Client ID, Client Secret of an OAuth client (type *Web application*); optional **Hosted Domain** — only accounts of this Google Workspace domain sign in: RunR asks Google for the domain (`hd`) and refuses an account whose `hd` claim is another domain or missing | `openid, email, profile` |
 | GitHub | Client ID, Client Secret of an OAuth App | `user:email` |
 | Microsoft | Client ID (application ID), Client Secret of an app registration; **Tenant ID** — the Microsoft Entra directory: `common` (default), `organizations` or a directory ID | `openid, email, profile` |
-| GitLab | Client ID (application ID), Client Secret; **Instance URL** of a self-managed GitLab (empty: gitlab.com) | `read_user` |
+| GitLab | Client ID (application ID), Client Secret; **Instance URL** of a self-managed GitLab (empty: gitlab.com; a tenant's on a public address, like a tenant's OpenID Connect provider) | `read_user` |
 | OpenID Connect | Client ID, Client Secret of a confidential client with the authorization code flow; **Discovery URL** — `https://<issuer>/.well-known/openid-configuration` (the issuer URL works too); optional **Issuer** — the discovery document must name this issuer ([OpenID Connect](#openid-connect)) | `openid, email, profile` |
 | SAML 2.0 | **IdP Entity ID**; **IdP SSO URL** (HTTP-Redirect binding); **IdP Signing Certificate** (PEM, or the base64 body from the IdP metadata); optional **Email Attribute** and **Name Attribute**; optional **Sign AuthnRequests** with an SP certificate and its unencrypted PEM private key | — |
 
@@ -214,8 +214,9 @@ attribute**: any claim of the ID token or the userinfo response). An external us
 `sub` per provider.
 
 For a tenant's provider the discovery document, keys, token and userinfo endpoints must be on
-public addresses: for a tenant RunR calls no loopback, private, link-local or cluster-internal host
-and follows no redirects.
+public addresses: for a tenant RunR calls no loopback, private, link-local or cluster-internal host,
+sends each request to the addresses it checked right before it and follows no redirects
+([outbound requests](security.md#outbound-requests-to-user-configured-urls)).
 
 ### URLs for the identity provider
 

@@ -87,6 +87,200 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.7.7 → 0.7.8
+
+0.7.8 is a security release. Requests to URLs that users configure are pinned to the addresses
+their check saw, and more of them are held to that check
+([GHSA-2c93-rcvw-qpq2](https://github.com/BRF-Tech/runr/security/advisories/GHSA-2c93-rcvw-qpq2),
+0.5.0 to 0.7.7); the kubeconfig of an organization's own region is held to a fixed set of fields
+and a public API server (multi-tenant edition, 0.3.0 to 0.7.7); the event gateway's MQTT source
+masks its WebSocket frames with a random key (GO-2026-6278). The region Traefik moves to chart
+43.0.0 (Traefik v3.8.0), kube-prometheus-stack to 94.1.0 and the Zot chart to 0.1.135. There is
+no database migration ([Procedure](#procedure)). The new Helm values keep
+every check on: an installation that reaches private targets on purpose sets them with the upgrade
+([Private targets before the upgrade](#private-targets-before-the-upgrade)), and a multi-tenant
+installation looks at its organizations' regions first ([Kubeconfigs of organizations' own
+regions](#kubeconfigs-of-organizations-own-regions)). The region Job moves the region agent and
+the event gateway to 0.7.8 ([Order of operations](#order-of-operations)); a region that pulls
+through a mirror of its own needs `agent:0.7.8`, `queue-consumer:0.7.8`, `gateway-auth:1.1.2`,
+`supply-chain:1.1.3`, `containerd-shim-spin:v0.27.2-runr.2` (all under `ghcr.io/brf-tech/runr/`)
+and `ghcr.io/brf-tech/runr/reqs/traefik:v3.8.0` there before the upgrade.
+
+### Private targets before the upgrade
+
+From 0.7.8 each request below refuses a private, loopback, link-local or cluster-internal address,
+checked right before it is sent and pinned to the addresses the check saw
+([security.md](security.md#outbound-requests-to-user-configured-urls)). Where one of them reaches
+the installation's own network on purpose, give its setting with the upgrade (`--set` or the
+values file); without it the request fails afterwards:
+
+| What reaches a private address | Setting |
+| --- | --- |
+| The JWKS URL of a JWT route (checked when saved; gateway-auth 1.1.2 refuses it in the region) | `apiProduct.jwksAllowPrivateTargets: true` |
+| An uptime check of an absolute URL that runs in regions (the region agent refuses it now, as the control plane did) | `observability.uptime.allowPrivateTargets: true` |
+| An organization's runtime source or custom runtime on a private registry or Git host (`git://` is refused in any case) | `extraEnv.RUNR_RUNTIME_SOURCES_ALLOW_PRIVATE: "true"` |
+| An organization's secret store: Vault / OpenBao `server`, Azure `vault_url` (multi-tenant edition) | `secretStores.allowPrivateTargets: true` |
+| The platform's own secret store on a private address, read on a platform region of the multi-tenant edition (the External Secrets Operator's controller there gets the egress policy `runr-eso-egress`) | `secretStores.privateEgressCidrs`, e.g. `["10.20.0.0/16"]` ([secret-stores.md](secret-stores.md#network)) |
+| A project on its organization's own base domain whose names answer private addresses: uptime checks of its endpoint, request replay, the workflow function URL, the MCP gateway | `observability.uptime.allowPrivateTargets`, `observability.replay.allowPrivateTargets`, `extraEnv.WORKFLOWS_ALLOW_PRIVATE_ENDPOINTS`, `extraEnv.MCP_GATEWAY_ALLOW_PRIVATE` |
+| A workflow app's endpoint override (checked before every request now, with the full range list) | `extraEnv.WORKFLOWS_ALLOW_PRIVATE_ENDPOINTS: "true"` |
+| The API server of an organization's own region (multi-tenant edition) | `tenancy.allowPrivateRegionServers: true` ([below](#kubeconfigs-of-organizations-own-regions)) |
+
+A project on RunR's own domain keeps working with a private ingress: its own URL is not checked.
+An organization's self-managed GitLab sign-in and the bucket of its export or import stay held to
+the guard. Behind an egress proxy (`HTTPS_PROXY`, unless `NO_PROXY` names the host) these requests
+reach the proxy as a `CONNECT` to the checked address, never the name: a proxy that allows
+destinations by name has to allow those addresses.
+
+### What moves by itself
+
+- **The region Traefik: chart 43.0.0 and Traefik v3.8.0** (from 42.4.0 and v3.7.18, a new major
+  version of the chart). `region:reconcile` moves the Traefik of every region (step
+  `traefik-chart`, one pod at a time); its image is `ghcr.io/brf-tech/runr/reqs/traefik:v3.8.0`,
+  the reqs mirror's copy of `docker.io/library/traefik:v3.8.0`. With `knative.traefikImage` set,
+  the region keeps that image on the new chart; it must be v3.7.17 or newer, as before (chart
+  43.0.0 takes no Traefik before v3.7.0). The chart brings the CRDs of 42.4.0 and RunR uses none
+  of Traefik v3.8's new fields, nor its Gateway API provider: no CRD step. Your own Traefik
+  objects that use the new fields (ServersTransport `peerCertSANs`, the `tap` middleware,
+  buffering's `disableRequestBuffer` / `disableResponseBuffer`, IngressRoute
+  `respondingTimeouts`, mirroring's `streamBody`) need the chart's CRDs on a region installed
+  before 0.6.8:
+
+  ```sh
+  helm show crds traefik --repo https://traefik.github.io/charts --version 43.0.0 | \
+    kubectl apply --server-side --force-conflicts -f -
+  ```
+
+  With `sanitizePath`, Traefik's default, which RunR keeps, Traefik v3.8 resolves a dot-segment
+  with path parameters like a plain one: `/a/.;x/b` reaches the function as `/a/b`.
+- **The Spin shim v0.27.2-runr.2** on WebAssembly regions (step `wasm-sandbox`): the same build of
+  containerd-shim-spin v0.27.2 in an image on alpine 3.22. The installer replaces the binary on
+  each Wasm node in place, without a container runtime restart; running Wasm pods keep the shim
+  they started with.
+- **gateway-auth 1.1.2** where a region runs it (a gateway there has key or JWT routes; step
+  `gateway-auth`, its pods roll once), and the **supply-chain image 1.1.3** for the region's
+  supply-chain Jobs from now on: their Go modules and tool pins moved
+  ([CHANGELOG](../CHANGELOG.md)), and gateway-auth refuses a private JWKS address (above).
+- **The External Secrets Operator's controller restarts once** where a region has the operator
+  (step `external-secrets`): the release gets this release's values on the same chart 0.19.2, four
+  reconciles at a time (`--concurrent=4`, 1 before), so a store whose connection is dropped no
+  longer holds every other sync of the region. The step now also upgrades a release whose values
+  differ from RunR's (`helm get values`), not only another chart version; the Secrets it filled
+  stay.
+- **The External Secrets Operator's egress** (multi-tenant edition): on a platform region where
+  RunR installed the operator, its controller gets the NetworkPolicy `runr-eso-egress` (a
+  CiliumNetworkPolicy on Cilium) from `region:reconcile` (step `external-secrets-egress`) and with
+  every install: DNS, the API server, the region's OpenBao, public addresses and
+  `secretStores.privateEgressCidrs` ([secret-stores.md](secret-stores.md#network)). The step
+  restarts the controller when it creates or changes the policy, so the connections it opened
+  before end.
+
+### What waits for you
+
+- **kube-prometheus-stack 94.1.0** (from 93.3.0, a new major version) does not reach an installed
+  region by itself: `php artisan cluster:patch-observability [REGION-ID]` moves it when it suits
+  the region (node-exporter restarts once on every node: 1.12.1 → 1.13.1); regions set up from now
+  on run it. The new major changes nothing RunR sets: RunR runs no Alertmanager or Thanos Ruler,
+  whose service account token the chart stops mounting, and sets no node-exporter arguments. The
+  Prometheus Operator stays v0.95.2 with the same CRDs: no CRD step.
+- **Zot chart 0.1.135** (Zot v2.1.23, as before) does not reach an installed registry by itself:
+  `php artisan registry:upgrade-zot <region>` moves it when it suits the region (the registry
+  restarts); registries set up after the upgrade get it.
+- **The kubeconfigs of organizations' own regions** that 0.7.8 refuses: their regions are not used
+  until the organization replaces them (below).
+
+### Kubeconfigs of organizations' own regions
+
+This concerns multi-tenant installations (`edition: multi-tenant`, or `tenancy.enabled`) whose
+organizations added regions of their own. Single-tenant installations and platform regions are
+not affected.
+
+From 0.7.8 the kubeconfig of an organization's own region connects with data alone, to an
+API server at a public address ([security.md](security.md#tenant-region-kubeconfigs)): the current
+context only, with its cluster and user; a ServiceAccount `token`, `client-certificate-data` with
+`client-key-data`, or `username` / `password`; a `server` at `https://`. Before, such a kubeconfig
+was stored and used as its owner wrote it, and an organization's Owner or Admin could make RunR
+run a program (`exec`, `auth-provider`), read a file of its pods (`tokenFile`,
+`client-certificate`, `client-key`, `certificate-authority`), connect through a proxy or to an
+internal address, and read what a connection attempt answered.
+
+**Which regions stop.** An organization's own region whose stored kubeconfig has one of:
+
+- a credential plugin (`users[].user.exec`, `auth-provider`) — the kubeconfigs of the managed
+  Kubernetes services' CLIs;
+- a token, certificate or CA in a file (`tokenFile`, `client-certificate`, `client-key`,
+  `certificate-authority`);
+- `proxy-url`, impersonation (`as`, `as-groups`, …), `extensions`, or a field outside the list
+  of [security.md](security.md#tenant-region-kubeconfigs);
+- a cluster, user or context the current context does not use;
+- a server at `http://`, or at an address that is not public (a private or link-local address, a
+  cluster name such as `*.svc`, a name that resolves to one) — unless the operator allows private
+  addresses (below).
+
+RunR does not use such a region: nothing connects with its kubeconfig, its deploys and installs
+fail, and its status says why — the cluster status `unreachable` with the reason (Platform → Knative
+Regions → the region; `cluster_status_message` in the API). The region Job of the upgrade
+(`region:reconcile`) lists each one:
+
+```text
+Region acme-dc (01J…, tenant acme): not reconciled — RunR does not use the kubeconfig of this region: users[0].user.exec runs a program on RunR's servers …
+Not reached, left as they were: …, region acme-dc (01J…, tenant acme)
+```
+
+and counts it as unreachable: exit 4 when nothing else failed, which does not fail the upgrade.
+
+**The fix: a kubeconfig of a ServiceAccount.** The organization's Owner or Admin replaces the
+region's kubeconfig — the region's **General** tab, `runr regions set REGION --kubeconfig FILE`, or
+`PUT /knative-regions/{id}` with `kubeconfig` — with one RunR accepts, for the same cluster. On a
+cluster the current kubeconfig reaches:
+
+```sh
+kubectl -n kube-system create serviceaccount runr
+kubectl create clusterrolebinding runr --clusterrole=cluster-admin --serviceaccount=kube-system:runr
+kubectl -n kube-system apply -f - <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: runr-token
+  annotations:
+    kubernetes.io/service-account.name: runr
+type: kubernetes.io/service-account-token
+EOF
+SERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+CA=$(kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+TOKEN=$(kubectl -n kube-system get secret runr-token -o jsonpath='{.data.token}' | base64 -d)
+cat > region.yaml <<EOF
+apiVersion: v1
+kind: Config
+current-context: region
+clusters: [{name: region, cluster: {server: "$SERVER", certificate-authority-data: "$CA"}}]
+users: [{name: runr, user: {token: "$TOKEN"}}]
+contexts: [{name: region, context: {cluster: region, user: runr}}]
+EOF
+```
+
+A kubeconfig that already carries its credentials as data needs only
+`kubectl config view --minify --flatten > region.yaml`. The replacement is checked before it is
+stored and the region is used again at once; its next status check (within a minute) shows it
+`online`. Nothing on the cluster changes.
+
+**Clusters on the installation's private network.** Where organizations' clusters are reached at
+private addresses on purpose, set `tenancy.allowPrivateRegionServers: true`
+([Helm values](helm-values.md#edition)) with the upgrade: private addresses are accepted again,
+loopback and link-local ones are not, and RunR still connects only to the addresses it checked.
+
+### Back to 0.7.7
+
+A `helm rollback` (`helm history runr -n runr` lists the revisions); nothing runs on the database,
+and the region Job of the rollback moves the region agent, the event gateway and gateway-auth back
+to 0.7.7's (gateway-auth 1.1.1). The region Traefik stays on chart 43.0.0 (v3.8.0): 0.7.7's
+`region:reconcile` moves no Traefik to an older chart and warns that it stays. The External
+Secrets Operator keeps this release's values (four reconciles at a time): 0.7.7's
+`region:reconcile` upgrades it only for another chart version. A region moved to
+kube-prometheus-stack 94.1.0, or a
+registry moved to Zot chart 0.1.135, stays on it. 0.7.7 uses every stored kubeconfig of an
+organization's region as it is again, the replaced ones included, and checks outbound requests
+the way it did. **Never uninstall** to go back.
+
 ## 0.7.6 → 0.7.7
 
 0.7.7 pins the API image to FrankenPHP 1.14.0 on PHP 8.3.37, makes its build fail on an older PHP,

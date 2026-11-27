@@ -273,7 +273,7 @@ class WorkflowRegistry
         }
 
         $envelope = Protocol::envelope(['type' => Protocol::TYPE_INTROSPECT, 'protocol' => Protocol::VERSION, 'ts' => time()], $app->signingKeys());
-        $response = $this->transport->send($url, $envelope['body'], $envelope['headers']);
+        $response = $this->transport->send($url, $envelope['body'], $envelope['headers'], $this->endpoints->isOverride($app));
         $decoded = Protocol::decodeResponse($response->body);
 
         $defs = Definition::listFromArray(JsonValue::toArray($decoded->workflows ?? null));

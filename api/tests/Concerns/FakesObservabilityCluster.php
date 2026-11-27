@@ -9,6 +9,7 @@ use App\Models\XaasConfig;
 use App\Services\Dns\DnsResolver;
 use App\Services\HelmResult;
 use App\Services\HelmService;
+use App\Services\Observability\OutboundUrlGuard;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Yaml\Yaml;
@@ -28,7 +29,10 @@ trait FakesObservabilityCluster
     /** "METHOD /path-prefix" => callable(Request): \GuzzleHttp\Promise\PromiseInterface|array{0:int,1:mixed} */
     protected array $k8sRoutes = [];
 
-    /** Responses of other hosts (Slack, Teams, project endpoints …) by URL prefix */
+    /**
+     * Responses of other hosts (Slack, Teams, project endpoints …) by URL prefix; a callable gets
+     * the request and the client options it was sent with (the pin of a guarded request)
+     */
     protected array $externalRoutes = [];
 
     protected object $helm;
@@ -86,7 +90,7 @@ trait FakesObservabilityCluster
         };
         $this->app->instance(DnsResolver::class, $this->dns);
 
-        Http::fake(function (Request $request) {
+        Http::fake(function (Request $request, array $options = []) {
             $url = $request->url();
             $path = (string) parse_url($url, PHP_URL_PATH);
             parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
@@ -123,11 +127,31 @@ trait FakesObservabilityCluster
 
             foreach ($this->externalRoutes as $prefix => $handler) {
                 if (str_starts_with($url, $prefix)) {
-                    return is_callable($handler) ? $handler($request) : $handler;
+                    return is_callable($handler) ? $handler($request, $options) : $handler;
                 }
             }
 
             return Http::response(['error' => 'unexpected request '.$request->method().' '.$url], 599);
+        });
+    }
+
+    /**
+     * Hosts under $domain count as an organization's own base domain (OutboundUrlGuard::
+     * organizationControlled(); OrganizationDomainGuardTest covers the real decision in a tenant).
+     */
+    protected function organizationDomain(string $domain): void
+    {
+        $this->app->instance(OutboundUrlGuard::class, new class($this->dns, $domain) extends OutboundUrlGuard
+        {
+            public function __construct(DnsResolver $dns, private readonly string $domain)
+            {
+                parent::__construct($dns);
+            }
+
+            public function organizationControlled(string $url): bool
+            {
+                return str_ends_with((string) parse_url($url, PHP_URL_HOST), '.'.$this->domain);
+            }
         });
     }
 

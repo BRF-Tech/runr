@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Kubeconfigs\KubeconfigFile;
 use App\Support\GitHubReleaseAsset;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -63,17 +64,16 @@ class HelmService
     /** Tries of a Helm call whose chart download keeps failing on the way (withChartDownload) */
     public const DOWNLOAD_TRIES = GitHubReleaseAsset::TRIES;
 
-    private ?string $tmpKubeconfig = null;
+    /** The kubeconfig of the last command (and the pin proxy of an organization's region) */
+    private ?KubeconfigFile $tmpKubeconfig = null;
 
     /** The time limit of the helm process run() starts */
     protected int $processTimeout = self::PROCESS_TIMEOUT;
 
     public function __destruct()
     {
-        if ($this->tmpKubeconfig && file_exists($this->tmpKubeconfig)) {
-            @unlink($this->tmpKubeconfig);
-            $this->tmpKubeconfig = null;
-        }
+        $this->tmpKubeconfig?->close();
+        $this->tmpKubeconfig = null;
     }
 
     /**
@@ -703,18 +703,16 @@ class HelmService
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
+    /**
+     * The kubeconfig of the next commands as a file (KubeconfigFile: an organization's region is
+     * checked again and reached through its pin proxy); the previous one goes.
+     */
     private function writeKubeconfig(string $yaml): string
     {
-        if ($this->tmpKubeconfig && file_exists($this->tmpKubeconfig)) {
-            @unlink($this->tmpKubeconfig);
-        }
+        $this->tmpKubeconfig?->close();
+        $this->tmpKubeconfig = KubeconfigFile::write($yaml, 'runr-helm-kc-');
 
-        $path = tempnam(sys_get_temp_dir(), 'runr-helm-kc-');
-        file_put_contents($path, $yaml);
-        chmod($path, 0600);
-        $this->tmpKubeconfig = $path;
-
-        return $path;
+        return $this->tmpKubeconfig->path;
     }
 
     protected function run(array $command): HelmResult

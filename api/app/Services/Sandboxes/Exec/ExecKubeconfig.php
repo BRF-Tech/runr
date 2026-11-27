@@ -2,6 +2,8 @@
 
 namespace App\Services\Sandboxes\Exec;
 
+use App\Services\Kubeconfigs\KubeconfigPin;
+use App\Services\Observability\OutboundProxy;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -13,7 +15,8 @@ use Symfony\Component\Yaml\Yaml;
  * (UNSUPPORTED_USER / UNSUPPORTED_CLUSTER: an exec plugin, an auth provider, a token, certificate
  * or CA in a file, basic auth, impersonation, a proxy-url) throws NativeExecUnsupported, and so
  * does a proxy of the environment (environmentProxy(), checked by SelectingExecTransport): such a
- * region keeps running commands through kubectl.
+ * region keeps running commands through kubectl. RunR's own pin of an organization's region
+ * (KubeconfigPin, in proxy-url) is no proxy: the socket goes to the first checked address.
  *
  * The CA, client certificate and key go to 0600 files under the temp directory (PHP's TLS reads
  * them from files), one set per distinct kubeconfig, kept for the process (Octane worker, Reverb)
@@ -61,6 +64,8 @@ final class ExecKubeconfig
         private readonly ?string $caPem,
         private readonly ?string $certPem,
         private readonly ?string $keyPem,
+        /** @var list<string>|null the checked addresses of an organization's region server (KubeconfigPin) */
+        public readonly ?array $pinned = null,
     ) {}
 
     /** @throws NativeExecUnsupported */
@@ -105,8 +110,13 @@ final class ExecKubeconfig
                 throw new NativeExecUnsupported("the kubeconfig user uses {$what} ({$field}), which only kubectl handles");
             }
         }
+        // An organization's region: its checked addresses (RunR's own proxy-url marker)
+        $pinned = KubeconfigPin::addresses($cluster);
+        if ($pinned === []) {
+            throw new NativeExecUnsupported('the kubeconfig cluster has a damaged address pin');
+        }
         foreach (self::UNSUPPORTED_CLUSTER as $field => $what) {
-            if (! empty($cluster[$field])) {
+            if (! empty($cluster[$field]) && ! ($field === 'proxy-url' && $pinned !== null)) {
                 throw new NativeExecUnsupported("the kubeconfig cluster uses {$what} ({$field}), which only kubectl handles");
             }
         }
@@ -145,6 +155,7 @@ final class ExecKubeconfig
             $decode($cluster['certificate-authority-data'] ?? null, 'certificate authority'),
             $cert,
             $key,
+            $pinned,
         );
     }
 
@@ -163,10 +174,19 @@ final class ExecKubeconfig
         return null;
     }
 
-    /** "host:port" as a socket address (IPv6 in brackets, as parse_url keeps it). */
+    /**
+     * "host:port" as a socket address (IPv6 in brackets, as parse_url keeps it). A pinned server
+     * (an organization's region): its first checked address — TLS still verifies the host name
+     * (sslOptions()); another address is kubectl's to try (through PinProxy).
+     */
     public function address(): string
     {
-        return ($this->scheme === 'https' ? 'tls://' : 'tcp://').$this->host.':'.$this->port;
+        $host = $this->host;
+        if ($this->pinned !== null) {
+            $host = str_contains($this->pinned[0], ':') ? '['.$this->pinned[0].']' : $this->pinned[0];
+        }
+
+        return ($this->scheme === 'https' ? 'tls://' : 'tcp://').$host.':'.$this->port;
     }
 
     /** The Host header. */
@@ -190,7 +210,9 @@ final class ExecKubeconfig
      * "*", a domain with its subdomains, ".domain" for subdomains only, an IP or CIDR, each with an
      * optional port; localhost and loopback addresses never go through a proxy). The API's other
      * cluster calls (curl) follow these variables as well; the native client does not, so such a
-     * server's commands go to kubectl.
+     * server's commands go to kubectl. So do a pinned server's (an organization's region,
+     * KubeconfigPin): kubectl reaches it through PinProxy, which carries the tunnel to the checked
+     * address through that proxy (OutboundProxy) — the native client itself never uses a proxy.
      *
      * @param  array<string, string>|null  $env  the variables to read (tests); null: the process's
      */
@@ -214,97 +236,13 @@ final class ExecKubeconfig
 
         $host = strtolower(trim($this->host, '[]'));
         $ip = filter_var($host, FILTER_VALIDATE_IP) !== false ? $host : null;
-        if ($host === 'localhost' || ($ip !== null && self::isLoopback($ip))) {
+        if ($host === 'localhost' || ($ip !== null && OutboundProxy::isLoopback($ip))) {
             return null;
         }
 
         [, $noProxy] = $read('NO_PROXY', 'no_proxy');
 
-        return self::noProxyMatches($noProxy, $host, $ip, (string) $this->port) ? null : $variable;
-    }
-
-    /** Whether a NO_PROXY list names the host (Go's httpproxy rules, see environmentProxy()). */
-    private static function noProxyMatches(string $noProxy, string $host, ?string $ip, string $port): bool
-    {
-        foreach (explode(',', strtolower($noProxy)) as $entry) {
-            $entry = trim($entry);
-            if ($entry === '') {
-                continue;
-            }
-            if ($entry === '*') {
-                return true;
-            }
-            if (str_contains($entry, '/')) {
-                if ($ip !== null && self::inCidr($ip, $entry)) {
-                    return true;
-                }
-
-                continue;
-            }
-
-            // host:port, [v6]:port, a bare IPv6
-            $entryPort = '';
-            if (preg_match('/^\[([^\]]+)\](?::(\d+))?$/', $entry, $m)) {
-                $entry = $m[1];
-                $entryPort = $m[2] ?? '';
-            } elseif (substr_count($entry, ':') === 1) {
-                [$entry, $entryPort] = explode(':', $entry, 2);
-            }
-            if ($entry === '' || ($entryPort !== '' && $entryPort !== $port)) {
-                continue;
-            }
-
-            if (filter_var($entry, FILTER_VALIDATE_IP) !== false) {
-                if ($ip !== null && inet_pton($entry) === inet_pton($ip)) {
-                    return true;
-                }
-
-                continue;
-            }
-
-            if (str_starts_with($entry, '*.')) {
-                $entry = substr($entry, 1);
-            }
-            $matchHost = ! str_starts_with($entry, '.');
-            $suffix = $matchHost ? '.'.$entry : $entry;
-            if (str_ends_with($host, $suffix) || ($matchHost && $host === $entry)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static function isLoopback(string $ip): bool
-    {
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
-            return str_starts_with($ip, '127.');
-        }
-        $packed = inet_pton($ip);
-
-        return $packed === inet_pton('::1') || ($packed !== false && str_starts_with($packed, str_repeat("\0", 10)."\xff\xff\x7f"));
-    }
-
-    private static function inCidr(string $ip, string $cidr): bool
-    {
-        [$network, $bits] = explode('/', $cidr, 2) + [1 => ''];
-        $a = @inet_pton($ip);
-        $b = @inet_pton($network);
-        if ($a === false || $b === false || strlen($a) !== strlen($b) || ! ctype_digit($bits) || (int) $bits > strlen($a) * 8) {
-            return false;
-        }
-        $bits = (int) $bits;
-        $bytes = intdiv($bits, 8);
-        if (substr($a, 0, $bytes) !== substr($b, 0, $bytes)) {
-            return false;
-        }
-        $rest = $bits % 8;
-        if ($rest === 0) {
-            return true;
-        }
-        $mask = (0xFF << (8 - $rest)) & 0xFF;
-
-        return (ord($a[$bytes]) & $mask) === (ord($b[$bytes]) & $mask);
+        return OutboundProxy::matches($noProxy, $host, $ip, (string) $this->port) ? null : $variable;
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Http\Resources\KnativeRegionResource;
 use App\Jobs\InstallWasmJob;
 use App\Jobs\UninstallWasmJob;
 use App\Models\KnativeRegion;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\KubernetesClient;
 use App\Services\Wasm\WasmInstallService;
 use App\Services\Wasm\WasmNodes;
@@ -39,7 +40,7 @@ class WasmController extends Controller
             try {
                 $cluster = app(WasmInstallService::class)->clusterState($knativeRegion, new KubernetesClient($knativeRegion->kubeconfig));
             } catch (\Throwable $e) {
-                $error = $e->getMessage();
+                $error = TenantKubeconfigs::messageFor($e, $knativeRegion);
             }
         }
 
@@ -80,7 +81,7 @@ class WasmController extends Controller
         try {
             $items = (new KubernetesClient($knativeRegion->kubeconfig))->listClusterResources('v1', 'Node');
         } catch (\Throwable $e) {
-            return response()->json(['message' => __('wasm::messages.cluster_unreachable', ['error' => $e->getMessage()])], 422);
+            return response()->json(['message' => __('wasm::messages.cluster_unreachable', ['error' => TenantKubeconfigs::messageFor($e, $knativeRegion)])], 422);
         }
         if ($items === null) {
             return response()->json(['message' => __('wasm::messages.cluster_unreachable', ['error' => 'cannot list nodes'])], 422);

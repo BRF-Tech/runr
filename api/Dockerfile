@@ -90,20 +90,20 @@ RUN apk add --no-cache git git-daemon openssh-client sqlite curl libpq zstd \
 # Kubernetes minor (ci/deps/packages.sh)
 ARG KUBECTL_1_31_VERSION=v1.31.14
 ARG KUBECTL_1_33_VERSION=v1.33.13
-ARG KUBECTL_1_35_VERSION=v1.35.10
-ARG KUBECTL_1_37_VERSION=v1.37.2
+ARG KUBECTL_1_35_VERSION=v1.35.11
+ARG KUBECTL_1_37_VERSION=v1.37.3
 RUN KUBE_ARCH="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" \
     && case "$KUBE_ARCH" in \
          amd64) set -- \
                   1.31 "$KUBECTL_1_31_VERSION" 8791ec7c8966b61420d55103a5fb948de9f0ca3d7306d789734975ad9704bdb0 \
                   1.33 "$KUBECTL_1_33_VERSION" 316d712726d857c20744c57cb36aa47cfc79bc0af7e82cebf3780244b654c073 \
-                  1.35 "$KUBECTL_1_35_VERSION" c49a28f1f4efc4d475ed05f47f2ce8e563bf7bef69ed77fe1b924ea6d83b6327 \
-                  1.37 "$KUBECTL_1_37_VERSION" c04487523e7aa7d1493f7808174c899db93d7a9cf57531420cd76b9bd415f8f4 ;; \
+                  1.35 "$KUBECTL_1_35_VERSION" eeddea383a302f9a633a292af1d886054c7cf152fb407f827f12bfe286dc46d6 \
+                  1.37 "$KUBECTL_1_37_VERSION" 9a1b55af2795b25dd288dbef62387db9b5530087ab918d28c6ad067f2e3cb07c ;; \
          arm64) set -- \
                   1.31 "$KUBECTL_1_31_VERSION" 3abb0c2d7121e1833831f56fd857a93de386e76d14b64baf86220d0afe495209 \
                   1.33 "$KUBECTL_1_33_VERSION" 9fe8aadd5aab9421978c7ac95de6fad304a3c4c0ce9dbf4127579779e0699080 \
-                  1.35 "$KUBECTL_1_35_VERSION" 283f1be6a46b3695b625e25030106b8ffe18bd0d3a900f5b65c259ca407f04f5 \
-                  1.37 "$KUBECTL_1_37_VERSION" fcc16f63186659d9722014b7e02d5fdd2d4e669cb8c0ab66365d7d3b8ba03509 ;; \
+                  1.35 "$KUBECTL_1_35_VERSION" e69973a0b8c23412f2f6bba6a91b98579a1787c4d731fb4cb5987ba273763318 \
+                  1.37 "$KUBECTL_1_37_VERSION" da160b41491cc5c5e575d78bb665810fb900f70fad666d834094b24ec56d304f ;; \
          *) echo "unsupported architecture $KUBE_ARCH" >&2; exit 1 ;; \
        esac \
     && while [ "$#" -ge 3 ]; do \

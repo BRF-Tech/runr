@@ -197,6 +197,45 @@ class AlertChannelsTest extends TestCase
         $this->assertSame(0, count(array_filter($this->sent, fn ($r) => str_contains($r->url(), 'intranet'))));
     }
 
+    /**
+     * GHSA-2c93-rcvw-qpq2: "send test" checks the URL again when it sends, and sends it to the
+     * addresses that check saw (curl pin, no redirects) — a name that answered a public address
+     * when the channel was saved cannot be turned to an internal one afterwards.
+     */
+    public function test_a_delivery_is_checked_again_and_pinned_to_the_checked_addresses(): void
+    {
+        $owner = $this->userWithRole('owner');
+        $options = [];
+        $this->externalRoutes['https://hooks.example.com/'] = function (Request $request, array $sent) use (&$options) {
+            $this->sent[] = $request;
+            $options[] = $sent;
+
+            return Http::response('', 204);
+        };
+        $this->dns->addressRecords['hooks.example.com'] = ['93.184.216.34', '2606:4700:4700::1111'];
+
+        $id = $this->create('webhook', ['url' => 'https://hooks.example.com/runr']);
+        $slack = $this->create('slack', ['webhook_url' => 'https://hooks.example.com/slack']);
+
+        foreach ([$id, $slack] as $channel) {
+            $this->signedIn($owner)->postJson("/api/observability/alert-channels/{$channel}/test")->assertJsonPath('data.ok', true);
+        }
+        $this->assertCount(2, $options);
+        foreach ($options as $sent) {
+            $this->assertFalse($sent['allow_redirects']);
+            $this->assertSame('hooks.example.com:443:93.184.216.34,[2606:4700:4700::1111]', $sent['curl'][CURLOPT_RESOLVE][0]);
+        }
+
+        // The name now answers the cloud metadata address, in one of the IPv6 forms that carry it
+        foreach (['169.254.169.254', '::ffff:169.254.169.254', '64:ff9b::a9fe:a9fe', '2002:a9fe:a9fe::'] as $internal) {
+            $this->dns->addressRecords['hooks.example.com'] = ['93.184.216.34', $internal];
+            $this->signedIn($owner)->postJson("/api/observability/alert-channels/{$id}/test")
+                ->assertJsonPath('data.ok', false)
+                ->assertJsonPath('data.error', __('observability.url.private'));
+        }
+        $this->assertCount(2, $options, 'nothing sent to the internal address');
+    }
+
     public function test_deleting_a_channel_removes_it_from_rules_and_permissions(): void
     {
         $owner = $this->userWithRole('owner');

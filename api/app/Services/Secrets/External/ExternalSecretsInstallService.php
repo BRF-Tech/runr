@@ -26,6 +26,16 @@ use Throwable;
  */
 class ExternalSecretsInstallService
 {
+    /**
+     * ExternalSecret reconciles the controller runs at a time (the chart's `concurrent`, 1 by
+     * default). A store whose connection is dropped (the egress policy, a firewall) holds a
+     * reconcile until the Vault client gives up (60 s): with one, every other organization's syncs
+     * on the region waited behind it; with four, three go on. Small enough for the controller's
+     * 256 MiB limit: the reconciles share the controller's caches, each holds a store client and the
+     * data it reads.
+     */
+    public const CONCURRENT = 4;
+
     public function __construct(private readonly HelmService $helm) {}
 
     /**
@@ -66,6 +76,7 @@ class ExternalSecretsInstallService
                 'eso_chart_version' => (string) config('secrets.external.chart_version'),
                 'eso_installed_at' => now(),
             ])->save();
+            $this->applyEgress($region);
         } catch (Throwable $e) {
             $settings->fill(['eso_status' => RegionSecretSetting::ESO_ERROR, 'eso_message' => mb_substr($e->getMessage(), 0, 2000)])->save();
             Log::warning('External Secrets Operator install failed', ['region' => $region->name, 'error' => $e->getMessage()]);
@@ -115,6 +126,29 @@ class ExternalSecretsInstallService
             'eso_chart_version' => null,
             'eso_installed_at' => null,
         ])->save();
+
+        try {
+            ExternalSecretsEgress::remove(new KubernetesClient((string) $region->kubeconfig));
+        } catch (Throwable $e) {
+            Log::warning('External Secrets Operator egress policy not removed', ['region' => $region->name, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * The controller's egress policy with the install (ExternalSecretsEgress), where it is wanted;
+     * a failure is logged and region:reconcile applies it.
+     */
+    private function applyEgress(KnativeRegion $region): void
+    {
+        if (! ExternalSecretsEgress::wanted([$region])) {
+            return;
+        }
+
+        try {
+            ExternalSecretsEgress::ensure(new KubernetesClient((string) $region->kubeconfig));
+        } catch (Throwable $e) {
+            Log::warning('External Secrets Operator egress policy not applied (region:reconcile applies it)', ['region' => $region->name, 'error' => $e->getMessage()]);
+        }
     }
 
     /**
@@ -179,6 +213,50 @@ class ExternalSecretsInstallService
         );
     }
 
+    /**
+     * Whether the release on the region's cluster runs with other values than values() (`helm get
+     * values`: the values it was installed with): an earlier release's install, or one changed by
+     * hand. Null when helm cannot tell.
+     */
+    public function deployedValuesDiffer(KnativeRegion $region): ?bool
+    {
+        $json = $this->helm->releaseValuesJson(
+            (string) config('secrets.external.release'),
+            (string) config('secrets.external.namespace'),
+            (string) $region->kubeconfig,
+        );
+        if ($json === null) {
+            return null;
+        }
+        // a release installed without values answers null
+        $deployed = trim($json) === 'null' ? [] : json_decode($json, true);
+        if (! is_array($deployed)) {
+            return null;
+        }
+
+        return self::fingerprint($deployed) !== self::fingerprint(self::values());
+    }
+
+    /** A fingerprint of chart values: the same values give the same one, in any order of keys. */
+    public static function fingerprint(array $values): string
+    {
+        return hash('sha256', (string) json_encode(self::sortedKeys($values)));
+    }
+
+    private static function sortedKeys(array $values): array
+    {
+        if (! array_is_list($values)) {
+            ksort($values);
+        }
+        foreach ($values as $key => $value) {
+            if (is_array($value)) {
+                $values[$key] = self::sortedKeys($value);
+            }
+        }
+
+        return $values;
+    }
+
     /** How many secret variables of the projects on the region are references (current context). */
     public function referencesOn(KnativeRegion $region): int
     {
@@ -190,7 +268,8 @@ class ExternalSecretsInstallService
 
     /**
      * The chart values: RunR's image mirror for the controller, the webhook and the cert
-     * controller (one image), namespaced stores only, small requests.
+     * controller (one image), namespaced stores only, small requests, CONCURRENT reconciles. A
+     * change here reaches installed operators with region:reconcile (ExternalSecretsStep).
      */
     public static function values(): array
     {
@@ -207,6 +286,7 @@ class ExternalSecretsInstallService
             'webhook' => ['image' => $ref, 'resources' => $requests],
             'certController' => ['image' => $ref, 'resources' => $requests],
             'resources' => $requests,
+            'concurrent' => self::CONCURRENT,
             // Namespaced SecretStores and ExternalSecrets only
             'processClusterStore' => false,
             'processClusterExternalSecret' => false,

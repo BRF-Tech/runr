@@ -206,6 +206,7 @@ class RegionReconcileCommandTest extends TestCase
     public function test_tenant_owned_regions_are_reconciled_and_synced_copies_are_not(): void
     {
         $this->setUpTenancy();
+        $this->resolveRegionHosts('tenant.test');
         TenantRegionReconcileSource::register();
 
         $this->cluster('central.test');
@@ -250,6 +251,7 @@ class RegionReconcileCommandTest extends TestCase
     public function test_the_status_block_pass_covers_inactive_tenant_owned_regions_in_their_context(): void
     {
         $this->setUpTenancy();
+        $this->resolveRegionHosts('tenant.test');
         TenantRegionReconcileSource::register();
 
         $this->cluster('tenant.test');

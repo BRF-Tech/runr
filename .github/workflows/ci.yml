@@ -167,7 +167,7 @@ jobs:
       # go1.27.4: Go 1.27 with the stdlib security fixes of go1.26.11; every module tested here declares
       # it. A toolchain GOTOOLCHAIN downloads for a newer go directive has no covdata, so
       # -coverprofile fails on packages without tests: raise this version with the modules.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: '1.27.4'
           cache-dependency-path: '**/go.sum'
@@ -190,7 +190,11 @@ jobs:
             echo "::group::$dir"
             unformatted=$(cd "$dir" && gofmt -l .)
             if [ -n "$unformatted" ]; then echo "gofmt -w needed in $dir:"; echo "$unformatted"; exit 1; fi
-            (cd "$dir" && go vet ./... && go test -race -count=1 -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -n 1) || exit 1
+            # the Terraform provider's tests run real plans and applies with the race detector: about
+            # six minutes on an idle 12-core host, more than go test's default 10 on a busy runner
+            timeout=10m
+            [ "$dir" = ./terraform-provider-runr ] && timeout=20m
+            (cd "$dir" && go vet ./... && go test -race -count=1 -timeout "$timeout" -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -n 1) || exit 1
             echo "::endgroup::"
           done
 

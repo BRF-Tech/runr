@@ -2,6 +2,7 @@
 
 namespace Modules\AuthProvider\Services;
 
+use App\Services\Observability\OutboundUrlGuard;
 use InvalidArgumentException;
 use Laravel\Socialite\Two\AbstractProvider;
 use Laravel\Socialite\Two\GithubProvider;
@@ -51,9 +52,10 @@ class SocialiteDriverFactory
                 ]));
                 break;
             case 'gitlab':
-                $driver = new GitLabProvider($request, $clientId, $secret, $redirect, $guzzle);
+                $instance = $this->config->gitlabInstanceUri($provider);
+                $driver = new GitLabProvider($request, $clientId, $secret, $redirect, $this->publicTargetOnly($instance, $guzzle));
                 $driver->setConfig(new SocialiteConfig($clientId, $secret, $redirect, [
-                    'instance_uri' => $this->config->gitlabInstanceUri($provider),
+                    'instance_uri' => $instance,
                 ]));
                 break;
             case 'oidc':
@@ -72,6 +74,29 @@ class SocialiteDriverFactory
         }
 
         return $driver->stateless();
+    }
+
+    /**
+     * A tenant's self-managed GitLab must be on the internet, like a tenant's OpenID Connect
+     * provider: its URL is checked when the driver is built (OutboundUrlGuard::target()) and the
+     * driver's requests — token exchange and user, both on that host — go to the addresses that
+     * check saw, without redirects.
+     *
+     * @param  array<string, mixed>  $guzzle
+     * @return array<string, mixed>
+     */
+    private function publicTargetOnly(string $url, array $guzzle): array
+    {
+        if ($this->tenant->currentSlug() === null) {
+            return $guzzle;
+        }
+
+        $target = app(OutboundUrlGuard::class)->target($url);
+        if (! $target->allowed()) {
+            throw new InvalidArgumentException("{$url}: {$target->reason}");
+        }
+
+        return array_replace($guzzle, $target->options());
     }
 
     /** @param array<string, mixed> $flow */

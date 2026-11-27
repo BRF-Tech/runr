@@ -43,6 +43,14 @@ return [
         'refresh_interval' => (int) env('RUNR_ESO_REFRESH_INTERVAL', 3600),
         // Lifetime of the service account tokens the stores log in with (seconds)
         'token_ttl' => 600,
+        // true: a store of an organization of the multi-tenant edition may name a private,
+        // loopback or cluster-internal address (Vault / OpenBao server, Azure Key Vault URL);
+        // the platform's own stores may always
+        'allow_private_targets' => (bool) env('RUNR_SECRET_STORES_ALLOW_PRIVATE', false),
+        // CIDRs the operator's controller may reach on a platform region of the multi-tenant
+        // edition besides public addresses (ExternalSecretsEgress): the platform's own stores on
+        // private addresses, comma-separated
+        'private_egress_cidrs' => array_values(array_filter(array_map('trim', explode(',', (string) env('RUNR_SECRET_STORES_PRIVATE_EGRESS_CIDRS', ''))))),
     ],
 
     /*

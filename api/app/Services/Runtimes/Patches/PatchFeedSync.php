@@ -397,6 +397,11 @@ class PatchFeedSync
     private function sourceFeedFailed(RuntimePatchFeed $feed, RuntimeSource $source, string $status, string $error): array
     {
         $error = SourceCredentials::maskFor($error, $source);
+        // An organization sees that its feed could not be read, not what its registry answered
+        if ($source->isOrganization() && $status === RuntimePatchFeed::UNREACHABLE) {
+            Log::warning('Runtime source patch feed of an organization not read', ['source' => $source->id, 'error' => $error]);
+            $error = __('api.runtime_sources.read_failed.patch_feed');
+        }
         $feed->forceFill(['status' => $status, 'error' => mb_substr($error, 0, 1000)])->save();
         Log::warning('Runtime source patch feed not read', ['source' => $source->id, 'status' => $status, 'error' => $error]);
 

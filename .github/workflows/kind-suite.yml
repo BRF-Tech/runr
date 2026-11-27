@@ -64,8 +64,8 @@ jobs:
       # kindest-node:v1.37.0, by the digest of Kind v0.33.0) and the newest stable kubectl
       KIND_VERSION: v0.33.0
       KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
-      KUBECTL_VERSION: v1.37.2
-      KUBECTL_SHA256: c04487523e7aa7d1493f7808174c899db93d7a9cf57531420cd76b9bd415f8f4
+      KUBECTL_VERSION: v1.37.3
+      KUBECTL_SHA256: 9a1b55af2795b25dd288dbef62387db9b5530087ab918d28c6ad067f2e3cb07c
       CLOUD_PROVIDER_KIND_VERSION: v0.12.0
       CLOUD_PROVIDER_KIND_SHA256: 5716aca8f01a85172c12f3b6329c70f151bec02c91b6f600c9f230845ee138e6
       # the helm of the API image (api/Dockerfile.prod): test-helm-upgrade and the bot's checks

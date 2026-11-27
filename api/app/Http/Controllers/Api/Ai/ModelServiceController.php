@@ -16,6 +16,7 @@ use App\Services\Ai\Hub\HubException;
 use App\Services\Ai\Models\ModelLibrary;
 use App\Services\Ai\Models\ModelServiceDeployer;
 use App\Services\Ai\Models\ModelServiceSpec;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\Residency\RegionPolicy;
 use App\Services\SupplyChain\DeployPolicyGate;
 use Illuminate\Http\JsonResponse;
@@ -207,7 +208,7 @@ class ModelServiceController extends Controller
         try {
             $pods = $this->deployer->logs($service->load('region'), (int) $request->query('tail', 200));
         } catch (\Throwable $e) {
-            return response()->json(['message' => $e->getMessage(), 'pods' => []], 502);
+            return response()->json(['message' => TenantKubeconfigs::messageFor($e, $service->region), 'pods' => []], 502);
         }
 
         return response()->json(['pods' => $pods]);
@@ -243,7 +244,7 @@ class ModelServiceController extends Controller
         try {
             return response()->json($this->deployer->invoke($service, $data['method'] ?? 'POST', $data['path'], $body));
         } catch (\Throwable $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
+            return response()->json(['message' => TenantKubeconfigs::messageFor($e, $service->region)], 502);
         }
     }
 

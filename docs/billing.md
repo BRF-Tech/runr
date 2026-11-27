@@ -1068,8 +1068,8 @@ platform only — a tenant never falls back to the platform's webhook.
 **Allowed targets.** A webhook URL is checked when it is saved and again before every delivery, as
 the [alert webhooks](observability.md#channels) are: `http://` or `https://`, no user name or password
 in the URL, and no loopback, private, link-local, CGNAT, multicast or cluster-internal address —
-neither the host itself nor any address its name resolves to; the delivery goes to an address that
-was checked. A tenant's webhook is always held to this. The webhook the platform (or the
+neither the host itself nor any address its name resolves to; the delivery goes to the addresses
+that were checked ([outbound requests](security.md#outbound-requests-to-user-configured-urls)). A tenant's webhook is always held to this. The webhook the platform (or the
 installation) saves in its settings may reach private addresses only with
 `observability.alerts.allowPrivateTargets` ([Helm values](helm-values.md)); `BILLING_WEBHOOK_URL`
 is the operator's own setting and may name an internal service. A URL that fails the check is

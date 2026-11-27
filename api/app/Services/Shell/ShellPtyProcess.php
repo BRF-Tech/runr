@@ -2,6 +2,7 @@
 
 namespace App\Services\Shell;
 
+use App\Services\Kubeconfigs\KubeconfigFile;
 use App\Services\Sandboxes\Exec\KubectlBinary;
 use React\EventLoop\LoopInterface;
 
@@ -13,6 +14,11 @@ class ShellPtyProcess
 
     private ?string $kubeconfigPath = null;
 
+    private ?KubeconfigFile $kubeconfigFile = null;
+
+    /** The kubeconfig as it came, for shell:keep-alive, when kubectl's goes through a pin proxy */
+    private ?KubeconfigFile $clientKubeconfig = null;
+
     private bool $closed = false;
 
     public function __construct(
@@ -21,10 +27,20 @@ class ShellPtyProcess
 
     public function spawn(array $config): bool
     {
-        $token = bin2hex(random_bytes(8));
-        $this->kubeconfigPath = sys_get_temp_dir()."/runr-shell-{$token}";
-        file_put_contents($this->kubeconfigPath, $config['kubeconfig'], LOCK_EX);
-        chmod($this->kubeconfigPath, 0600);
+        // kubectl's file (KubeconfigFile: an organization's region through its pin proxy); the
+        // keep-alive subprocess connects with RunR's own client, which reads the pin itself
+        try {
+            $this->kubeconfigFile = KubeconfigFile::write((string) $config['kubeconfig'], 'runr-shell-');
+            $this->kubeconfigPath = $this->kubeconfigFile->path;
+            if ($this->kubeconfigFile->pinned()) {
+                $this->clientKubeconfig = KubeconfigFile::plain((string) $config['kubeconfig'], 'runr-shell-client-');
+            }
+        } catch (\Throwable $e) {
+            logger()->warning('[shell] kubeconfig not written: '.$e->getMessage());
+            $this->cleanup();
+
+            return false;
+        }
 
         $cmd = implode(' ', array_map('escapeshellarg', self::argv($config, $this->kubeconfigPath)));
 
@@ -101,9 +117,10 @@ class ShellPtyProcess
         }
     }
 
+    /** The kubeconfig for RunR's own client (shell:keep-alive) */
     public function getKubeconfigPath(): ?string
     {
-        return $this->kubeconfigPath;
+        return $this->clientKubeconfig->path ?? $this->kubeconfigPath;
     }
 
     public function isRunning(): bool
@@ -140,6 +157,9 @@ class ShellPtyProcess
 
     private function cleanup(): void
     {
+        $this->kubeconfigFile?->close();
+        $this->clientKubeconfig?->close();
+        $this->kubeconfigFile = $this->clientKubeconfig = null;
         if ($this->kubeconfigPath && file_exists($this->kubeconfigPath)) {
             @unlink($this->kubeconfigPath);
         }

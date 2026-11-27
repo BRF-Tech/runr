@@ -4,6 +4,7 @@ namespace Tests\Concerns;
 
 use App\Models\ContainerConfig;
 use App\Models\Project;
+use App\Services\Dns\DnsResolver;
 use App\Workflows\Dispatch\WorkflowDispatcher;
 use App\Workflows\Engine\RunStarter;
 use App\Workflows\Engine\Ticker;
@@ -20,8 +21,10 @@ use Tests\Support\Workflows\RecordingDispatcher;
 
 /**
  * Engine test harness: a workflow-trigger project whose function is FakeWorkflowFunction
- * (Http::fake on https://fn.test/), a recording dispatcher instead of the queue, and drain()
- * to execute dispatched runs until nothing due is left. Call setUpWorkflows() from setUp().
+ * (Http::fake on https://fn.test/, an endpoint override: the names of *.test resolve to a public
+ * address for the guard every request to an override passes), a recording dispatcher instead of
+ * the queue, and drain() to execute dispatched runs until nothing due is left. Call
+ * setUpWorkflows() from setUp().
  */
 trait RunsWorkflows
 {
@@ -44,6 +47,14 @@ trait RunsWorkflows
 
         $this->dispatcher = new RecordingDispatcher;
         $this->app->instance(WorkflowDispatcher::class, $this->dispatcher);
+
+        $this->app->instance(DnsResolver::class, new class extends DnsResolver
+        {
+            public function addresses(string $name): array
+            {
+                return str_ends_with(rtrim($name, '.'), '.test') ? ['93.184.216.34'] : [];
+            }
+        });
 
         $this->project = $this->makeWorkflowProject('wf-orders');
 

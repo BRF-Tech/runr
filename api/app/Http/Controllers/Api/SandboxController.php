@@ -10,6 +10,7 @@ use App\Jobs\ProbeKvmJob;
 use App\Jobs\UninstallSandboxJob;
 use App\Models\KnativeRegion;
 use App\Services\Helpers\KataRuntime;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\KubernetesClient;
 use App\Services\SandboxInstallService;
 use Illuminate\Http\JsonResponse;
@@ -64,7 +65,7 @@ class SandboxController extends Controller
                 }
                 $problems = $service->unavailableHypervisors($k8s, $hypervisors);
             } catch (\Throwable $e) {
-                return response()->json(['message' => 'Cannot check the cluster for Kata: '.$e->getMessage()], 422);
+                return response()->json(['message' => 'Cannot check the cluster for Kata: '.TenantKubeconfigs::messageFor($e, $knativeRegion)], 422);
             }
 
             if ($problems) {

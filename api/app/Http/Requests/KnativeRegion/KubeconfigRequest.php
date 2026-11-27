@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\KnativeRegion;
 
+use App\Rules\RegionKubeconfig;
 use Illuminate\Foundation\Http\FormRequest;
 
 class KubeconfigRequest extends FormRequest
@@ -14,7 +15,7 @@ class KubeconfigRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'kubeconfig' => 'required|string',
+            'kubeconfig' => ['required', 'string', RegionKubeconfig::forNewRegion()],
         ];
     }
 }

@@ -6,8 +6,9 @@
 # The updates come from the finding (--updates=FILE, the issue's marker: [{name, from, to, …}]).
 # Each kind moves them with its own tool, mechanically and within the manifest's constraints:
 #   composer  composer update NAME… --with-dependencies (composer.lock only)
-#   npm       npm update NAME… --package-lock-only; npm audit fix --package-lock-only for an
-#             advisory (package-lock.json only)
+#   npm       npm update NAME… --package-lock-only (npm install NAME@VERSION… for the ones it
+#             leaves where they are, package.json put back); npm audit fix --package-lock-only for
+#             an advisory (package-lock.json only)
 #   go        go get NAME@VERSION… and go mod tidy (go.mod, go.sum)
 #   actions   uses: NAME@<the tag's commit> # <tag>, in every workflow that pins the old one
 #   docker    FROM <image>:<tag>[@<digest>] in the Dockerfiles that name the old one
@@ -86,6 +87,32 @@ bump_composer() {
 }
 
 # ── npm ──
+# npm_left LOCK — the finding's updates (not an advisory's "fixed", not one outside the
+# constraint) that LOCK still has on their old version: "name@to" per line
+npm_left() {
+  jq -r --slurpfile lock "$1" '.[] | select(.to != "fixed" and (.outside // false) == false and (.from // "") != "")
+    | select(($lock[0].packages["node_modules/" + .name].version // "") == .from) | "\(.name)@\(.to)"' "$updates_file"
+}
+
+# npm_stuck TREE — in TREE/<dir> (the current directory), after `npm update`: the updates it left
+# on their old version, installed at the finding's version. npm update says "up to date" for
+# packages whose peers pin each other's own release (vitest and @vitest/coverage-v8): it moves
+# neither, while `npm install NAME@VERSION…` moves them together. That writes ^VERSION into
+# package.json, which is put back as it was; a second `npm install --package-lock-only` puts the
+# lockfile's ranges back with it (the versions stay: they are within the same ranges).
+npm_stuck() {
+  local keep
+  local -a left=()
+  mapfile -t left < <(npm_left package-lock.json)
+  [ "${#left[@]}" -gt 0 ] || return 0
+  echo "npm update left ${left[*]} where they were: npm install"
+  keep="$work/package-$(basename "$1").json"
+  cp package.json "$keep"
+  npm install "${left[@]}" --package-lock-only --ignore-scripts --no-audit --no-fund || return 1
+  cp "$keep" package.json
+  npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+}
+
 npm_run() {
   local -a pkgs=()
   mapfile -t pkgs < <(jq -r '.[] | select(.to != "fixed") | .name' "$updates_file")
@@ -97,6 +124,7 @@ npm_run() {
       npm install --package-lock-only --ignore-scripts --no-audit --no-fund || exit 1
     elif [ "${#pkgs[@]}" -gt 0 ]; then
       npm update "${pkgs[@]}" --package-lock-only --ignore-scripts --no-audit --no-fund || exit 1
+      npm_stuck "$1" || exit 1
     fi
     # an advisory: the fixes within the ranges of the tree (never --force)
     if [ "$(jq -r '.urgent // false' "$updates_meta" 2>/dev/null || echo false)" = true ] || jq -e 'any(.[]; .to == "fixed")' "$updates_file" >/dev/null; then
@@ -120,12 +148,25 @@ bump_npm() {
   npm_run "$ROOT" || { reasons+=("\`npm update\` failed: $(tail -n 3 "$work/npm-$(basename "$ROOT").log" | tr '\n' ' ')"); pkg_attention; }
   cmp -s "$again/$lock" "$ROOT/$lock" || reasons+=("package-lock.json does not come out the same when the update is made twice: the resolution is not reproducible")
   pkg_cleanup
+  # every update of the finding moved: one npm leaves where it was would ship as moved in the
+  # commit, the changelog and the summary, and the check would find it again
+  local left
+  left="$(npm_left "$lock" | sed 's/@[^@]*$//' | paste -sd ' ' - | sed 's/ /, /g')"
+  [ -z "$left" ] || reasons+=("npm leaves ${left} on the old version (\`npm update\`, then \`npm install <name>@<version>\`): another package holds it back, which the code or a person changes")
   changed="$(jq -r --slurpfile old "$work/lock.old" '
       ($old[0].packages // {}) as $o | (.packages // {}) as $n
       | ([$o, $n] | map(keys) | add | unique)[] | select(. != "" and startswith("node_modules/"))
       | select(($o[.].version // "none") != ($n[.].version // "none"))
       | "\(sub("^(.*/)?node_modules/"; "")) \($o[.].version // "none") → \($n[.].version // "none")"' "$lock" | sort -u)"
   [ -z "$changed" ] || mapfile -t moved <<<"$changed"
+  # Playwright (the e2e's runner and the Chromium CI installs for its version, DEPS_NPM_E2E_ROOTS):
+  # ui runs none of it, so a bump that moves it runs ui-stack too, also when it lands on next
+  local m
+  if [ "$pkg_dir" = vue ]; then
+    for m in ${moved[@]+"${moved[@]}"}; do
+      if [[ " $DEPS_NPM_E2E_ROOTS " == *" ${m%% *} "* ]]; then extra_suites+=(ui-stack); break; fi
+    done
+  fi
   # what the bundle takes: the console's dependencies and its build (DEPS_NPM_BUILD_ROOTS)
   [ "$pkg_dir" = vue ] && roots="$DEPS_NPM_BUILD_ROOTS"
   # shellcheck disable=SC2086 # the roots, one per word
@@ -184,7 +225,15 @@ bump_actions() {
       echo "edit ${file}: ${name} ${from} → ${to}" >> "$report/edits.log"
       case "$file" in .github/*) gh=1 ;; *) other=1 ;; esac
     done < <(git -C "$ROOT" grep -l -F -e "${name}@${old} # ${from}" -- '.github/workflows/*.yml' 'actions/*/action.yml' 2>/dev/null || true)
-    [ "$total" -gt 0 ] || { reasons+=("no workflow pins ${name}@${old} # ${from} any more"); continue; }
+    if [ "$total" = 0 ]; then
+      # the new pin is there already (a release a person made has it): nothing to move, no reason
+      if git -C "$ROOT" grep -q -F -e "${name}@${sha} # ${to}" -- '.github/workflows/*.yml' 'actions/*/action.yml' 2>/dev/null; then
+        echo "kept ${name} ${to}: pinned already" >> "$report/edits.log"
+      else
+        reasons+=("no workflow pins ${name}@${old} # ${from} any more")
+      fi
+      continue
+    fi
     moved+=("${name} ${from} → ${to}")
   done
   # RunR's own composite actions ship with a release; the workflows do not (and a release never
@@ -195,12 +244,13 @@ bump_actions() {
 
 # ── docker ──
 bump_docker() {
-  local i n name from to digest old file row version count total files
+  local i n name from to digest old file row version count total files already
   n="$(jq length "$updates_file")"
   for ((i = 0; i < n; i++)); do
     name="$(jq -r ".[$i].name" "$updates_file")"; from="$(jq -r ".[$i].from" "$updates_file")"; to="$(jq -r ".[$i].to" "$updates_file")"
     digest="$(jq -r ".[$i].digest // \"\"" "$updates_file")"; old="$(jq -r ".[$i].old_digest // \"\"" "$updates_file")"
     total=0
+    already=0
     files="$(jq -r ".[$i].files[]" "$updates_file")"
     while IFS= read -r file; do
       [ -n "$file" ] || continue
@@ -217,8 +267,19 @@ bump_docker() {
         # shellcheck disable=SC2013 # ARG names, one per word
         for var in $(grep -oE "${name//./\\.}:\\\$\\{?[A-Za-z_][A-Za-z0-9_]*\\}?" "$file" | sed -E 's/.*:\$\{?([A-Za-z0-9_]+)\}?$/\1/' | sort -u); do
           count=$((count + $(replace_pin "$file" "ARG ${var}=${from}" "ARG ${var}=${to}")))
+          # the ARG's default is the new tag already
+          ! grep -qxF "ARG ${var}=${to}" "$file" || already=1
         done
       fi
+      # the new tag is there already (a release a person made has it): nothing to move here
+      if [ "$count" = 0 ]; then
+        if [ -n "$digest" ]; then
+          ! grep -qF "${name}:${to}@${digest}" "$file" || already=1
+        else
+          ! grep -qE "$(sed 's/[][\.*^$+?(){}|/]/\\&/g' <<<"${name}:${to}")([@[:space:]]|\$)" "$file" || already=1
+        fi
+      fi
+      if [ "$count" = 0 ] && [ "$already" = 1 ]; then echo "kept ${file}: ${name} ${to} already" >> "$report/edits.log"; fi
       [ "$count" -gt 0 ] || continue
       total=$((total + count))
       echo "edit ${file}: ${name} ${from} → ${to}" >> "$report/edits.log"
@@ -229,7 +290,7 @@ bump_docker() {
         own) shipped=1; own_images+=("$(deps_field "$row" 2)") ;;
       esac
     done <<<"$files"
-    [ "$total" -gt 0 ] || { reasons+=("no Dockerfile names ${name}:${from} any more"); continue; }
+    [ "$total" -gt 0 ] || { [ "$already" = 1 ] || reasons+=("no Dockerfile names ${name}:${from} any more"); continue; }
     moved+=("${name} ${from} → ${to}${digest:+ (${digest:0:19}…)}")
   done
 }
@@ -430,6 +491,19 @@ own_version_bump() {
     fi
     if [ "$count" -gt 0 ]; then total=$((total + count)); echo "edit ${file}: ${image} ${old} → ${new}" >> "$report/edits.log"; fi
   done
+  # a version only this image has (the Spin shim's v0.27.2-runr.1, RunR's build of an upstream):
+  # every whole mention of it that is not a line of the past, bare ones too (docs/wasm.md's
+  # "v0.27.2-runr.1 — RunR's build", a test's VERSION file "(v0.27.2-runr.1)", the Dockerfile's
+  # "versioned v0.27.2-runr.1"); a plain version (gateway-auth's 1.1.1) is too common for that
+  if [[ "$old" =~ -runr\.[0-9]+$ ]]; then
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      count="$(IMG="$image" OLD="$old" NEW="$new" HIST="$DEPS_HISTORY_RE" perl -i -ne 'BEGIN { $n = 0 }
+        unless (/$ENV{HIST}/i || /-\Q$ENV{IMG}:$ENV{OLD}\E/) { $n += s{(?<![0-9A-Za-z.+-])\Q$ENV{OLD}\E(?![0-9A-Za-z-]|\.[0-9A-Za-z])}{$ENV{NEW}}g }
+        print; END { print STDERR $n, "\n" }' "$file" 2>&1 >/dev/null | tail -n 1)"
+      if [ "$count" -gt 0 ]; then total=$((total + count)); echo "edit ${file}: ${image} ${old} → ${new}" >> "$report/edits.log"; fi
+    done < <(git -C "$ROOT" grep -l -F -e "$old" -- . "${DEPS_NEVER_EDIT[@]}" 2>/dev/null || true)
+  fi
   # the binary's own version where its source names it (image-upload's `var version = "1.1.1"`, which
   # a build without the Dockerfile's -ldflags reports; runtime/test/release_images_test.sh holds it
   # equal to the build's default)
@@ -444,7 +518,12 @@ own_version_bump() {
   left="$(git -C "$ROOT" grep -n -F -e "/${image}:${old}" -- . "${DEPS_NEVER_EDIT[@]}" 2>/dev/null | grep -viE "$DEPS_HISTORY_RE" \
     | grep -vF -e "-${image}:${old}" | head -n 5 || true)"
   [ -z "$left" ] || reasons+=("lines still name ${image}:${old} as the current one: ${left//$'\n'/; }")
-  outside_lines="$(git -C "$ROOT" grep -n -F -e "/${image}:${old}" -- 'vue/**' 'landing/**' 2>/dev/null || true)"
+  if [[ "$old" =~ -runr\.[0-9]+$ ]]; then
+    left="$(git -C "$ROOT" grep -n -F -e "$old" -- . "${DEPS_NEVER_EDIT[@]}" 2>/dev/null | grep -viE "$DEPS_HISTORY_RE" \
+      | grep -vF -e "-${image}:${old}" | head -n 5 || true)"
+    [ -z "$left" ] || reasons+=("lines still name ${image}'s ${old} as the current one: ${left//$'\n'/; }")
+  fi
+  outside_lines="$(git -C "$ROOT" grep -n -F -e "/${image}:${old}" -- 'vue/**' 'landing/**' 2>/dev/null | grep -viE "$DEPS_HISTORY_RE" || true)"
   [ -z "$outside_lines" ] || reasons+=("the console or the landing page names ${image}:${old}, which the bot does not edit: ${outside_lines//$'\n'/; }")
   moved+=("${image} image ${old} → ${new} (its own version: release-images.yml builds it)")
   notes+=("${image} ${old} → ${new}: ${total} line(s)")
@@ -851,6 +930,9 @@ pkg_suites_json() {
       esac
     done
   } | jq -s -c 'map(. + {job: (.job // "kind")})' > "$report/suites.json"
+  # a bump that changed the API's code or tests (an image's own version named in its config and
+  # tests: gateway-auth, supply-chain, the Spin shim) runs PHPUnit too
+  [ -z "$(git -C "$ROOT" diff --name-only -- api)" ] || echo 1 > "$report/unit"
 }
 
 bump_packages() {
@@ -922,6 +1004,17 @@ bump_packages() {
   fi
   if [ "${#reasons[@]}" -gt 0 ]; then pkg_attention; fi
   echo "$path" > "$report/path"
+
+  # the finding's own updates first, then what moved with them (their dependencies, a package the
+  # lockfile added or dropped): the changelog line names the first eight, which would otherwise be
+  # whatever sorts first (@emnapi/core 2.0.0-beta.2 → none before @sentry/vue)
+  local -a firsts=() others=()
+  local wanted
+  wanted=" $(jq -r '.[].name' "$updates_file" | paste -sd ' ' -) "
+  for n in "${moved[@]}"; do
+    if [[ "$wanted" == *" ${n%% *} "* ]]; then firsts+=("$n"); else others+=("$n"); fi
+  done
+  moved=(${firsts[@]+"${firsts[@]}"} ${others[@]+"${others[@]}"})
 
   # the changelog: one line under [Unreleased] → Changed, which a later bump of the group replaces
   n="${#moved[@]}"

@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\ProjectEnvironment;
 use App\Services\Environments\DeployTarget;
 use App\Services\Environments\EnvironmentResolver;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\Residency\RegionPolicy;
 use App\Services\Skupper\SkupperLinkParser;
 use App\Services\Skupper\SkupperService;
@@ -111,7 +112,7 @@ class PrivateDatabaseBindingController extends Controller
                 return $this->invalid('routing_key', __('api.private_connection.routing_key_in_use'));
             }
         } catch (\Throwable $e) {
-            return response()->json(['message' => __('api.private_connection.region_unreachable', ['error' => $e->getMessage()])], 502);
+            return response()->json(['message' => __('api.private_connection.region_unreachable', ['error' => TenantKubeconfigs::messageFor($e, $region)])], 502);
         }
 
         $id = strtolower((string) Str::ulid());
@@ -148,7 +149,7 @@ class PrivateDatabaseBindingController extends Controller
 
             Log::warning('Private connection apply failed', ['project' => $project->slug, 'workload' => $target->slug, 'error' => $e->getMessage()]);
 
-            return response()->json(['message' => __('api.private_connection.apply_failed', ['error' => $e->getMessage()])], 502);
+            return response()->json(['message' => __('api.private_connection.apply_failed', ['error' => TenantKubeconfigs::messageFor($e, $region)])], 502);
         }
 
         return response()->json(['data' => $this->present($binding->fresh(), $project), 'env_synced' => $this->syncEnv($target)], 201);
@@ -163,7 +164,7 @@ class PrivateDatabaseBindingController extends Controller
         try {
             $status = $region ? $this->skupper->status($binding, $region) : ['state' => 'error'];
         } catch (\Throwable $e) {
-            return response()->json(['message' => __('api.private_connection.region_unreachable', ['error' => $e->getMessage()])], 502);
+            return response()->json(['message' => __('api.private_connection.region_unreachable', ['error' => TenantKubeconfigs::messageFor($e, $region)])], 502);
         }
 
         return response()->json(['data' => $this->present($binding, $project), 'status' => $status]);
@@ -205,7 +206,7 @@ class PrivateDatabaseBindingController extends Controller
         try {
             return response()->json(['data' => $this->skupper->regionStatus($knativeRegion)]);
         } catch (\Throwable $e) {
-            return response()->json(['message' => __('api.private_connection.region_unreachable', ['error' => $e->getMessage()])], 502);
+            return response()->json(['message' => __('api.private_connection.region_unreachable', ['error' => TenantKubeconfigs::messageFor($e, $knativeRegion)])], 502);
         }
     }
 
@@ -223,7 +224,7 @@ class PrivateDatabaseBindingController extends Controller
 
             return response()->json(['data' => $this->skupper->ensureSite($knativeRegion)]);
         } catch (\Throwable $e) {
-            return response()->json(['message' => __('api.private_connection.apply_failed', ['error' => $e->getMessage()])], 502);
+            return response()->json(['message' => __('api.private_connection.apply_failed', ['error' => TenantKubeconfigs::messageFor($e, $knativeRegion)])], 502);
         }
     }
 

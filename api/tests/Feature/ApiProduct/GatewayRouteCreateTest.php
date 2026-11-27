@@ -6,6 +6,8 @@ use App\Models\Gateway;
 use App\Models\GatewayRoute;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\ApiProduct\GatewayAuthConfig;
+use App\Services\Dns\DnsResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -91,6 +93,68 @@ class GatewayRouteCreateTest extends TestCase
                 $this->assertContains("gw-auth-{$id}", array_column($call['body']['spec']['routes'][0]['middlewares'], 'name'));
             }
         }
+    }
+
+    /**
+     * The JWKS URL of a JWT route is fetched by gateway-auth inside the region: it must be on a
+     * public address (the outbound guard's ranges, IPv6 forms carrying an internal IPv4 address
+     * included) unless the platform allows private ones. A name that does not resolve yet may be
+     * saved: gateway-auth checks every address it connects to.
+     */
+    public function test_a_jwks_url_on_a_private_address_is_refused(): void
+    {
+        $this->app->instance(DnsResolver::class, new class extends DnsResolver
+        {
+            public function addresses(string $name): array
+            {
+                return ['idp.internal.example' => ['10.0.0.9'], 'idp.public.example' => ['93.184.216.34']][$name] ?? [];
+            }
+        });
+
+        foreach (['http://169.254.169.254/jwks', 'https://[::ffff:169.254.169.254]/jwks', 'https://[64:ff9b::a9fe:a9fe]/jwks',
+            'https://idp.internal.example/jwks', 'http://keycloak.auth.svc.cluster.local/jwks'] as $url) {
+            $this->addRoute(['project_id' => $this->orders->id, 'path' => '/orders', 'auth_mode' => 'jwt', 'jwt' => ['jwks_url' => $url]])
+                ->assertStatus(422)->assertJsonValidationErrors(['jwt.jwks_url' => __('observability.url.private')]);
+        }
+        $this->assertSame(0, GatewayRoute::query()->count());
+
+        $route = $this->addRoute(['project_id' => $this->orders->id, 'path' => '/orders', 'auth_mode' => 'jwt', 'jwt' => ['jwks_url' => 'https://idp.public.example/jwks']])
+            ->assertCreated()->json('data');
+        $this->actingAs($this->owner, 'sanctum')->patchJson("/api/gateways/{$this->gw->id}/routes/{$route['id']}", ['jwt' => ['jwks_url' => 'https://idp.internal.example/jwks']])
+            ->assertStatus(422)->assertJsonValidationErrors('jwt.jwks_url');
+        $this->actingAs($this->owner, 'sanctum')->patchJson("/api/gateways/{$this->gw->id}/routes/{$route['id']}", ['jwt' => ['jwks_url' => 'https://idp.not-yet.example/jwks']])
+            ->assertOk();
+
+        config(['api_product.jwks_allow_private_targets' => true]);
+        $this->actingAs($this->owner, 'sanctum')->patchJson("/api/gateways/{$this->gw->id}/routes/{$route['id']}", ['jwt' => ['jwks_url' => 'https://idp.internal.example/jwks']])
+            ->assertOk();
+    }
+
+    /**
+     * A JWKS served by a RunR function on the platform's own domain (a region's function domain,
+     * fn.example.com here) may answer on the region's private ingress: saved, and gateway-auth is
+     * told it may connect there. A name next to it stays held to the guard.
+     */
+    public function test_a_jwks_url_of_a_function_on_the_platforms_domain_may_be_private(): void
+    {
+        $this->app->instance(DnsResolver::class, new class extends DnsResolver
+        {
+            public function addresses(string $name): array
+            {
+                return ['issuer.fn.example.com' => ['10.96.0.20'], 'issuer.fn.example.com.evil.example' => ['10.96.0.20']][$name] ?? [];
+            }
+        });
+
+        $this->addRoute(['project_id' => $this->orders->id, 'path' => '/orders', 'auth_mode' => 'jwt', 'jwt' => ['jwks_url' => 'https://issuer.fn.example.com.evil.example/jwks']])
+            ->assertStatus(422)->assertJsonValidationErrors(['jwt.jwks_url' => __('observability.url.private')]);
+
+        $route = $this->addRoute(['project_id' => $this->orders->id, 'path' => '/orders', 'auth_mode' => 'jwt', 'jwt' => ['jwks_url' => 'http://issuer.fn.example.com/']])
+            ->assertCreated()->json('data');
+
+        $this->assertTrue(GatewayAuthConfig::jwksMayBePrivate('http://issuer.fn.example.com/'));
+        $this->assertFalse(GatewayAuthConfig::jwksMayBePrivate('https://issuer.fn.example.com.evil.example/jwks'));
+        $this->assertFalse(GatewayAuthConfig::jwksMayBePrivate('https://fn.example.com/jwks'), 'the function domain itself names no function');
+        $this->assertSame('jwt', GatewayRoute::query()->findOrFail($route['id'])->auth_mode);
     }
 
     public function test_a_jwt_route_is_created_with_its_settings_and_validated_like_a_change(): void

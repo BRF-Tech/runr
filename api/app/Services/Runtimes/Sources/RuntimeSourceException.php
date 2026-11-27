@@ -12,9 +12,19 @@ use App\Models\RuntimeSource;
  */
 class RuntimeSourceException extends \RuntimeException
 {
-    public function __construct(public readonly string $status, string $message)
+    /**
+     * @param  bool  $shown  the message is fit for an organization's users as it is (the outbound
+     *                       guard's reason), not replaced by RuntimeSourceSync::forOrganization()
+     */
+    public function __construct(public readonly string $status, string $message, public readonly bool $shown = false)
     {
         parent::__construct($message);
+    }
+
+    /** The outbound guard refused the source's host (an organization's source). */
+    public static function refusedHost(string $reason): self
+    {
+        return new self(RuntimeSource::UNREACHABLE, $reason, true);
     }
 
     public static function unreachable(string $message): self

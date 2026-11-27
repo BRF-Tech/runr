@@ -32,7 +32,8 @@ set -euo pipefail
 #     and on one that names it, with "retry": true: a newer release may have fixed it, and a green
 #     one ships and loses the label. An update issue labelled "needs attention" (before the label
 #     existed) is the same and is listed in "relabel" (its label becomes next update required);
-#   - an update a hold keeps (ci/deps/holds.txt: one of its packages) is skipped with the hold's
+#   - an update a hold keeps (ci/deps/holds.txt: one of its packages; a chart's release, the hold's
+#     GROUP and NAME its DEPS_BOT name) is skipped with the hold's
 #     reason: a person's decision, which the weekly summary lists under Next update required.
 #
 #   bash ci/deps-plan.sh ISSUES.json [--only=REF[,REF…]]
@@ -135,6 +136,11 @@ while IFS=$'\t' read -r number ref title labels marker found; do
       skip "$number" "$ref" "held (ci/deps/holds.txt): ${held_reason}"
       continue
     fi
+  fi
+  # a chart's (or Knative's) release a hold keeps: GROUP and NAME of the hold are its DEPS_BOT name
+  if [ "$group" = 0 ] && [ -n "$version" ] && held_reason="$(deps_held "$dep" "$dep" "$version")"; then
+    skip "$number" "$ref" "held (ci/deps/holds.txt): ${dep} ${version}: ${held_reason}"
+    continue
   fi
   if [ "$group" = 0 ] && ! deps_version_valid "$version"; then
     skip "$number" "$ref" "'${version}' is not a version"

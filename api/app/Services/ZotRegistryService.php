@@ -26,7 +26,7 @@ class ZotRegistryService
     private const ZOT_HELM_CHART = 'zot/zot';
 
     // Pinned: values (persistence bool + pvc.*) follow this chart version (zot v2.1.23)
-    public const ZOT_CHART_VERSION = '0.1.134';
+    public const ZOT_CHART_VERSION = '0.1.135';
 
     public const ZOT_RELEASE_NAME = 'runr-zot';
 

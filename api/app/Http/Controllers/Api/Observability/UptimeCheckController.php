@@ -132,7 +132,7 @@ class UptimeCheckController extends Controller
         $model = $this->find($project, $check);
         $model->setRelation('project', $project);
 
-        [$url, $error] = $this->uptime->resolveTarget($model);
+        [$url, $error, $options] = $this->uptime->resolveTarget($model);
         if ($url === null) {
             $this->uptime->record($model, UptimeCheck::CONTROL_PLANE, false, null, null, $error);
 
@@ -142,7 +142,7 @@ class UptimeCheckController extends Controller
         $started = microtime(true);
         try {
             $response = Http::timeout(max(1, $model->timeout_seconds))
-                ->withOptions(['allow_redirects' => false, 'http_errors' => false])
+                ->withOptions(['allow_redirects' => false, 'http_errors' => false] + $options)
                 ->withUserAgent('runr-uptime/1 (control plane)')
                 ->withHeaders($model->headers ?? [])
                 ->send($model->method ?: 'GET', $url);

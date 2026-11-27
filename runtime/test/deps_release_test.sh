@@ -4,7 +4,9 @@
 # GitLab: the origin and the public repository are bare git repositories, gh, crane, curl and helm
 # are stubs. Checks that:
 #   - the release builds on the last release tag only when the origin's main is it, next contains
-#     it and the public main is its public commit with the same tree;
+#     it and the public main is its public commit with the same tree; the scratch repository it
+#     fetches the public tag into runs no automatic maintenance, and one it cannot remove is no
+#     failure;
 #   - a bump is made on the tag and gets the release commit of the next patch version: the chart's
 #     version, the docs' pins of the chart and the tag (not the CLI's, not landing/), CHANGELOG.md's
 #     section with its upgrade notes from [Unreleased], docs/upgrade.md's section; a pin the rules do
@@ -262,6 +264,35 @@ expect_base_error 'another tree'
 git -C "$public" update-ref refs/tags/v1.2.3 "$(cat "$tmp/pubtag")"
 git -C "$public" update-ref refs/heads/main "$pub_base"
 echo "ok - the base: the last release tag, only when the origin's main is it, next contains it and the public main is its public commit with the same tree"
+
+# the public tag's scratch repository runs no automatic maintenance: a fetch ends with `git
+# maintenance run --auto`, which detaches and kept writing into its objects while the bot removed
+# it ("Directory not empty", #91). A fetch without the setting starts it (when it does not here,
+# the check below proves nothing and says so)
+mkdir -p "$tmp/base-tmp"
+git init -q --bare "$tmp/control.git"
+GIT_TRACE2_EVENT="$tmp/control.trace" git -C "$tmp/control.git" fetch -q --depth=1 "$public" "refs/tags/v1.2.3:refs/tags/v1.2.3"
+auto_maint='"argv":\["git","(maintenance","run|gc","--auto)'
+grep -qE "$auto_maint" "$tmp/control.trace" || echo "note - this git starts no automatic maintenance after a fetch: the check of the scratch repository proves nothing here"
+out="$(TMPDIR="$tmp/base-tmp" GIT_TRACE2_EVENT="$tmp/base.trace" bash "$root/ci/deps-release.sh" base "$clone" "$public")" || fail "base (traced): ${out}"
+[ "$out" = "$(printf 'BASE_TAG=v1.2.3\nBASE_COMMIT=%s\nPUBLIC_BASE=%s\nNEW_VERSION=1.2.4\nNEW_TAG=v1.2.4' "$tag_commit" "$pub_base")" ] || fail "base (traced): ${out}"
+grep -qE "$auto_maint" "$tmp/base.trace" && fail "base: its fetch of the public tag started automatic maintenance: $(grep -oE "$auto_maint" "$tmp/base.trace" | head -n 1)"
+[ -z "$(ls -A "$tmp/base-tmp")" ] || fail "base left its scratch repository: $(ls -A "$tmp/base-tmp")"
+# a scratch directory that cannot be removed is a warning, not a base the bot cannot release on
+real_rm="$(command -v rm)"
+mkdir -p "$tmp/stub-rm"
+cat > "$tmp/stub-rm/rm" <<EOF
+#!/usr/bin/env bash
+case "\$*" in *base-tmp*) echo "rm: cannot remove '\${*: -1}/public.git/objects': Directory not empty" >&2; exit 1 ;; esac
+exec "$real_rm" "\$@"
+EOF
+chmod +x "$tmp/stub-rm/rm"
+rc=0
+out="$(TMPDIR="$tmp/base-tmp" DEPS_RM_PAUSE_S=0 PATH="$tmp/stub-rm:$PATH" bash "$root/ci/deps-release.sh" base "$clone" "$public" 2>"$tmp/base.err")" || rc=$?
+[ "$rc" = 0 ] && grep -qx 'NEW_TAG=v1.2.4' <<<"$out" || fail "base failed on a scratch directory it could not remove (exit ${rc}): $(cat "$tmp/base.err")"
+grep -q 'could not be removed' "$tmp/base.err" || fail "base did not warn about the scratch directory it left: $(cat "$tmp/base.err")"
+"$real_rm" -rf -- "$tmp/base-tmp" "$tmp/control.git" "$tmp/stub-rm"
+echo "ok - the base: the public tag's scratch repository runs no automatic maintenance, and one that cannot be removed does not stop the release"
 
 # --- the bumps: on the tag, with the release commit ---------------------------------------------
 cat > "$tmp/tests.json" <<'EOF'

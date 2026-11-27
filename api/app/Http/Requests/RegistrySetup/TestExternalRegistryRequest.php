@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\RegistrySetup;
 
+use App\Rules\RegionKubeconfig;
 use Illuminate\Foundation\Http\FormRequest;
 
 class TestExternalRegistryRequest extends FormRequest
@@ -14,7 +15,7 @@ class TestExternalRegistryRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'kubeconfig' => 'required|string',
+            'kubeconfig' => ['required', 'string', RegionKubeconfig::forNewRegion()],
             'url' => 'required|string',
             'username' => 'nullable|string',
             'password' => 'nullable|string',

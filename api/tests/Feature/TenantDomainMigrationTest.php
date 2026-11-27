@@ -317,6 +317,9 @@ class TenantDomainMigrationTest extends TestCase
             'knative_settings' => ['knative_domain' => 'own.acme.example'],
         ])->id);
         $this->configDomain['own.acme.example'] = '';
+        // The kubeconfig of an organization's region connects only to a server at a public address
+        // (TenantKubeconfigs): the fake cluster's name answers one
+        $this->addresses['region.test'] = ['198.51.100.20'];
 
         $this->send(['base_domain' => 'acme.dev'])->assertOk()
             ->assertJsonPath('tenant_domain_migration.regions', ['own']);

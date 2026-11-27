@@ -46,6 +46,8 @@ func TestDeriveAPIBase(t *testing.T) {
 	}
 }
 
+// The targets of these tests listen on the loopback interface: their checks allow private targets
+// (TestProbeRefusesPrivateTargets: the ones that do not).
 func TestProbe(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -65,27 +67,27 @@ func TestProbe(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ok := Probe(context.Background(), Check{Key: "a", URL: srv.URL + "/health", Headers: map[string]string{"X-Check": "1"}, BodyRegex: `"db":"up"`}, regexp.MustCompile(`"db":"up"`))
+	ok := Probe(context.Background(), Check{Key: "a", AllowPrivateTargets: true, URL: srv.URL + "/health", Headers: map[string]string{"X-Check": "1"}, BodyRegex: `"db":"up"`}, regexp.MustCompile(`"db":"up"`))
 	if !ok.OK || ok.StatusCode != 200 || ok.Error != "" || ok.Key != "a" || ok.CheckedAt == "" {
 		t.Errorf("healthy check: %+v", ok)
 	}
 
-	down := Probe(context.Background(), Check{Key: "b", URL: srv.URL + "/down"}, nil)
+	down := Probe(context.Background(), Check{Key: "b", AllowPrivateTargets: true, URL: srv.URL + "/down"}, nil)
 	if down.OK || down.StatusCode != 503 || !strings.Contains(down.Error, "expected 200-399") {
 		t.Errorf("503: %+v", down)
 	}
 
-	mismatch := Probe(context.Background(), Check{Key: "c", URL: srv.URL + "/health", Headers: map[string]string{"X-Check": "1"}, BodyRegex: "maintenance"}, regexp.MustCompile("maintenance"))
+	mismatch := Probe(context.Background(), Check{Key: "c", AllowPrivateTargets: true, URL: srv.URL + "/health", Headers: map[string]string{"X-Check": "1"}, BodyRegex: "maintenance"}, regexp.MustCompile("maintenance"))
 	if mismatch.OK || !strings.Contains(mismatch.Error, "does not match") {
 		t.Errorf("body mismatch: %+v", mismatch)
 	}
 
-	slow := Probe(context.Background(), Check{Key: "d", URL: srv.URL + "/slow", TimeoutSec: 1}, nil)
+	slow := Probe(context.Background(), Check{Key: "d", AllowPrivateTargets: true, URL: srv.URL + "/slow", TimeoutSec: 1}, nil)
 	if slow.OK || !strings.Contains(slow.Error, "timed out") {
 		t.Errorf("timeout: %+v", slow)
 	}
 
-	redirect := Probe(context.Background(), Check{Key: "e", URL: srv.URL + "/redirect", ExpectedStatus: "302"}, nil)
+	redirect := Probe(context.Background(), Check{Key: "e", AllowPrivateTargets: true, URL: srv.URL + "/redirect", ExpectedStatus: "302"}, nil)
 	if !redirect.OK || redirect.StatusCode != 302 {
 		t.Errorf("redirects are not followed: %+v", redirect)
 	}
@@ -127,8 +129,8 @@ func TestSyncScheduleAndReport(t *testing.T) {
 	defer target.Close()
 
 	f := &fakeRunR{checks: []Check{
-		{Key: "_:01JCHECK1", URL: target.URL + "/", IntervalSec: 30},
-		{Key: "acme:01JCHECK2", URL: target.URL + "/x", IntervalSec: 60, BodyRegex: "("}, // invalid regex → failing result
+		{Key: "_:01JCHECK1", URL: target.URL + "/", IntervalSec: 30, AllowPrivateTargets: true},
+		{Key: "acme:01JCHECK2", URL: target.URL + "/x", IntervalSec: 60, BodyRegex: "(", AllowPrivateTargets: true}, // invalid regex → failing result
 	}}
 	api := httptest.NewServer(f.handler(t))
 	defer api.Close()

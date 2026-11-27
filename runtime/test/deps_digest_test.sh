@@ -28,6 +28,8 @@
 #   - a release outside a constraint that the check of its group no longer reports: its row closed;
 #     no major versions issue is made; one retired without a summary points at none; a hold that is
 #     gone leaves the summary;
+#   - a row that waits for a run that needs a person and that the check of its group no longer
+#     reports (a person's release has it): closed, and the run's issue with its last row;
 #   - a finding that landed on next and that the check no longer reports: shipped in the last
 #     release; a later week closes a summary with nothing open ("Closed at the end of the week:
 #     nothing was left open.") and opens none;
@@ -263,7 +265,7 @@ jq --argjson n 900 '. + [
    body: "Row `zot` <!-- runr-deps:row:zot --> of the summary <!-- runr-deps:digest:2026-W46 --> and <!-- runr-deps:majors:npm-vue -->\n<!-- runr-deps:digest:2026-W46 -->\nwhy?"},
   {number: ($n + 1), title: "deps: go-cli [abcdef12]: 1 update: github.com/spf13/cobra v1.10.9", state: "OPEN", labels: [], createdAt: "2026-11-15T08:00:00Z",
    body: "Only the row marker:\n<!-- runr-deps:row:go-cli -->\nand the summary marker <!-- runr-deps:digest:2026-W46 --> in the text."},
-  {number: ($n + 2), title: "deps: kata-deploy 4.9.0 released", state: "OPEN", labels: [{name: "needs attention"}], createdAt: "2026-11-15T08:00:00Z",
+  {number: ($n + 2), title: "deps: kube-prometheus-stack 99.0.0 released", state: "OPEN", labels: [{name: "needs attention"}], createdAt: "2026-11-15T08:00:00Z",
    body: "x\n<!-- runr-deps:row:zot/0.1.200 -->"}]' "$tmp/open.json" > "$tmp/quoted.json"
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/quoted.json")"
 # (902, an update issue of the earlier bot labelled needs attention: tested on every run as next
@@ -414,6 +416,42 @@ grep -qF '| `traefik` <!-- runr-deps:row:traefik --> | 42.4.0 | next update requ
   && grep -qxF -e '- `traefik` 42.4.0: no mechanical bump: a person moves it (#84)' <<<"$lb" && grep -qxF -e '- `docker` `x` 3.21 → 3.22: failed on v0.7.3 (#80)' <<<"$lb" \
   || fail "the earlier bot's rows of a labelled issue: $(cat "$tmp/legacy-ops.json")"
 echo "ok - a release outside a constraint: its row closed once the check of its group no longer reports it (kept while the group is not read); no major versions issue made, one retired without a summary names none; a hold that is gone leaves the summary; the earlier bot's red and needs attention rows of a labelled issue: next update required"
+
+# --- rows that wait for a run that needs a person, shipped by a person's release ----------------------
+# (the W47 run's issue, #91: the bot could not release, a manual release then took the updates) the
+# check of their group no longer reports them: closed, and the run's issue closes once none of its
+# rows waits; a row of a group that was not read keeps waiting, and a row of an issue of its own
+# (next update required) is the weekly run's to retry
+i91="$(jq -nc '{id: "kata-deploy", kind: "chart", group: "kata-deploy", version: "4.4.0", title: "deps: kata-deploy 4.4.0 released", state: "needs attention", found: "2026-11-18", issue: 91, url: "https://example.test/run/44", note: "the bot cannot release now", item_kind: "incident"}')"
+i91b="$(jq -nc '{id: "actions", kind: "group", group: "actions", version: "8e575e46", title: "deps: actions [8e575e46]: 1 update: actions/setup-go v7.1.0", state: "needs attention", found: "2026-11-19", updates: [{name: "actions/setup-go", from: "v7.0.0", to: "v7.1.0"}], issue: 91, url: "https://example.test/run/44", note: "the bot cannot release now", item_kind: "incident"}')"
+i91c="$(jq -nc '{id: "zot", kind: "chart", group: "zot", version: "0.1.135", title: "deps: zot 0.1.135 released", state: "needs attention", found: "2026-11-20", issue: 91, url: "https://example.test/run/44", note: "the bot cannot release now", item_kind: "incident"}')"
+i80="$(jq -nc '{id: "docker", kind: "group", group: "docker", version: "ee4ab2fa", title: "deps: docker [ee4ab2fa]: 1 update: x 3.22", issue: 80, item_kind: "issue", state: "next update required", note: "failed on v0.7.3", found: "2026-11-13", updates: [{name: "x", from: "3.21", to: "3.22"}]}')"
+jq -n --arg b "$(printf 'Summary.\n\n<!-- deps-bot %s -->\n<!-- deps-bot %s -->\n<!-- deps-bot %s -->\n<!-- deps-bot %s -->\n\n<!-- runr-deps:digest:2026-W48 -->\n' "$i91" "$i91b" "$i91c" "$i80")" \
+  '[{number: 92, title: "deps: week 2026-W48", state: "OPEN", labels: [{name: "deps"}], body: $b, createdAt: "2026-11-23T05:30:00Z"},
+    {number: 91, title: "deps: a dependency test run needs a person (2026-W47)", state: "OPEN", labels: [{name: "deps"}, {name: "needs attention"}],
+     body: "**The bot cannot release now:** x\n\n<!-- runr-deps:incident -->\n", createdAt: "2026-11-21T14:57:00Z"},
+    {number: 80, title: "deps: docker [ee4ab2fa]: 1 update: x 3.22", state: "OPEN", labels: [{name: "deps"}, {name: "next update required"}], body: "x", createdAt: "2026-11-13T05:30:00Z"}]' > "$tmp/w48.json"
+mkdir -p "$tmp/f48"
+# zot's chart was not read: its row keeps waiting, and so does the run's issue
+printf '%s\n' kata-deploy actions docker > "$tmp/f48/checked"
+bash "$D" file "$tmp/f48" "$tmp/w48.json" 2026-11-28 > "$tmp/w48-ops.json" || fail "file: $(cat "$tmp/w48-ops.json")"
+wb="$(jq -r '.[] | select(.op == "edit" and .issue == 92) | .body' "$tmp/w48-ops.json")"
+grep -qxF '| `kata-deploy` <!-- runr-deps:row:kata-deploy --> | 4.4.0 | closed | [run](https://example.test/run/44) | no longer found by the check of 2026-11-28 |' <<<"$wb" \
+  && grep -qF '| `actions` <!-- runr-deps:row:actions --> | `actions/setup-go` v7.0.0 → v7.1.0 | closed | [run](https://example.test/run/44) | no longer found by the check of 2026-11-28 |' <<<"$wb" \
+  && grep -qxF '| `zot` <!-- runr-deps:row:zot --> | 0.1.135 | needs attention | #91 | the bot cannot release now |' <<<"$wb" \
+  && grep -qF '| `docker` <!-- runr-deps:row:docker --> | `x` 3.21 → 3.22 | next update required | #80 | failed on v0.7.3 |' <<<"$wb" \
+  && ! jq -e 'any(.[]; .issue == 91 or .issue == 80)' "$tmp/w48-ops.json" >/dev/null \
+  || fail "the rows of a run that needs a person, gone from the check: $(cat "$tmp/w48-ops.json")"
+# zot read too: nothing of the run's issue waits any more, it closes; the issue of its own stays
+echo zot >> "$tmp/f48/checked"
+bash "$D" file "$tmp/f48" "$tmp/w48.json" 2026-11-28 > "$tmp/w48-ops.json" || fail "file: $(cat "$tmp/w48-ops.json")"
+wb="$(jq -r '.[] | select(.op == "edit" and .issue == 92) | .body' "$tmp/w48-ops.json")"
+grep -qxF '| `zot` <!-- runr-deps:row:zot --> | 0.1.135 | closed | [run](https://example.test/run/44) | no longer found by the check of 2026-11-28 |' <<<"$wb" \
+  && [ "$(jq -c '[.[] | select(.issue == 91) | .op]' "$tmp/w48-ops.json")" = '["edit","close"]' ] \
+  && jq -e '.[] | select(.op == "edit" and .issue == 91) | .body | contains("Nothing it held is open any more")' "$tmp/w48-ops.json" >/dev/null \
+  && ! jq -e 'any(.[]; .issue == 80)' "$tmp/w48-ops.json" >/dev/null && ! grep -qF '"issue":91' <<<"$(grep -o '<!-- deps-bot [^>]*' <<<"$wb")" \
+  || fail "the run's issue with nothing that waits for it: $(cat "$tmp/w48-ops.json")"
+echo "ok - rows that wait for a run that needs a person: closed once the check of their group no longer reports them (a release has them), the run's issue closed with them; a row of a group that was not read, and one of an issue of its own, untouched"
 
 # --- landed on next, then shipped; a later week closes a summary with nothing open ---------------------
 r3="$tmp/r3"; mkdir -p "$r3"

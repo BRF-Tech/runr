@@ -89,7 +89,7 @@ func TestJWTRoundTrip(t *testing.T) {
 	srv, _ := jwksServer(t, &keys)
 
 	cache := NewJWKSCache(srv.Client())
-	cfg := &JWTConfig{JWKSURL: srv.URL, Issuer: str("https://issuer.test"), Audience: str("orders")}
+	cfg := &JWTConfig{JWKSURL: srv.URL, AllowPrivateTargets: true, Issuer: str("https://issuer.test"), Audience: str("orders")}
 	now := time.Unix(1_800_000_000, 0)
 	good := map[string]any{"iss": "https://issuer.test", "aud": "orders", "sub": "partner-1", "exp": now.Unix() + 300}
 
@@ -120,7 +120,7 @@ func TestJWTRefusals(t *testing.T) {
 	keys.Store([]map[string]any{rsaJWK("k", &key.PublicKey)})
 	srv, _ := jwksServer(t, &keys)
 	cache := NewJWKSCache(srv.Client())
-	cfg := &JWTConfig{JWKSURL: srv.URL, Issuer: str("iss"), Audience: str("aud")}
+	cfg := &JWTConfig{JWKSURL: srv.URL, AllowPrivateTargets: true, Issuer: str("iss"), Audience: str("aud")}
 	now := time.Unix(1_800_000_000, 0)
 	base := func() map[string]any {
 		return map[string]any{"iss": "iss", "aud": "aud", "sub": "s", "exp": now.Unix() + 60}
@@ -162,7 +162,7 @@ func TestJWKSRotationFetchesAgainForAnUnknownKid(t *testing.T) {
 	keys.Store([]map[string]any{rsaJWK("one", &first.PublicKey)})
 	srv, fetches := jwksServer(t, &keys)
 	cache := NewJWKSCache(srv.Client())
-	cfg := &JWTConfig{JWKSURL: srv.URL}
+	cfg := &JWTConfig{JWKSURL: srv.URL, AllowPrivateTargets: true}
 	now := time.Unix(1_800_000_000, 0)
 	claims := map[string]any{"sub": "s", "exp": now.Unix() + 600}
 
@@ -197,7 +197,7 @@ func TestJWKSDownKeepsTheKeysItHad(t *testing.T) {
 	keys.Store([]map[string]any{rsaJWK("k", &key.PublicKey)})
 	srv, _ := jwksServer(t, &keys)
 	cache := NewJWKSCache(srv.Client())
-	cfg := &JWTConfig{JWKSURL: srv.URL}
+	cfg := &JWTConfig{JWKSURL: srv.URL, AllowPrivateTargets: true}
 	now := time.Unix(1_800_000_000, 0)
 	token := signRS256(t, key, "k", map[string]any{"sub": "s", "exp": now.Unix() + 7200})
 

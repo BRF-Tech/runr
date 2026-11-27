@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\RegistrySetup;
 
+use App\Rules\RegionKubeconfig;
 use App\Services\Helpers\MonitoringEndpointAccess;
 use App\Services\Helpers\RegionModeAccess;
 use App\Services\KnativeRedisService;
@@ -21,7 +22,7 @@ class RegistrySetupRequest extends FormRequest
         // module), like POST /knative-regions: platform administrators only (RegionModeAccess)
         return RegionModeAccess::rules($this) + [
             'name' => ['required', 'string', 'max:63', 'unique:knative_regions,name', 'regex:/^[a-z][a-z0-9\-]*[a-z0-9]$/'],
-            'kubeconfig' => 'required|string',
+            'kubeconfig' => ['required', 'string', RegionKubeconfig::forNewRegion()],
             'nodes' => 'present|array',
             'nodes.*' => 'string',
             ...self::registryRules(),

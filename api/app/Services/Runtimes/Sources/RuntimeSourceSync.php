@@ -5,6 +5,7 @@ namespace App\Services\Runtimes\Sources;
 use App\Models\ExecutorImage;
 use App\Models\Runtime;
 use App\Models\RuntimeSource;
+use App\Services\Observability\OutboundUrlGuard;
 use App\Services\Runtimes\BuiltinCatalog;
 use App\Services\Runtimes\InvalidManifestException;
 use App\Services\Runtimes\ManifestValidator;
@@ -230,9 +231,45 @@ class RuntimeSourceSync
      */
     private function read(RuntimeSource $source, bool $force): SourceSnapshot
     {
-        return $source->kind === RuntimeSource::KIND_GIT
-            ? $this->git->read($source, $force)
-            : $this->oci->read($source, $force);
+        try {
+            // An organization's OCI catalog: its registry checked before the first request (every
+            // request is checked again, OciRegistryClient::guarded()); a Git source's host is
+            // checked and pinned by GitSourceReader
+            if ($source->heldToOutboundGuard() && $source->kind === RuntimeSource::KIND_OCI) {
+                [$host, $port] = SourceLocation::endpoint(RuntimeSource::KIND_OCI, $source->reference());
+                $target = app(OutboundUrlGuard::class)->host($host, $port);
+                if (! $target->allowed()) {
+                    throw RuntimeSourceException::refusedHost((string) $target->reason);
+                }
+            }
+
+            return $source->kind === RuntimeSource::KIND_GIT
+                ? $this->git->read($source, $force)
+                : $this->oci->read($source, $force);
+        } catch (\Throwable $e) {
+            if (! $source->isOrganization()) {
+                throw $e;
+            }
+
+            throw self::forOrganization($source, $e);
+        }
+    }
+
+    /**
+     * What an organization sees of a read that failed: the status and a short reason — not what
+     * a host answered (stderr, HTTP statuses, addresses); the full message goes to the log.
+     * Problems of the catalog's content stay as they are.
+     */
+    public static function forOrganization(RuntimeSource $source, \Throwable $e): RuntimeSourceException
+    {
+        $status = $e instanceof RuntimeSourceException && in_array($e->status, RuntimeSource::FAILED, true) ? $e->status : RuntimeSource::UNREACHABLE;
+        if ($e instanceof RuntimeSourceException && ($e->shown || in_array($status, [RuntimeSource::INVALID_SIGNATURE, RuntimeSource::INVALID_CATALOG], true))) {
+            return $e;
+        }
+
+        Log::warning('Runtime source of an organization not read', ['source' => $source->id, 'status' => $status, 'error' => SourceCredentials::maskFor($e->getMessage(), $source)]);
+
+        return new RuntimeSourceException($status, __('api.runtime_sources.read_failed.'.$status));
     }
 
     /**
@@ -534,17 +571,22 @@ class RuntimeSourceSync
     public function registryClientFor(Runtime $runtime): ?OciRegistryClient
     {
         $source = $runtime->source_id ? RuntimeSource::query()->find($runtime->source_id) : null;
-        if (! $source || ! $source->hasRegistryCredentials()) {
+        // A custom runtime or an organization's source names the image repository: its registry is
+        // held to the outbound guard (OciRegistryClient::guarded())
+        $organization = ($runtime->source === Runtime::SOURCE_CUSTOM || ($source?->isOrganization() ?? false))
+            && ! config('runtime_sources.allow_private_targets', false);
+        $client = OciRegistryClient::direct(max(1, (int) config('runtime_sources.timeout', 20)));
+
+        $host = $source && $source->hasRegistryCredentials()
+            ? ($source->registry_host ?: ($source->kind === RuntimeSource::KIND_OCI ? ImageRef::parse($source->reference())->registry : null))
+            : null;
+        if ($host) {
+            $client = $client->withCredentials($host, (string) $source->credential('registry', 'username'), (string) $source->credential('registry', 'password'));
+        } elseif (! $organization) {
             return null;
         }
 
-        $host = $source->registry_host ?: ($source->kind === RuntimeSource::KIND_OCI ? ImageRef::parse($source->reference())->registry : null);
-        if (! $host) {
-            return null;
-        }
-
-        return OciRegistryClient::direct(max(1, (int) config('runtime_sources.timeout', 20)))
-            ->withCredentials($host, (string) $source->credential('registry', 'username'), (string) $source->credential('registry', 'password'));
+        return $organization ? $client->guarded() : $client;
     }
 
     /** @return array{file: string|null, runtime: string|null, path: string, message: string} */

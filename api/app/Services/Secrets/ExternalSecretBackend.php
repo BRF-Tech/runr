@@ -111,6 +111,10 @@ class ExternalSecretBackend implements SecretBackend
             if ($secret->store === null) {
                 throw new SecretBackendException(SecretBackendException::UNSUPPORTED, __('api.secret.store_missing', ['name' => $secret->name]));
             }
+            // An organization's store on a public address, checked again at every deploy
+            if ($problem = $secret->store->addressProblem()) {
+                throw new SecretBackendException(SecretBackendException::STORE_ADDRESS, __('api.secret.store_address', ['store' => $secret->store->name, 'reason' => $problem[1]]));
+            }
         }
 
         // Cluster-scoped, so not among the namespaced manifests: the TokenReview right of the

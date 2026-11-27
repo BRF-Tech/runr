@@ -229,6 +229,35 @@ class ReplayTest extends TestCase
         $this->assertStringNotContainsString('fresh-token', json_encode($fresh->last_replay).json_encode($fresh->headers), 'override headers are never stored');
     }
 
+    /**
+     * A project on its organization's own base domain: the replay is checked and pinned like a
+     * URL its users set (request replay sends their headers and bodies to it).
+     */
+    public function test_a_replay_to_the_organizations_own_domain_is_guarded(): void
+    {
+        $this->organizationDomain('eu.runr.test');
+        $owner = $this->userWithRole('owner');
+        $project = $this->obsProject($this->obsRegion(['knative_settings' => ['knative_domain' => 'eu.runr.test']]));
+        $capture = app(ReplayService::class)->store($project, ProjectObservabilitySetting::forProject($project), $this->capturePayload());
+
+        $options = [];
+        $this->externalRoutes['https://orders.eu.runr.test/'] = function (Request $request, array $sent) use (&$options) {
+            $options[] = $sent;
+
+            return Http::response(['ok' => true], 200);
+        };
+
+        $this->dns->addressRecords['orders.eu.runr.test'] = ['::ffff:169.254.169.254'];
+        $this->signedIn($owner)->postJson("/api/projects/{$project->id}/replays/{$capture->id}/replay")->assertStatus(409)
+            ->assertJsonPath('message', __('observability.url.private'));
+        $this->assertSame([], $options);
+
+        $this->dns->addressRecords['orders.eu.runr.test'] = ['93.184.216.34'];
+        $this->signedIn($owner)->postJson("/api/projects/{$project->id}/replays/{$capture->id}/replay")->assertOk();
+        $this->assertSame('orders.eu.runr.test:443:93.184.216.34', $options[0]['curl'][CURLOPT_RESOLVE][0]);
+        $this->assertFalse($options[0]['allow_redirects']);
+    }
+
     public function test_replay_of_a_queue_project_is_refused(): void
     {
         $owner = $this->userWithRole('owner');

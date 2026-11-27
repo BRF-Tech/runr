@@ -15,6 +15,7 @@ use App\Models\KnativeRegion;
 use App\Services\Concerns\KnativeValidationTrait;
 use App\Services\Helpers\KnativeVersionHelper;
 use App\Services\KnativeStatusService;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -82,7 +83,7 @@ class KnativeInstallController extends Controller
         try {
             $offered = $statusService->listCompatibleVersions($region);
         } catch (\Throwable $e) {
-            return response()->json(['message' => __('api.region.versions_fetch_failed', ['message' => $e->getMessage()])], 422);
+            return response()->json(['message' => __('api.region.versions_fetch_failed', ['message' => TenantKubeconfigs::messageFor($e, $region)])], 422);
         }
         if (in_array($minor, $offered, true)) {
             return null;
@@ -351,7 +352,7 @@ class KnativeInstallController extends Controller
                 'region' => new KnativeRegionResource($fresh),
             ]);
         } catch (\Throwable $e) {
-            return response()->json(['message' => __('api.region.detection_failed', ['message' => $e->getMessage()])], 500);
+            return response()->json(['message' => __('api.region.detection_failed', ['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)])], 500);
         }
     }
 
@@ -373,7 +374,7 @@ class KnativeInstallController extends Controller
 
             return response()->json(['exists' => $exists]);
         } catch (\Throwable $e) {
-            return response()->json(['message' => __('api.region.namespace_check_failed', ['message' => $e->getMessage()])], 500);
+            return response()->json(['message' => __('api.region.namespace_check_failed', ['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)])], 500);
         }
     }
 
@@ -395,7 +396,7 @@ class KnativeInstallController extends Controller
 
             return response()->json(['versions' => $versions]);
         } catch (\Throwable $e) {
-            return response()->json(['message' => __('api.region.versions_fetch_failed', ['message' => $e->getMessage()])], 500);
+            return response()->json(['message' => __('api.region.versions_fetch_failed', ['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)])], 500);
         }
     }
 
@@ -408,6 +409,13 @@ class KnativeInstallController extends Controller
     public function componentStatus(KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {
         $status = $statusService->getComponentStatus($knativeRegion);
+        // an organization's own region: its users read the short reason of a connection's error
+        $restricted = TenantKubeconfigs::restricts($knativeRegion);
+        array_walk_recursive($status, function (&$value, $key) use ($restricted) {
+            if ($key === 'message' && (is_string($value) || $value === null)) {
+                $value = TenantKubeconfigs::textFor($value, $restricted);
+            }
+        });
 
         return response()->json([
             ...$status,

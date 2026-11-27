@@ -172,6 +172,16 @@ class RuntimeSource extends Model
         return $this->scope === self::SCOPE_ORGANIZATION;
     }
 
+    /**
+     * RunR reads the source through the outbound guard: an organization's source names its hosts,
+     * which must be public (runtime_sources.allow_private_targets lifts it). Platform sources are
+     * the platform's own.
+     */
+    public function heldToOutboundGuard(): bool
+    {
+        return $this->isOrganization() && ! config('runtime_sources.allow_private_targets', false);
+    }
+
     /** The source's OCI reference (catalog) — the config's for the default source. */
     public function reference(): string
     {

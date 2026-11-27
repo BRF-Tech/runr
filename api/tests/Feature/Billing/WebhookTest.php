@@ -190,6 +190,36 @@ class WebhookTest extends TestCase
         $this->assertSame(__('observability.url.private'), $response->json('data.delivery.last_error'));
     }
 
+    /**
+     * GHSA-2c93-rcvw-qpq2: a delivery goes to the addresses its check saw — all of them, so the
+     * client can fail over, none other — and an IPv6 form of an internal IPv4 address is refused.
+     */
+    public function test_a_delivery_is_pinned_to_every_checked_address(): void
+    {
+        $admin = $this->userWithRole('owner');
+        $options = [];
+        Http::fake(function ($request, array $sent) use (&$options) {
+            $options[] = $sent;
+
+            return Http::response('', 204);
+        });
+        $this->dns['hooks.example.com'] = ['93.184.215.15', '93.184.215.16', '2606:4700:4700::1111'];
+        $this->actingAs($admin)->putJson('/api/billing/settings', ['webhook_url' => 'https://hooks.example.com:8443/runr'])->assertOk();
+
+        $this->actingAs($admin)->postJson('/api/billing/events/test')->assertOk()->assertJsonPath('delivered', true);
+
+        $this->assertCount(1, $options);
+        $this->assertFalse($options[0]['allow_redirects']);
+        $this->assertSame('hooks.example.com:8443:93.184.215.15,93.184.215.16,[2606:4700:4700::1111]', $options[0]['curl'][CURLOPT_RESOLVE][0]);
+
+        foreach (['::ffff:169.254.169.254', '64:ff9b::a9fe:a9fe', '2002:a9fe:a9fe::'] as $internal) {
+            $this->dns['hooks.example.com'] = [$internal];
+            $response = $this->actingAs($admin)->postJson('/api/billing/events/test')->assertOk()->assertJsonPath('delivered', false);
+            $this->assertSame(__('observability.url.private'), $response->json('data.delivery.last_error'), $internal);
+        }
+        $this->assertCount(1, $options, 'nothing sent to an internal address');
+    }
+
     public function test_the_operators_webhook_may_be_internal(): void
     {
         // BILLING_WEBHOOK_URL is the operator's: an invoicing service in the cluster is fine

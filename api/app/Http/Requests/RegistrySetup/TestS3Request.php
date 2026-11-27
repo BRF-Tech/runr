@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\RegistrySetup;
 
+use App\Rules\RegionKubeconfig;
 use Illuminate\Foundation\Http\FormRequest;
 
 class TestS3Request extends FormRequest
@@ -14,7 +15,7 @@ class TestS3Request extends FormRequest
     public function rules(): array
     {
         return [
-            'kubeconfig' => 'required|string',
+            'kubeconfig' => ['required', 'string', RegionKubeconfig::forNewRegion()],
             's3_config' => 'required|array',
             's3_config.endpoint' => 'required|string',
             's3_config.bucket' => 'required|string',

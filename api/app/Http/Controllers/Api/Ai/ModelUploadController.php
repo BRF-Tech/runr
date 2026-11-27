@@ -9,6 +9,7 @@ use App\Models\AiModel;
 use App\Models\AiModelUpload;
 use App\Models\KnativeRegion;
 use App\Services\Ai\Models\UploadService;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -93,7 +94,7 @@ class ModelUploadController extends Controller
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
+            return response()->json(['message' => TenantKubeconfigs::messageFor($e, $upload->region)], 502);
         }
 
         return response()->json($result);

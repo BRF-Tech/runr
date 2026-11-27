@@ -56,6 +56,8 @@ class TenantRegionSyncTest extends TestCase
     {
         parent::setUp();
         $this->setUpTenancy();
+        // own regions' API servers at a public address (an organization's region is reached there only)
+        $this->resolveRegionHosts('own.test', 'new.test');
 
         // What TenancyServiceProvider wires with TENANCY_ENABLED: the region sync and ownership
         // events, the kubeconfig resolver of copies, the tenant-aware region model of the routes

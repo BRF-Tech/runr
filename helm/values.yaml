@@ -229,6 +229,10 @@ edition: single-tenant
 
 tenancy:
   enabled: false
+  # Organizations' own regions (docs/security.md, "Tenant region kubeconfigs"): the server of their
+  # kubeconfig must be a public address. true accepts private addresses too (never loopback or
+  # link-local) — organizations whose clusters sit on the installation's private network
+  allowPrivateRegionServers: false
 
 authProvider:
   enabled: false
@@ -395,10 +399,11 @@ observability:
     retentionDays: 7              # project default; projects choose up to 30
     maxCaptures: 500              # per project, oldest dropped first
     ingestUrl: ""                 # RunR as seen from region pods; empty: the region's agent URL
+    allowPrivateTargets: false    # true: replays of a project on its organization's own domain may target private addresses
   uptime:
     minIntervalSeconds: 30
     resultsRetentionDays: 90
-    allowPrivateTargets: false    # true: checks of an absolute URL may target private addresses
+    allowPrivateTargets: false    # true: checks of an absolute URL (or of a project on its organization's own domain) may target private addresses
   # Load tests of HTTP projects (docs/load-test.md): a k6 Job in the project's region against the
   # project's own URL; the test traffic is metered like any other traffic
   loadTest:
@@ -474,7 +479,7 @@ gitDeploy:
 # until an administrator enables them (publish / mirror toolsImage first).
 supplyChain:
   enabled: true                 # build-ready hooks: every RunR-built image gets its supply-chain run
-  toolsImage: ""                # default ghcr.io/brf-tech/runr/supply-chain:1.1.2 (ci.sh supply-chain)
+  toolsImage: ""                # default ghcr.io/brf-tech/runr/supply-chain:1.1.3 (ci.sh supply-chain)
   jobNamespace: ""              # default runr-supply-chain (Jobs + region signing key, per region)
   rescanHours: ""               # default re-scan interval of deployed images for new regions (24)
   trivyDbSource: ""             # mirror source of the vulnerability DB (mirror.gcr.io/aquasec/trivy-db:2)
@@ -558,11 +563,12 @@ runtimeCatalog:
 # API keys, JWT routes, plans and usage per consumer: the regions run gateway-auth, which the
 # region Traefik asks before every call of a key / JWT route. Empty values keep the defaults.
 apiProduct:
-  gatewayAuthImage: ""         # gateway-auth image the regions pull (default ghcr.io/brf-tech/runr/gateway-auth:1.1.1, ci.sh gateway-auth)
+  gatewayAuthImage: ""         # gateway-auth image the regions pull (default ghcr.io/brf-tech/runr/gateway-auth:1.1.2, ci.sh gateway-auth)
   callbackUrl: ""              # RunR's base URL as the regions reach it (default: the region agent's URL)
   syncSeconds: ""              # how often gateway-auth fetches changed keys / plans (default 10)
   onDemandSyncSeconds: ""      # least seconds between two fetches of a pod for a key it does not know (default 2; 0: none)
   usageRetentionDays: ""       # hourly usage rows kept (default 400)
+  jwksAllowPrivateTargets: false  # true: the JWKS URL of a JWT route may name a private address
 
 # ─── Organization export / import (docs/org-export.md) ─
 # Packages live on the API volume (api.storage.size / storage.application): size it for what you
@@ -669,6 +675,17 @@ projectSecrets:
   # every value in its region and drops the copies. After that, do NOT install 0.5.10 again.
   # Fresh installs start finalized; the value changes nothing there.
   finalize: false
+
+# ─── Secret stores of organizations (docs/secret-stores.md) ──
+secretStores:
+  # true: a store of an organization of the multi-tenant edition may name a private, loopback or
+  # cluster-internal address, and the External Secrets Operator controller of the platform regions
+  # gets no egress policy
+  allowPrivateTargets: false
+  # CIDRs the External Secrets Operator controller of a platform region (multi-tenant edition) may
+  # reach besides public addresses: the platform's own stores on private addresses, e.g. ["10.20.0.0/16"].
+  # The controller is shared: list the stores' addresses only
+  privateEgressCidrs: []
 
 # ─── Audit log (docs/security.md) ────────────
 audit:

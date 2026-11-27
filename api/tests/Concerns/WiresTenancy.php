@@ -3,6 +3,7 @@
 namespace Tests\Concerns;
 
 use App\Models\KnativeRegion;
+use App\Services\Dns\DnsResolver;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Event;
 use Modules\Tenancy\Models\Tenant;
@@ -136,6 +137,40 @@ trait WiresTenancy
             config(['ide-helper.post_migrate' => []]);
             Artisan::call('migrate:fresh', ['--force' => true]);
         }
+    }
+
+    /**
+     * The API servers of tenant-owned regions resolve to a public address (203.0.113.80): RunR
+     * reaches an organization's region only at a checked public address (TenantKubeconfigs), and
+     * the fake clusters' names (tenant.test, …) resolve nowhere. Other names are looked up as before.
+     */
+    protected function resolveRegionHosts(string ...$hosts): void
+    {
+        $this->app->instance(DnsResolver::class, new class(array_map('strtolower', $hosts), app(DnsResolver::class)) extends DnsResolver
+        {
+            /** @param  list<string>  $hosts */
+            public function __construct(private readonly array $hosts, private readonly DnsResolver $real) {}
+
+            public function addresses(string $name): array
+            {
+                return in_array(rtrim(strtolower($name), '.'), $this->hosts, true) ? ['203.0.113.80'] : $this->real->addresses($name);
+            }
+
+            public function txt(string $name): array
+            {
+                return $this->real->txt($name);
+            }
+
+            public function cname(string $name): array
+            {
+                return $this->real->cname($name);
+            }
+
+            public function ns(string $name): array
+            {
+                return $this->real->ns($name);
+            }
+        });
     }
 
     /**

@@ -5,8 +5,11 @@ namespace App\Support\Images;
 use App\Models\KnativeRegion;
 use App\Services\KubernetesClient;
 use App\Services\Manifests\ZotManifests;
+use App\Services\Observability\OutboundUrlGuard;
 use App\Services\SupplyChain\ImageRef;
 use App\Services\ZotRegistryService;
+use GuzzleHttp\Psr7\Uri;
+use GuzzleHttp\Psr7\UriResolver;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
@@ -19,6 +22,12 @@ use Illuminate\Support\Facades\Http;
  * installs whose API has no way out.
  *
  * Repositories are named with their registry ("ghcr.io/brf-tech/runr/runtime-patches").
+ *
+ * guarded(): the registry of an organization's runtime source or custom runtime — every request,
+ * the token service of a Bearer challenge and each redirect (a blob is usually served by a CDN
+ * through one) included, is checked by the outbound guard right before it is sent and goes to the
+ * addresses that check saw (OutboundUrlGuard::target()); redirects are followed by hand, at most
+ * MAX_REDIRECTS, and a registry's Authorization never goes to another host.
  */
 class OciRegistryClient
 {
@@ -37,6 +46,12 @@ class OciRegistryClient
 
     /** HTTP status of the last answer (401 / 403: the credentials were refused) */
     private ?int $lastStatus = null;
+
+    /** Redirects a guarded client follows, each checked */
+    public const MAX_REDIRECTS = 5;
+
+    /** Set: every request is checked and pinned (guarded()) */
+    private ?OutboundUrlGuard $guard = null;
 
     public function __construct(
         private readonly int $timeout = 15,
@@ -60,6 +75,27 @@ class OciRegistryClient
         $client->basic = ['host' => self::normalizeHost($host), 'username' => $username, 'password' => $password];
 
         return $client;
+    }
+
+    /**
+     * The same client held to the outbound guard (a registry an organization names): public
+     * addresses only, every request and redirect checked and pinned. Not through a region.
+     */
+    public function guarded(): self
+    {
+        if ($this->region !== null) {
+            throw new \RuntimeException('A guarded client reads a registry directly');
+        }
+
+        $client = clone $this;
+        $client->guard = app(OutboundUrlGuard::class);
+
+        return $client;
+    }
+
+    public function isGuarded(): bool
+    {
+        return $this->guard !== null;
     }
 
     /** "registry-1.docker.io" and "docker.io" are one registry; "GHCR.io" is "ghcr.io". */
@@ -172,7 +208,7 @@ class OciRegistryClient
      * realm="…",service="…",scope="…"); null without a Bearer challenge or when the service
      * gives none.
      */
-    public static function bearerToken(string $challenge, string $name, int $timeout = 10, ?array $basic = null): ?string
+    public static function bearerToken(string $challenge, string $name, int $timeout = 10, ?array $basic = null, ?OutboundUrlGuard $guard = null): ?string
     {
         if (! preg_match('/^Bearer\s+(.+)$/i', trim($challenge), $m)) {
             return null;
@@ -191,11 +227,11 @@ class OciRegistryClient
             'service' => $params['service'] ?? null,
             'scope' => $params['scope'] ?? "repository:{$name}:pull",
         ]));
-        $request = Http::timeout($timeout);
-        if ($basic !== null) {
-            $request = $request->withBasicAuth($basic['username'], $basic['password']);
-        }
-        $response = $request->get($params['realm'].(str_contains($params['realm'], '?') ? '&' : '?').$query);
+        $url = $params['realm'].(str_contains($params['realm'], '?') ? '&' : '?').$query;
+        $headers = $basic !== null ? ['Authorization' => 'Basic '.base64_encode($basic['username'].':'.$basic['password'])] : [];
+        $response = $guard !== null
+            ? self::guardedSend($guard, 'GET', $url, $headers, $timeout)
+            : Http::timeout($timeout)->withHeaders($headers)->get($url);
         $token = $response->successful() ? ($response->json('token') ?? $response->json('access_token')) : null;
 
         return is_string($token) && $token !== '' ? $token : null;
@@ -235,7 +271,7 @@ class OciRegistryClient
             if ($basic !== null && preg_match('/^Basic(\s|$)/i', trim($challenge))) {
                 $this->tokens[$key] = 'basic:'.base64_encode($basic['username'].':'.$basic['password']);
             } else {
-                $this->tokens[$key] = self::bearerToken($challenge, $ref->repository, $this->timeout, $basic);
+                $this->tokens[$key] = self::bearerToken($challenge, $ref->repository, $this->timeout, $basic, $this->guard);
             }
             if ($this->tokens[$key] !== null) {
                 $response = $this->request($method, $url, $headers, $this->tokens[$key]);
@@ -253,9 +289,53 @@ class OciRegistryClient
             default => ['Authorization' => "Bearer {$token}"],
         };
 
+        if ($this->guard !== null) {
+            return self::guardedSend($this->guard, $method, $url, $headers + $authorization, $this->timeout);
+        }
+
         return Http::timeout($this->timeout)
             ->withHeaders($headers + $authorization)
             ->send($method, $url);
+    }
+
+    /**
+     * A request held to the outbound guard: checked and pinned, its redirects followed by hand,
+     * each hop checked again; the Authorization header only to the first request's host.
+     *
+     * @param  array<string, string>  $headers
+     *
+     * @throws \RuntimeException a URL the guard refuses (its reason), too many redirects
+     */
+    private static function guardedSend(OutboundUrlGuard $guard, string $method, string $url, array $headers, int $timeout): Response
+    {
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        for ($hop = 0; ; $hop++) {
+            $target = $guard->target($url);
+            if (! $target->allowed()) {
+                throw new \RuntimeException((string) $target->reason);
+            }
+
+            $response = Http::timeout($timeout)
+                ->withOptions($target->options() + ['http_errors' => false])
+                ->withHeaders($headers)
+                ->send($method, $url);
+
+            $location = (string) $response->header('Location');
+            if (! in_array($response->status(), [301, 302, 303, 307, 308], true) || $location === '') {
+                return $response;
+            }
+            if ($hop >= self::MAX_REDIRECTS) {
+                throw new \RuntimeException('Too many redirects');
+            }
+
+            $url = (string) UriResolver::resolve(new Uri($url), new Uri($location));
+            if ($response->status() === 303) {
+                $method = 'GET';
+            }
+            if (strtolower((string) parse_url($url, PHP_URL_HOST)) !== $host) {
+                unset($headers['Authorization']);
+            }
+        }
     }
 
     /**

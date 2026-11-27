@@ -91,6 +91,9 @@ return [
         'calls_retention_days' => (int) env('MCP_GATEWAY_CALLS_RETENTION_DAYS', 30),
         // Path on the function the gateway forwards to, unless the server sets its own
         'default_path' => '/mcp',
+        // true: a forward may reach a private address also when the server's function domain is
+        // under its organization's own base domain (OutboundUrlGuard::project())
+        'allow_private_targets' => (bool) env('MCP_GATEWAY_ALLOW_PRIVATE', false),
     ],
 
 ];

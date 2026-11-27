@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\KnativeRegion;
 use App\Models\ProjectTrigger;
 use App\Models\Topic;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Triggers\Topics\TopicPublisher;
 use App\Triggers\Topics\TopicStreams;
 use Dedoc\Scramble\Attributes\BodyParameter;
@@ -151,7 +152,7 @@ class TopicController extends Controller
         try {
             $result = $this->publisher->publish($row, $body, $contentType, $request->input('type'), $request->input('subject'), $request->input('id'));
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
+            return response()->json(['message' => TenantKubeconfigs::messageFor($e, $row->knativeRegion)], 502);
         }
 
         return response()->json(['data' => $result], 202);

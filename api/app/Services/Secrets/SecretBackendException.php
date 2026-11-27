@@ -25,6 +25,9 @@ class SecretBackendException extends RuntimeException
     /** External Secrets Operator does not run in the region. */
     public const NOT_INSTALLED = 'eso_not_installed';
 
+    /** An organization's secret store names an address the region may not connect to. */
+    public const STORE_ADDRESS = 'store_address';
+
     /**
      * A reference to a secret store while the upgrade from 0.5.10 is not finalized: 0.5.10, which
      * a rollback installs again, could not give its value to the workload (RollbackCopies).

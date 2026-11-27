@@ -75,7 +75,7 @@ jobs:
         with:
           node-version: 26
           package-manager-cache: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         if: ${{ !cancelled() }}
         with:
           go-version: '1.27.4'
@@ -83,7 +83,7 @@ jobs:
       - name: Install govulncheck (pinned)
         if: ${{ !cancelled() }}
         env:
-          GOVULNCHECK_VERSION: v1.9.0
+          GOVULNCHECK_VERSION: v1.10.0
         run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
       - name: Package releases
         if: ${{ !cancelled() }}

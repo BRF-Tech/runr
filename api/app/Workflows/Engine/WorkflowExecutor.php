@@ -171,7 +171,7 @@ class WorkflowExecutor
         }
 
         try {
-            $response = $this->transport->send($url, $envelope['body'], $envelope['headers']);
+            $response = $this->transport->send($url, $envelope['body'], $envelope['headers'], $this->endpoints->isOverride($app));
             $ops = Protocol::parseOps($response->body);
         } catch (TransportException $e) {
             return $this->runError($run, $token, $e->toError(), true);

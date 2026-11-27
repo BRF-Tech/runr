@@ -153,6 +153,99 @@ class UptimeTest extends TestCase
         $this->assertSame(__('observability.url.private'), $check->fresh()->last_error);
     }
 
+    /**
+     * GHSA-2c93-rcvw-qpq2: the control-plane runner (Http::pool) and "run now" send an absolute
+     * URL to the addresses the guard checked right before (curl pin, no redirects); a name that
+     * answers an internal address — in any of the IPv6 forms carrying one — is refused.
+     */
+    public function test_probes_of_an_absolute_url_are_pinned_to_the_checked_addresses(): void
+    {
+        $check = $this->check(['url' => 'https://status.example.com/ping', 'body_regex' => 'pong']);
+        $this->dns->addressRecords['status.example.com'] = ['93.184.216.34', '2606:4700:4700::1111'];
+
+        $options = [];
+        $this->externalRoutes['https://status.example.com/'] = function (Request $request, array $sent) use (&$options) {
+            $options[] = $sent;
+
+            return Http::response('pong', 200);
+        };
+
+        app(UptimeService::class)->runDueInScope();
+        $this->signedIn($this->userWithRole('developer'))->postJson("/api/projects/{$check->project_id}/uptime-checks/{$check->id}/run")
+            ->assertOk()->assertJsonPath('data.ok', true);
+
+        $this->assertCount(2, $options, 'the runner and run now');
+        foreach ($options as $sent) {
+            $this->assertFalse($sent['allow_redirects']);
+            $this->assertSame([
+                'status.example.com:443:93.184.216.34,[2606:4700:4700::1111]',
+                'status.example.com.:443:93.184.216.34,[2606:4700:4700::1111]',
+            ], $sent['curl'][CURLOPT_RESOLVE]);
+        }
+
+        foreach (['169.254.169.254', '::ffff:169.254.169.254', '::a9fe:a9fe', '64:ff9b::a9fe:a9fe', '2002:a9fe:a9fe::', 'fec0::1'] as $internal) {
+            $this->dns->addressRecords['status.example.com'] = [$internal];
+            $check->forceFill(['next_check_at' => null])->save();
+            app(UptimeService::class)->runDueInScope();
+            $this->assertSame(__('observability.url.private'), $check->fresh()->last_error, $internal);
+
+            $this->signedIn($this->userWithRole('developer'))->postJson("/api/projects/{$check->project_id}/uptime-checks/{$check->id}/run")
+                ->assertOk()->assertJsonPath('data.ok', false)->assertJsonPath('data.error', __('observability.url.private'));
+        }
+        $this->assertCount(2, $options, 'nothing sent to an internal address');
+    }
+
+    /**
+     * The project's own endpoint under its organization's own base domain (DNS the organization
+     * controls): checked and pinned like an absolute URL; on the platform's domain probed as before.
+     */
+    public function test_an_endpoint_on_the_organizations_own_domain_is_guarded(): void
+    {
+        $this->organizationDomain('eu.runr.test');
+        $check = $this->check(['body_regex' => 'ok']);
+        $host = $check->project->slug.'.eu.runr.test';
+
+        $options = [];
+        $this->externalRoutes["https://{$host}/"] = function (Request $request, array $sent) use (&$options) {
+            $options[] = $sent;
+
+            return Http::response('ok', 200);
+        };
+
+        $this->dns->addressRecords[$host] = ['10.0.0.5'];
+        app(UptimeService::class)->runDueInScope();
+        $this->assertSame(__('observability.url.private'), $check->fresh()->last_error);
+
+        $this->dns->addressRecords[$host] = ['93.184.216.34'];
+        $check->forceFill(['next_check_at' => null])->save();
+        app(UptimeService::class)->runDueInScope();
+        $this->assertSame('up', $check->fresh()->status);
+        $this->assertSame("{$host}:443:93.184.216.34", $options[0]['curl'][CURLOPT_RESOLVE][0]);
+
+        // In the regions: the agent checks every address it connects to
+        $check->forceFill(['locations' => 'regions'])->save();
+        $payload = collect(app(UptimeService::class)->agentChecks($check->project->knativeRegion))->firstWhere('key', '_:'.$check->id);
+        $this->assertFalse($payload['allow_private_targets']);
+    }
+
+    public function test_region_agents_are_told_whether_a_check_may_reach_private_targets(): void
+    {
+        $absolute = $this->check(['locations' => 'regions', 'url' => 'https://status.example.com/ping']);
+        $region = $absolute->project->knativeRegion;
+        $endpoint = $this->check(['locations' => 'regions', 'name' => 'endpoint']);
+        $endpoint->project->forceFill(['knative_region_id' => $region->id])->save();
+        $this->dns->addressRecords['status.example.com'] = ['93.184.216.34'];
+
+        $byKey = fn () => collect(app(UptimeService::class)->agentChecks($region))->keyBy('key');
+
+        $checks = $byKey();
+        $this->assertFalse($checks['_:'.$absolute->id]['allow_private_targets'], 'an absolute URL: the agent checks every address it connects to');
+        $this->assertTrue($checks['_:'.$endpoint->id]['allow_private_targets'], "the project's own endpoint");
+
+        config(['observability.uptime.allow_private_targets' => true]);
+        $this->assertTrue($byKey()['_:'.$absolute->id]['allow_private_targets']);
+    }
+
     public function test_region_agents_fetch_their_checks_and_report_results(): void
     {
         $check = $this->check(['locations' => 'regions', 'failure_threshold' => 1]);

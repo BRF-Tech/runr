@@ -17,7 +17,7 @@ class EndpointResolver
     {
         $app ??= WorkflowApp::where('project_id', $project->id)->first();
 
-        if ($app && $app->endpoint_url) {
+        if ($app && $this->isOverride($app)) {
             return $app->endpoint_url;
         }
 
@@ -29,6 +29,15 @@ class EndpointResolver
         $path = trim((string) config('workflows.endpoint_path', ''), '/');
 
         return $path === '' ? $base : $base.'/'.$path;
+    }
+
+    /**
+     * The app is called at its endpoint override — a URL its users set, which every request
+     * checks again (EndpointGuard::target()) — not at the project's function URL.
+     */
+    public function isOverride(?WorkflowApp $app): bool
+    {
+        return $app !== null && (string) $app->endpoint_url !== '';
     }
 
     public function functionUrl(Project $project): ?string

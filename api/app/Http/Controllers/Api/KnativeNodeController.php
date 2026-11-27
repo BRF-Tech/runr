@@ -6,6 +6,7 @@ use App\Http\Requests\KnativeRegion\ApplyWorkersRequest;
 use App\Http\Resources\KnativeRegionResource;
 use App\Models\KnativeRegion;
 use App\Services\KnativeNodeService;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -41,7 +42,7 @@ class KnativeNodeController extends Controller
             $nodes = $nodeService->listWorkerNodes($knativeRegion);
         } catch (\Throwable $e) {
             return response()->json([
-                'message' => __('api.region.connect_failed', ['message' => $e->getMessage()]),
+                'message' => __('api.region.connect_failed', ['message' => TenantKubeconfigs::messageFor($e, $knativeRegion)]),
                 'region' => new KnativeRegionResource($knativeRegion),
             ], 400);
         }

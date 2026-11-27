@@ -69,6 +69,8 @@ class TenantTeardownTest extends TestCase
         // event wiring: WiresTenancy registers what $tenant->run() needs to switch connections,
         // the central connection and the Tenancy module's central migrations
         $this->setUpTenancy();
+        // the own region's API server at a public address (an organization's region is reached there only)
+        $this->resolveRegionHosts('tenant.test');
     }
 
     protected function tearDown(): void

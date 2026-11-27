@@ -66,15 +66,18 @@ type jwksEntry struct {
 	triedAt   time.Time
 }
 
-// JWKSCache fetches and caches the JWKS of the JWT routes.
+// JWKSCache fetches and caches the JWKS of the JWT routes: with Guarded (public addresses only,
+// checked when the fetch connects, no proxy, no redirects) unless the route allows private
+// targets, then with Client.
 type JWKSCache struct {
-	Client *http.Client
-	mu     sync.Mutex
-	sets   map[string]*jwksEntry
+	Client  *http.Client
+	Guarded *http.Client
+	mu      sync.Mutex
+	sets    map[string]*jwksEntry
 }
 
 func NewJWKSCache(client *http.Client) *JWKSCache {
-	return &JWKSCache{Client: client, sets: map[string]*jwksEntry{}}
+	return &JWKSCache{Client: client, Guarded: newGuardedClient(nil), sets: map[string]*jwksEntry{}}
 }
 
 // Verify checks the token for cfg and returns its claims.
@@ -102,7 +105,7 @@ func (c *JWKSCache) Verify(ctx context.Context, token string, cfg *JWTConfig, no
 	h.Write([]byte(parts[0] + "." + parts[1]))
 	digest := h.Sum(nil)
 
-	keys, err := c.keys(ctx, cfg.JWKSURL, header.Kid, now)
+	keys, err := c.keys(ctx, cfg.JWKSURL, cfg.AllowPrivateTargets, header.Kid, now)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +145,7 @@ func (c *JWKSCache) Verify(ctx context.Context, token string, cfg *JWTConfig, no
 }
 
 // keys of url; fetched again when kid is unknown (rotation), at most every jwksMinRefetch.
-func (c *JWKSCache) keys(ctx context.Context, url, kid string, now time.Time) ([]verifierKey, error) {
+func (c *JWKSCache) keys(ctx context.Context, url string, allowPrivate bool, kid string, now time.Time) ([]verifierKey, error) {
 	if url == "" {
 		return nil, errors.New("route has no JWKS URL")
 	}
@@ -158,7 +161,7 @@ func (c *JWKSCache) keys(ctx context.Context, url, kid string, now time.Time) ([
 		return entry.keys, nil
 	}
 
-	keys, err := c.fetch(ctx, url)
+	keys, err := c.fetch(ctx, url, allowPrivate)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if entry == nil {
@@ -177,7 +180,7 @@ func (c *JWKSCache) keys(ctx context.Context, url, kid string, now time.Time) ([
 	return keys, nil
 }
 
-func (c *JWKSCache) fetch(ctx context.Context, url string) ([]verifierKey, error) {
+func (c *JWKSCache) fetch(ctx context.Context, url string, allowPrivate bool) ([]verifierKey, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -185,8 +188,18 @@ func (c *JWKSCache) fetch(ctx context.Context, url string) ([]verifierKey, error
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.Client.Do(req)
+	client := c.Client
+	if !allowPrivate {
+		if c.Guarded == nil {
+			return nil, fmt.Errorf("JWKS: %w", errPrivateTarget) // fail closed: no guarded client
+		}
+		client = c.Guarded
+	}
+	resp, err := client.Do(req)
 	if err != nil {
+		if errors.Is(err, errPrivateTarget) {
+			return nil, fmt.Errorf("JWKS: %w", errPrivateTarget)
+		}
 		return nil, fmt.Errorf("JWKS: %w", err)
 	}
 	defer resp.Body.Close()

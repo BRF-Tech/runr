@@ -26,6 +26,7 @@ use App\Services\InternalNetwork\InternalNetwork;
 use App\Services\KnativeNodeService;
 use App\Services\KnativeRedisService;
 use App\Services\KnativeStatusService;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\KubernetesClient;
 use App\Services\RegionStatusService;
 use App\Services\Sandboxes\Exec\KubectlBinary;
@@ -67,11 +68,12 @@ class KnativeRegionController extends Controller
     public function store(StoreKnativeRegionRequest $request, KnativeStatusService $statusService, KnativeNodeService $nodeService): JsonResponse
     {
         $validated = $request->validated();
-        $validated['kubeconfig'] = KubernetesClient::adaptKubeconfig($validated['kubeconfig']);
+        $restricted = TenantKubeconfigs::restrictsNewRegions();
+        [$validated['kubeconfig'], $connect] = $this->preparedKubeconfig($validated['kubeconfig'], $restricted);
 
         // Validate kubeconfig connectivity before creating region; the version picks kubectl's
         // minor for exec (KubectlBinary)
-        $validated['kubernetes_version'] = KubectlBinary::versionFrom($this->checkedServerVersion($validated['kubeconfig']));
+        $validated['kubernetes_version'] = KubectlBinary::versionFrom($this->checkedServerVersion($connect, $restricted));
 
         // Region name = project namespace (same value)
         $projectNs = $validated['name'];
@@ -79,7 +81,7 @@ class KnativeRegionController extends Controller
 
         // Check project namespace doesn't already exist on the cluster
         try {
-            $exists = $statusService->checkNamespaceExistsByKubeconfig($validated['kubeconfig'], $projectNs);
+            $exists = $statusService->checkNamespaceExistsByKubeconfig($connect, $projectNs);
             if ($exists) {
                 throw ValidationException::withMessages([
                     'name' => __('api.region.namespace_exists', ['namespace' => $projectNs]),
@@ -89,7 +91,7 @@ class KnativeRegionController extends Controller
             throw $e;
         } catch (\Throwable $e) {
             throw ValidationException::withMessages([
-                'name' => __('api.region.namespace_check_failed', ['message' => $e->getMessage()]),
+                'name' => __('api.region.namespace_check_failed', ['message' => TenantKubeconfigs::connectionError($e, TenantKubeconfigs::showsDetails($restricted))]),
             ]);
         }
 
@@ -119,7 +121,7 @@ class KnativeRegionController extends Controller
             // Namespace creation failed — delete region and return error
             $region->delete();
             throw ValidationException::withMessages([
-                'name' => __('api.region.namespace_create_failed', ['message' => $e->getMessage()]),
+                'name' => __('api.region.namespace_create_failed', ['message' => TenantKubeconfigs::connectionError($e, TenantKubeconfigs::showsDetails($restricted))]),
             ]);
         }
 
@@ -181,10 +183,12 @@ class KnativeRegionController extends Controller
      */
     public function validateKubeconfig(KubeconfigRequest $request): JsonResponse
     {
-        $kubeconfig = KubernetesClient::adaptKubeconfig($request->validated()['kubeconfig']);
-        $version = $this->checkedServerVersion($kubeconfig);
+        $restricted = TenantKubeconfigs::restrictsNewRegions();
+        [$kubeconfig, $connect] = $this->preparedKubeconfig($request->validated()['kubeconfig'], $restricted);
+        $version = $this->checkedServerVersion($connect, $restricted);
 
-        $adapted = $kubeconfig !== $request->validated()['kubeconfig'];
+        // a local cluster's kubeconfig adapted for the API (platform regions only)
+        $adapted = ! $restricted && $kubeconfig !== $request->validated()['kubeconfig'];
 
         return response()->json([
             'valid' => true,
@@ -200,13 +204,14 @@ class KnativeRegionController extends Controller
      */
     public function previewNodes(KubeconfigRequest $request, KnativeNodeService $nodeService): JsonResponse
     {
-        $kubeconfig = KubernetesClient::adaptKubeconfig($request->validated()['kubeconfig']);
+        $restricted = TenantKubeconfigs::restrictsNewRegions();
+        [, $connect] = $this->preparedKubeconfig($request->validated()['kubeconfig'], $restricted);
 
         try {
-            $nodes = $nodeService->listWorkerNodesByKubeconfig($kubeconfig);
+            $nodes = $nodeService->listWorkerNodesByKubeconfig($connect);
         } catch (\Throwable $e) {
             return response()->json([
-                'message' => __('api.region.connect_failed', ['message' => $e->getMessage()]),
+                'message' => __('api.region.connect_failed', ['message' => TenantKubeconfigs::connectionError($e, TenantKubeconfigs::showsDetails($restricted))]),
             ], 400);
         }
 
@@ -221,17 +226,18 @@ class KnativeRegionController extends Controller
      */
     public function previewStorageClasses(KubeconfigRequest $request): JsonResponse
     {
-        $kubeconfig = KubernetesClient::adaptKubeconfig($request->validated()['kubeconfig']);
+        $restricted = TenantKubeconfigs::restrictsNewRegions();
+        [, $connect] = $this->preparedKubeconfig($request->validated()['kubeconfig'], $restricted);
 
         try {
-            $k8s = new KubernetesClient($kubeconfig);
+            $k8s = new KubernetesClient($connect);
             $list = $k8s->listClusterResources('storage.k8s.io/v1', 'StorageClass');
             $classes = collect($list['items'] ?? [])->map(fn ($sc) => [
                 'name' => $sc['metadata']['name'],
                 'is_default' => ! empty($sc['metadata']['annotations']['storageclass.kubernetes.io/is-default-class']),
             ])->values()->all();
         } catch (\Throwable $e) {
-            return response()->json(['message' => __('api.region.storage_classes_failed', ['message' => $e->getMessage()])], 400);
+            return response()->json(['message' => __('api.region.storage_classes_failed', ['message' => TenantKubeconfigs::connectionError($e, TenantKubeconfigs::showsDetails($restricted))])], 400);
         }
 
         return response()->json(['storageClasses' => $classes]);
@@ -245,15 +251,15 @@ class KnativeRegionController extends Controller
     public function checkNamespacePreview(CheckNamespacePreviewRequest $request, KnativeStatusService $statusService): JsonResponse
     {
         $validated = $request->validated();
-
-        $validated['kubeconfig'] = KubernetesClient::adaptKubeconfig($validated['kubeconfig']);
+        $restricted = TenantKubeconfigs::restrictsNewRegions();
+        [, $connect] = $this->preparedKubeconfig($validated['kubeconfig'], $restricted);
 
         try {
-            $exists = $statusService->checkNamespaceExistsByKubeconfig($validated['kubeconfig'], $validated['name']);
+            $exists = $statusService->checkNamespaceExistsByKubeconfig($connect, $validated['name']);
 
             return response()->json(['exists' => $exists]);
         } catch (\Throwable $e) {
-            return response()->json(['message' => 'Cannot check namespace: '.$e->getMessage()], 500);
+            return response()->json(['message' => 'Cannot check namespace: '.TenantKubeconfigs::connectionError($e, TenantKubeconfigs::showsDetails($restricted))], 500);
         }
     }
 
@@ -264,11 +270,13 @@ class KnativeRegionController extends Controller
 
         // A replaced kubeconfig (credential rotation) is checked like a new region's: adapted for
         // a local cluster, reachable, a supported Kubernetes version — and the same cluster:
-        // moving a region to another cluster is a migration (POST …/migrate)
+        // moving a region to another cluster is a migration (POST …/migrate). An organization's
+        // own region stores what KubeconfigPolicy accepts (TenantKubeconfigs).
         if (array_key_exists('kubeconfig', $data)) {
-            $data['kubeconfig'] = KubernetesClient::adaptKubeconfig($data['kubeconfig']);
-            $version = KubectlBinary::versionFrom($this->checkedServerVersion($data['kubeconfig']));
-            $this->assertSameCluster($knativeRegion, $data['kubeconfig']);
+            $restricted = TenantKubeconfigs::restricts($knativeRegion);
+            [$data['kubeconfig'], $connect] = $this->preparedKubeconfig($data['kubeconfig'], $restricted);
+            $version = KubectlBinary::versionFrom($this->checkedServerVersion($connect, $restricted));
+            $this->assertSameCluster($knativeRegion, $connect);
             $data['kubernetes_version'] = $version ?? $knativeRegion->kubernetes_version;
         }
 
@@ -292,32 +300,46 @@ class KnativeRegionController extends Controller
     }
 
     /**
+     * The kubeconfig to store and the one to connect with (TenantKubeconfigs::prepare()).
+     *
+     * @return array{string, string}
+     */
+    private function preparedKubeconfig(string $kubeconfig, bool $restricted): array
+    {
+        return app(TenantKubeconfigs::class)->prepare($kubeconfig, $restricted);
+    }
+
+    /**
      * Connect with the kubeconfig and check the cluster's Kubernetes version against the minimum
-     * (knative.min_k8s_minor); a 422 on kubeconfig otherwise.
+     * (knative.min_k8s_minor); a 422 on kubeconfig otherwise. $restricted (an organization's own
+     * region): its users see a short reason of a failure, not the connection's error
+     * (TenantKubeconfigs::connectionError()).
      *
      * @return array<string, mixed> the /version answer
      */
-    private function checkedServerVersion(string $kubeconfig): array
+    private function checkedServerVersion(string $kubeconfig, bool $restricted = false): array
     {
+        $details = TenantKubeconfigs::showsDetails($restricted);
         try {
-            $k8s = new KubernetesClient($kubeconfig);
-            $version = $k8s->getServerVersion();
-            if (! $version) {
-                throw new \Exception('Cannot retrieve server version');
-            }
-
-            $minor = (int) rtrim($version['minor'] ?? '', '+');
-            $minRequired = config('knative.min_k8s_minor', 30);
-            if ($minor < $minRequired) {
-                throw ValidationException::withMessages([
-                    'kubeconfig' => __('api.region.k8s_version_required', ['required' => $minRequired, 'detected' => $minor]),
-                ]);
-            }
-        } catch (ValidationException $e) {
-            throw $e;
+            $response = (new KubernetesClient($kubeconfig))->getPathResponse('version');
         } catch (\Throwable $e) {
             throw ValidationException::withMessages([
-                'kubeconfig' => __('api.region.connect_failed', ['message' => $e->getMessage()]),
+                'kubeconfig' => __('api.region.connect_failed', ['message' => TenantKubeconfigs::connectionError($e, $details)]),
+            ]);
+        }
+
+        $version = $response->successful() ? $response->json() : null;
+        if (! is_array($version)) {
+            throw ValidationException::withMessages([
+                'kubeconfig' => __('api.region.connect_failed', ['message' => $details ? 'Cannot retrieve server version' : TenantKubeconfigs::responseError($response)]),
+            ]);
+        }
+
+        $minor = (int) rtrim($version['minor'] ?? '', '+');
+        $minRequired = config('knative.min_k8s_minor', 30);
+        if ($minor < $minRequired) {
+            throw ValidationException::withMessages([
+                'kubeconfig' => __('api.region.k8s_version_required', ['required' => $minRequired, 'detected' => $minor]),
             ]);
         }
 
@@ -353,14 +375,16 @@ class KnativeRegionController extends Controller
     /** Download the region's kubeconfig. */
     public function downloadKubeconfig(KnativeRegion $knativeRegion): StreamedResponse|JsonResponse
     {
-        if (! $knativeRegion->kubeconfig) {
+        // as stored (an organization's region: what its owner gave, without RunR's address pin)
+        $kubeconfig = $knativeRegion->storedKubeconfig();
+        if (! $kubeconfig) {
             return response()->json(['message' => __('api.region.kubeconfig_not_found')], 404);
         }
 
         $filename = $knativeRegion->name.'-kubeconfig.yaml';
 
-        return response()->streamDownload(function () use ($knativeRegion) {
-            echo $knativeRegion->kubeconfig;
+        return response()->streamDownload(function () use ($kubeconfig) {
+            echo $kubeconfig;
         }, $filename, [
             'Content-Type' => 'application/x-yaml',
         ]);

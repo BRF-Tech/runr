@@ -52,13 +52,13 @@ final class WasmShim
         self::SPIN => [
             'name' => 'Spin',
             // containerd-shim-spin v0.27.2 + runwasi PR #1183 (runtime/wasm-shim-spin)
-            'version' => 'v0.27.2-runr.1',
+            'version' => 'v0.27.2-runr.2',
             'binary' => 'containerd-shim-spin-v2',
             'runtime_type' => 'io.containerd.spin.v2',
             'handler' => 'spin-runr',
             // the name the Spin operator (SpinKube) uses for its shim executor
             'runtime_class' => 'wasmtime-spin-v2',
-            'image' => 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1',
+            'image' => 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.2',
             // the platforms of the image (linux/amd64, linux/arm64) as uname -m
             'arches' => ['x86_64', 'aarch64'],
             'artifacts' => [],

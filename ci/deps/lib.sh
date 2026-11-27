@@ -67,6 +67,7 @@ DEPS_NEVER_EDIT=(
   ':(exclude)ci/deps/**'
   ':(exclude)ci/deps-*.sh'
   ':(exclude)runtime/test/deps_*_test.sh'
+  ':(exclude)runtime/test/helm_releases_check_test.sh'
   ':(exclude)api/tests/**/Deps*Test.php'
 )
 
@@ -74,6 +75,10 @@ DEPS_NEVER_EDIT=(
 # (not a timestamp of a test's fixture, 2026-09-02T09:14:03Z), or a measurement (README's numbers
 # were measured with the versions they name). An ERE for awk: no backslash escapes.
 DEPS_HISTORY_RE='runr [0-9]+[.][0-9]+|20[0-9][0-9]-[01][0-9]-[0-3][0-9]([^t0-9]|$)|measured|median|ölçül|medyan|_since'
+# A measurement's words: the rows of a table that a paragraph with one of them introduces, and the
+# paragraph right after that table, keep their versions too (README's cold start table names the
+# Kata release on each row; the paragraph above it says when and how they were measured)
+DEPS_MEASURE_RE='measured|measurement|median|ölçül|ölçüm|medyan'
 
 # deps_field ROW N — field N (1-based) of a |-separated row
 deps_field() {
@@ -149,7 +154,7 @@ deps_replace_version() {
   for file in ${files[@]+"${files[@]}"}; do
     out="$(mktemp)"
     rc=0
-    awk -v old="$old" -v new="$new" -v names="$names" -v history="$DEPS_HISTORY_RE" -v path="$file" \
+    awk -v old="$old" -v new="$new" -v names="$names" -v history="$DEPS_HISTORY_RE" -v measure="$DEPS_MEASURE_RE" -v path="$file" \
       -v report="$report" -f "${DEPS_ROOT}/ci/deps/replace.awk" "${DEPS_ROOT}/${file}" > "$out" || rc=$?
     # the file's mode stays (cat into it); a file without an edit is not written at all
     case "$rc" in
@@ -167,10 +172,12 @@ deps_replace_version() {
 
 # deps_outside_mentions OLD NAMES — the lines of the console (vue/) and the landing page
 # (landing/) that name OLD as a whole version and the dependency (NAMES, on the line or in the
-# path): "outside FILE:LINE: TEXT". A bump never edits them: their commits carry other authors.
+# path): "outside FILE:LINE: TEXT". A bump never edits them: their commits carry other authors. A
+# line that records the past (DEPS_HISTORY_RE: a measurement of a RunR release, a date) is no
+# mention: deps_replace_version would keep it in any file.
 deps_outside_mentions() {
   git -C "$DEPS_ROOT" grep -n -I -F -e "$1" -- 'vue/**' 'landing/**' ':(exclude)**/node_modules/**' ':(exclude)**/package-lock.json' 2>/dev/null \
-    | awk -v old="$1" -v names="$2" -f "${DEPS_ROOT}/ci/deps/outside.awk" || true
+    | awk -v old="$1" -v names="$2" -v history="$DEPS_HISTORY_RE" -f "${DEPS_ROOT}/ci/deps/outside.awk" || true
 }
 
 # deps_revert LOG — puts back the files the "edit FILE…" lines of LOG name (a bump that gives up)

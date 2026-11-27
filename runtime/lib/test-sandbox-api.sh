@@ -182,10 +182,16 @@ DOCKERFILE
   admin_password=$(grep -E '^ADMIN_PASSWORD=' "$env_file" 2>/dev/null | cut -d= -f2- || true)
   api_cid=$(docker compose ps -q api)
 
+  # The CLI's sandbox runs on gVisor, which the suite installs; a run of selected cases
+  # (RUNR_E2E_SANDBOX_CASES=kata) installs no gVisor, and the sandbox runs on runc, which the suite
+  # allows on the region in every run
+  local class=gvisor
+  [ -n "${RUNR_E2E_SANDBOX_CASES:-}" ] && class=runc
+
   local status=0
   docker run --rm -i --network "container:${api_cid}" "$SANDBOX_CLI_E2E_IMAGE" \
     python - --base http://localhost --admin-user "${admin_user:-admin}" --admin-password "${admin_password:-admin123}" \
-    < "${SCRIPT_DIR}/lib/sandbox_tty_client.py" || status=$?
+    --class "$class" < "${SCRIPT_DIR}/lib/sandbox_tty_client.py" || status=$?
   if [ "$status" != "0" ]; then
     echo -e "${RED}Sandbox CLI e2e: failed${NC}"
     return 1

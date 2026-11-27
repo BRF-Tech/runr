@@ -513,6 +513,13 @@ return [
 
     // ── Runtime sources (docs/runtimes.md#runtime-sources) ──
     'runtime_sources' => [
+        // What an organization sees of a source that could not be read (the details are logged)
+        'read_failed' => [
+            'unreachable' => 'The source could not be reached.',
+            'not_found' => 'The source does not exist or is not public; a private one needs credentials.',
+            'auth_failed' => 'The source refused the credentials.',
+            'patch_feed' => 'The patch feed could not be read.',
+        ],
         'not_allowed' => 'Connecting runtime sources needs runtimes.manage, or runtimes.use_custom while custom runtimes are enabled.',
         'default_readonly' => 'RunR\'s catalog is configured by the installation (RUNR_RUNTIME_CATALOG_*): only whether it is read and how often can change here.',
         'default_delete' => 'RunR\'s catalog can not be removed; switch it off to use the catalog of the API image.',
@@ -549,6 +556,8 @@ return [
         'eso_install_queued' => 'External Secrets Operator is being installed.',
         'eso_uninstall_queued' => 'External Secrets Operator is being removed.',
         'reference_not_applied' => 'Not synced yet: deploy the project to apply the reference.',
+        'reference_failed' => 'The value could not be read from the secret store: check the reference and the store\'s role and trust settings.',
+        'store_address' => 'The secret store ":store" cannot be used: :reason',
         'openbao_needs_eso' => 'OpenBao in region ":region" needs External Secrets Operator there: install it first on the region\'s Secrets tab.',
         'openbao_not_installed' => 'Region ":region" has no OpenBao of its own.',
         'openbao_in_use' => 'Secret values or dynamic credentials of projects in region ":region" live in its OpenBao: move them before removing it.',
@@ -564,6 +573,7 @@ return [
         'in_use' => 'Secret variables of :projects refer to this store: change them first.',
         'unknown_setting' => '":key" is not a setting of a :provider store. A store trusts the region\'s identity; RunR takes no credential for it.',
         'ca_bundle_invalid' => 'The CA bundle must be PEM certificates (BEGIN CERTIFICATE) and nothing else.',
+        'not_ready' => 'The region could not use the store: check its address, role and trust settings (the region\'s issuer and service account).',
     ],
 
     // ── Audit log ──

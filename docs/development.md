@@ -766,7 +766,11 @@ Each version is first made and tested alone:
    chart whose CRDs (`crds/`) changed gets the command that applies them to an installed region
    (Helm never upgrades a chart's CRDs; the upgrade suite runs with the old ones).
    Lines that record the past keep their version: a RunR release or a date next to them, a
-   measurement, the changelog, `docs/upgrade.md`. The commit is `fix(regions): <chart> chart
+   measurement (also the rows of a table that a measurement's paragraph introduces, the notes
+   right after it, and every line of a list item that records the past), the changelog,
+   `docs/upgrade.md`. The console and the landing page are never edited: a line there that names
+   the pin as the current one sends the bump to a person, a line of the past there does not. The
+   commit is `fix(regions): <chart> chart
    <version>` (Kata: `fix(kata): kata-deploy <version>`), the bot's, with its trailer.
 2. **The release commit** on it, `chore(release): <x.y.z+1>` (`ci/deps-release.sh prepare`):
    `helm/Chart.yaml`'s `version` and `appVersion`; the docs' pins of the chart and the tag
@@ -909,7 +913,8 @@ issue names (`<summary>:<group>` of each row, an issue's number; comma-separated
 the release and its bumps from the origin's tag (a tag of the bot only, its trailer lines), does
 what is not done yet (the public push, then the images, the GitHub release and the chart) and
 ships the rows (closes the issues). Every step checks what is there first, so it can run again.
-The run's issue closes itself once none of its rows waits for it.
+The run's issue closes itself once none of its rows waits for it: one shipped by a person's release
+closes with the daily check that no longer finds it.
 
 **Dry run** (`dry_run`): the whole run, with the release made, merged, signed and checked
 (attribution included) and nothing pushed, created, edited, labelled, commented or copied; the
@@ -990,7 +995,9 @@ filex's dependency bot (bot name `runr-deps` here):
   by a person is left as it is).
 - A finding is listed once: one a summary row or an issue already had, open or closed, is not
   listed again. A group whose sources were all read (`checked`) and that no longer reports a
-  finding closes its open row, or ships its landed one.
+  finding closes its open row, or ships its landed one; a row that waits for a run that needs a
+  person closes the same way (a release a person made has the update, or the dependency moved
+  on), and the run's issue closes once none of its rows waits for it.
 
 The first daily run after this change folds the findings that were issues of their own (open, not
 labelled `needs attention` or `next update required`) into the week's summary; a red issue stays,
@@ -1060,20 +1067,31 @@ as `go-toolchain`, with the advisories' finding), never a bump.
 The check leaves them and names each one with its reason (an update it keeps back, a major or a
 minor one, is a `held (<reason>)` row of the weekly summary, listed under *Next update required*,
 never an issue); the plan skips an
-update a hold keeps, and a bump that would move one is not mechanical. Today: `cronstrue` and `@playwright/test` (pinned exactly in `vue/package.json`: the warmer
-editor's tests compare cronstrue's wording; each Playwright brings its own Chromium), the Spin
+update a hold keeps, and a bump that would move one is not mechanical. Today: the Spin
 shim's Rust and cross-rs images (by digest, with upstream's toolchain) and its protoc, libseccomp
 and containerd-shim-wasm pins (upstream's build inputs, which move with containerd-shim-spin), the
 Terraform provider's `github.com/brf-tech/runr/cli` (RunR's own module, moved by the manual
 release), the workflows' `php-version` (the API's tests run on the oldest PHP of its constraint on
 purpose), the examples' `@runr/workflows` and `runr-workflows` (RunR's own SDKs, on no registry
 yet) and `examples/wasm/go`'s `spin-go-sdk/v2` (v3 and newer build with componentize-go, which
-needs WASIp3 in Go itself, golang/go#76775; #31).
+needs WASIp3 in Go itself, golang/go#76775; #31). `cronstrue` and `@playwright/test` are pinned
+exactly in `vue/package.json` and held by nothing: each release of one is a finding of its own
+outside the pin (`npm-vue--cronstrue`, `npm-vue--playwright-test`), and its suites decide. The
+warmer editor's unit tests (`ui`) and `e2e/timed-warmer.spec.ts` (`ui-stack`) compare cronstrue's
+wording; a Playwright bump runs `ui-stack` on the Chromium of the new version, which CI installs
+for it.
 
 **The bump** (`ci/deps/bump-packages.sh`, through `ci/deps-bump.sh <group> <fingerprint>
 --updates=FILE`) is mechanical and made twice, in a scratch worktree and in the checkout: a lockfile
-that does not come out the same, a manifest constraint that moved by itself, another Go line or a
-held package that moved is not mechanical, with nothing left changed.
+that does not come out the same, a manifest constraint that moved by itself, an update of the
+finding that stayed on its old version, another Go line or a held package that moved is not
+mechanical, with nothing left changed. An update the checkout has
+already (a release a person made took it: the new tag, pin or version is in place) is nothing to
+do: the bump ends `current`, and an issue of its own that the weekly run retries closes with "the
+last release has it". An image whose own version moves (gateway-auth, image-upload, supply-chain,
+the Spin shim) moves it wherever its tag is named; a version only RunR's build has
+(`v0.27.2-runr.1`) also wherever it is named alone, but on a line of the past. A bump that changes
+anything under `api/` (an image's version in the API's config and tests) runs PHPUnit as well.
 
 **A release outside the constraint** (`bump_outside`, an update with `"outside": true`) moves the
 constraint first, then the kind's own tool, which must end on the new line:
@@ -1098,7 +1116,7 @@ update required` until a person moves the code on `next`.
 | Kind | Detection | Grouping | Bump | Release or next only | Suites |
 |---|---|---|---|---|---|
 | Composer (`composer-api`: `api/` require and require-dev; the modules' `composer.json` are merged into it) | `composer outdated --locked --minor-only` (direct; a transitive package only for an advisory), `--major-only`, `composer audit --locked` | one finding per check | `composer update <names> --with-dependencies --no-install` (composer.lock only) | release when `composer.lock`'s `packages` moved (the API image); `packages-dev` only: next | PHPUnit, Pint, Larastan, API reference; when it ships also `ci.sh test` and `ci.sh test-helm-upgrade --from=<base tag>` |
-| npm, console (`npm-vue`: `vue/` dependencies and devDependencies) | `npm view <name>@<range> version`, `npm view <name> dist-tags.latest`, `npm audit --package-lock-only` | one finding per check | `npm update <names> --package-lock-only`, `npm audit fix --package-lock-only` for an advisory (package-lock.json only), with npm 11 (npm 10's lockfile-only update fails on the console's tree) | release when a package the bundle or the build takes moved (`ci/deps/npm-shipped.mjs`: the dependencies and `DEPS_NPM_BUILD_ROOTS`, vite and its plugins, with everything they depend on); test and lint tooling only: next | `ui`: `ui-tests.yml`, the steps of `ci.yml`'s `ui` job (lint, Vitest with coverage, the build), its result read from Vitest's JSON report (`ci/ui-results.sh`: every test passed, no test file failed to load, `tests/composables/tutorialSteps.spec.js` ran and passed); when it ships also `ui-stack`: `ui-stack-suite.yml`, `e2e.yml`'s suite (the console against the dev stack, Playwright; its JSON report: no unexpected result, no error) |
+| npm, console (`npm-vue`: `vue/` dependencies and devDependencies) | `npm view <name>@<range> version`, `npm view <name> dist-tags.latest`, `npm audit --package-lock-only` | one finding per check | `npm update <names> --package-lock-only`, then `npm install <name>@<version> --package-lock-only` for an update it left on its old version (packages whose peers pin each other's release, as vitest and `@vitest/coverage-v8` do: npm update moves neither), with `package.json` and the lockfile's ranges put back; `npm audit fix --package-lock-only` for an advisory (package-lock.json only), with npm 11 (npm 10's lockfile-only update fails on the console's tree) | release when a package the bundle or the build takes moved (`ci/deps/npm-shipped.mjs`: the dependencies and `DEPS_NPM_BUILD_ROOTS`, vite and its plugins, with everything they depend on); test and lint tooling only: next | `ui`: `ui-tests.yml`, the steps of `ci.yml`'s `ui` job (lint, Vitest with coverage, the build), its result read from Vitest's JSON report (`ci/ui-results.sh`: every test passed, no test file failed to load, `tests/composables/tutorialSteps.spec.js` ran and passed); when it ships, or moves Playwright (`DEPS_NPM_E2E_ROOTS`, which `ui` does not run), also `ui-stack`: `ui-stack-suite.yml`, `e2e.yml`'s suite (the console against the dev stack, Playwright; its JSON report: no unexpected result, no error) |
 | npm, SDKs (`npm-sdk-sandbox`, `npm-sdk-workflows`) | as the console | one per check | the Sandbox SDK's lockfile as the console's; the Workflow SDK keeps no lockfile, so only its majors are findings | next (an npm package of its own, not in a release's images) | `npm-test:<dir>` (install, typecheck, tests) |
 | Go, region images (`go-agent`, `go-queue-consumer`, `go-gateway-auth`, `go-image-upload`) | `go list -m -u -json all` (direct requirements), the module proxy's next major path, `govulncheck` | one per module | `go get <module>@<version>…`, `go mod tidy` (go.mod, go.sum; another `go` line is not mechanical) | release; gateway-auth and image-upload have versions of their own, which the bump moves a patch (`runtime/ci.sh release-images` lists the new tag, so `release-images.yml` builds it) | `go:<dir>` (gofmt, vet, `go test -race -json`), `image:<Dockerfile>` (the build), the Kind suites that deploy the image: agent and queue consumer `ci.sh test` (the e2e builds them from the checkout) and the upgrade suite, gateway-auth `test-api-product`, image-upload `test-images` and `test-org-transfer` |
 | Go, CLI, Terraform provider, dev tunnel (`go-cli`, `go-terraform-provider`, `go-proxy`) | as above | one per module | as above | next: a dependency release builds no CLI and no provider; `proxy/` is the dev stack's Sentry tunnel | `go:<dir>` |
@@ -1257,7 +1275,7 @@ renders nothing new (`ci/deps/dead-values.php`). The bump sends a chart that sto
 them to a person, and its report lists the ones that wait for a condition.
 
 Locally, in a clean clone of the origin at the last release tag with `composer install` done in
-`api/`: `bash ci/deps-bump.sh traefik 42.4.0` makes the change the bot would commit (`git diff`),
+`api/`: `bash ci/deps-bump.sh traefik 43.0.0` makes the change the bot would commit (`git diff`),
 and its report says what it compared; `--no-render` leaves out the chart rendering.
 `bash ci/deps/release-pins.sh <x.y.z> <x.y.z+1> --server-only --check-only` lists the docs lines
 that would stop a release.

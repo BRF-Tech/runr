@@ -2,8 +2,9 @@
 
 This page describes how RunR protects stored secrets, how secret environment variables reach a
 workload, how the encryption key is rotated, how RunR trusts the runtime patch feed, what the
-audit log records, and how a region keeps its cluster-local services and project pods from other
-callers.
+audit log records, how URLs its users configure are kept away from RunR's own network, what the
+kubeconfig of an organization's own region may do, and how a region keeps its cluster-local
+services and project pods from other callers.
 
 - [Encryption at rest](#encryption-at-rest)
 - [Where secrets never appear](#where-secrets-never-appear)
@@ -21,6 +22,8 @@ callers.
 - [Retention](#retention)
 - [SIEM forwarding](#siem-forwarding)
 - [Permissions](#permissions)
+- [Outbound requests to user-configured URLs](#outbound-requests-to-user-configured-urls)
+- [Tenant region kubeconfigs](#tenant-region-kubeconfigs)
 - [Region network isolation](#region-network-isolation)
 
 ## Encryption at rest
@@ -1144,6 +1147,202 @@ token is scoped). Inside a tenant the audit log shows that tenant's events only;
 (multi-tenant edition) only platform administrators see platform and cross-tenant events. The
 retention period is install-wide: `settings.manage` changes it in the single-tenant edition, a
 platform administrator outside any tenant in the multi-tenant edition.
+
+## Outbound requests to user-configured URLs
+
+RunR calls some URLs that its users configure, and some that it builds on a domain an
+organization controls. One guard (`OutboundUrlGuard`) keeps these requests away from RunR's own
+network:
+
+| Request | Where the URL comes from | Checked |
+|---|---|---|
+| Alert channels (webhook, Slack, Teams), billing webhooks, uptime checks of an absolute URL, a workflow app's endpoint override | the organization's users | when saved and before every request |
+| An organization's OpenID Connect identity provider and self-managed GitLab sign-in, the S3 bucket of an organization's export or import (multi-tenant edition) | the organization | before every request |
+| An organization's runtime sources and custom runtimes: the OCI registry (manifests, blobs, the token service of a Bearer challenge, every redirect), version discovery, the Git host (https and SSH) | the organization's users (`runtimes.use_custom`) | before every read |
+| The JWKS URL of a gateway's JWT route | the gateway's owner | when saved, and by gateway-auth in the region at every connection; a RunR function on the function domain of a platform region not checked, so a region's private ingress keeps serving it |
+| An organization's secret store: Vault / OpenBao `server`, Azure Key Vault `vault_url` (multi-tenant edition) | the organization | when saved, verified and deployed |
+| A project's own URL — uptime checks of the endpoint, request replay, the workflow function URL, the MCP gateway — when its function domain is under the organization's own base domain ([tenancy](tenancy.md)) | DNS of the organization's domain | before every request; on RunR's own domain not checked, so a region's private ingress keeps working |
+
+- **Checked when saved and before every request.** The URL must be `http://` or `https://`
+  (alert channels other than the generic webhook: `https://`), carry no user name or password, and
+  name a plain DNS host or a literal address — a host in another notation (an IPv4 address written
+  as one number or in hex, a non-ASCII or percent-encoded name) is refused. `localhost`,
+  `*.localhost`, `*.local`, `*.internal` and cluster names (`*.svc`, `*.svc.*`) are refused
+  without a lookup.
+- **Every address must be public.** A literal address, or every address the name resolves to,
+  must lie outside these ranges:
+
+  | Family | Not public |
+  |---|---|
+  | IPv4 | `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10` (CGNAT), `127.0.0.0/8`, `169.254.0.0/16` (link-local, cloud metadata `169.254.169.254`), `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `224.0.0.0/4` (multicast), `240.0.0.0/4` (reserved, broadcast) |
+  | IPv6 | everything outside global unicast `2000::/3` — loopback `::1`, `::`, unique local `fc00::/7`, link-local `fe80::/10`, site-local `fec0::/10`, multicast `ff00::/8`, discard `100::/64`, NAT64 local-use `64:ff9b:1::/48`, IPv4-translated `::ffff:0:0:0/96` —, and inside it Teredo `2001::/32`, benchmarking `2001:2::/48`, ORCHID `2001:10::/28` and `2001:20::/28`, documentation `2001:db8::/32` and `3fff::/20` |
+  | IPv6 carrying an IPv4 address | IPv4-mapped `::ffff:a.b.c.d`, IPv4-compatible `::a.b.c.d`, NAT64 `64:ff9b::a.b.c.d` and 6to4 `2002:aabb:ccdd::/48` are judged by the IPv4 address they carry: `::ffff:169.254.169.254` and `2002:a9fe:a9fe::` are refused, `64:ff9b::808:808` (8.8.8.8 behind NAT64) is public |
+
+- **The request goes to the checked addresses.** The name is resolved once, right before the
+  request, and the request is pinned to every address that answered (curl `CURLOPT_RESOLVE`): the
+  HTTP client does not resolve the name again, so a name cannot answer a public address to the
+  check and an internal one to the connection (DNS rebinding). With several addresses the client
+  still fails over from one to the next, never to an address that was not checked. Redirects are
+  never followed.
+- **An egress proxy carries the request to the checked address.** Where the operator gives the
+  API an egress proxy (`HTTPS_PROXY` / `https_proxy` for https, `http_proxy` for http — and
+  `HTTP_PROXY` in the queue workers and commands, never in the web server, where a request header
+  could set it) and `NO_PROXY` / `no_proxy` does not name the host, the request goes through the
+  proxy as a `CONNECT` to the first checked address (curl `CURLOPT_CONNECT_TO`; an http request is
+  tunnelled the same way), with the proxy URL's credentials. The proxy never gets the name, so it
+  cannot resolve it again; the Host header and TLS keep the name, so the certificate is still
+  verified against it. `NO_PROXY` follows Go's rules: a domain with its subdomains, `.domain` for
+  subdomains only, `*`, an address or CIDR, each with an optional port; localhost and loopback
+  addresses never go through a proxy. Only `http://` and `https://` proxies carry these requests;
+  with another one (`socks5://`, or `ALL_PROXY` alone) they go straight to the checked addresses.
+  The MCP gateway's forward to a server on its organization's own domain, a stream of PHP's own,
+  goes through an `http://` proxy the same way and straight to the address behind an `https://`
+  one. The proxy's own rules decide whether it accepts a `CONNECT` to an address.
+- **Redirects of a registry are followed by hand.** A registry serves blobs through a redirect to
+  a CDN: for an organization's registry every hop is checked and pinned again, at most five, and
+  the registry's credentials never go to another host.
+- **Git is pinned too.** An organization's Git source over https reads through curl's resolve list
+  (`http.curloptResolve`) with redirects off; over SSH, git connects to the checked address under
+  the host's name (`HostName`, with `HostKeyAlias` for the known host key, no SSH config file, no
+  proxy command). `git://` has no way to pin its connection and is refused for an organization's
+  source. Git uses no proxy of its own; behind the operator's egress proxy, an https source goes
+  through a local pin proxy that carries its tunnel to the checked address through that proxy
+  (as kubectl does, [Tenant region kubeconfigs](#tenant-region-kubeconfigs)). An SSH source
+  always connects straight to the checked address: SSH goes through no HTTP proxy.
+- **Services in the regions check the address they connect to.** An uptime check that runs in
+  regions is probed by the region's `runr-agent`, and a JWT route's JWKS is fetched by
+  `gateway-auth`, both inside the region's cluster. Their dialer refuses every address of the
+  ranges above at the moment it connects (after their own resolution, so rebinding cannot pass
+  it); these requests use no `HTTP_PROXY` / `HTTPS_PROXY` (through a proxy the dialer would judge
+  the proxy, not the target) and follow no redirect. They leave from the region's cluster, so the
+  API's egress proxy is not theirs to use. A check of the project's own endpoint on
+  RunR's domain, or in a region that is the organization's own cluster, is probed as before.
+- **A secret store is reached by the region's External Secrets Operator.** RunR checks the
+  store's address when it is saved, verified and before every deploy that applies it. On a
+  platform region of the multi-tenant edition the operator's controller, which resolves the name
+  itself when it connects, may reach only DNS, the API server, the region's OpenBao and public
+  addresses (NetworkPolicy `runr-eso-egress`, a CiliumNetworkPolicy on Cilium), plus the platform's
+  own private stores in `secretStores.privateEgressCidrs`
+  ([secret-stores.md](secret-stores.md#network)); a new or changed policy restarts the controller,
+  so the connections it opened before end.
+- **What an organization sees of a failure.** A runtime source that could not be read, a secret
+  store or reference that failed, show a short reason (the guard's, or "could not be reached",
+  "refused the credentials") — not what a host answered; the full message is in the API's log.
+
+Where private targets are the point — an installation that monitors or notifies services on its
+own network — the operator allows them:
+
+| Setting | Allows private targets for |
+|---|---|
+| `observability.uptime.allowPrivateTargets` | uptime checks of an absolute URL, or of a project on its organization's own domain (the control plane and the region agents) |
+| `observability.alerts.allowPrivateTargets` | alert channels and the platform's billing webhook |
+| `observability.replay.allowPrivateTargets` | request replay of a project on its organization's own domain |
+| `apiProduct.jwksAllowPrivateTargets` | the JWKS URLs of JWT routes |
+| `WORKFLOWS_ALLOW_PRIVATE_ENDPOINTS=true` | workflow endpoint overrides and the function URL of a project on its organization's own domain |
+| `MCP_GATEWAY_ALLOW_PRIVATE=true` | the MCP gateway's forwards to a server on its organization's own domain |
+| `RUNR_RUNTIME_SOURCES_ALLOW_PRIVATE=true` | the registries and Git hosts of organizations' runtime sources and custom runtimes |
+| `secretStores.allowPrivateTargets` | the addresses of organizations' secret stores (and no egress policy for the operator's controller) |
+| `secretStores.privateEgressCidrs` | the platform's own stores on private addresses, which the operator's controller of a platform region may then reach |
+| `tenancy.allowPrivateRegionServers` | the API servers of organizations' own regions, never loopback or link-local ([Tenant region kubeconfigs](#tenant-region-kubeconfigs)) |
+
+`WORKFLOWS_…`, `MCP_…` and `RUNR_RUNTIME_SOURCES_…` are environment variables of the API
+(`extraEnv`), the others [Helm values](helm-values.md). A tenant's billing webhook, identity providers and transfer buckets are always held
+to the guard. Platform runtime sources, the platform's secret stores and RunR's own catalog are
+the platform's and are read as before.
+
+## Tenant region kubeconfigs
+
+In the multi-tenant edition an organization's Owner or Admin (`regions.manage`, also
+`sandbox.manage` or `registry.manage`) can add the organization's own regions
+([tenancy.md](tenancy.md#regions-and-quotas)). Their kubeconfig is written by the
+organization, and RunR hands a region's kubeconfig to kubectl, helm and its own Kubernetes
+client — in the API, the queue workers and the terminal servers. Several kubeconfig fields act on
+the machine that reads them: a credential plugin (`exec`, `auth-provider`) runs a program, a
+`tokenFile`, `client-certificate`, `client-key` or `certificate-authority` is a file read from
+that machine's disk, a `proxy-url` sends the connection elsewhere, `as` acts as another account,
+and the `server` is an address RunR connects to. So the kubeconfig of an organization's region is
+held to a fixed set of fields, and its server to the addresses of the [outbound
+guard](#outbound-requests-to-user-configured-urls).
+
+**What the kubeconfig may hold.** Only the current context, its cluster and its user, with these
+fields; anything else, an `extensions` list included, is refused with the field's path:
+
+| Entry | Fields |
+|---|---|
+| top level | `apiVersion: v1`, `kind: Config`, `clusters`, `users`, `contexts`, `current-context`, `preferences` (`colors` only; not kept) |
+| cluster | `server` (`https://host[:port][/path]`, no user name, query or fragment), `certificate-authority-data`, `tls-server-name`, `insecure-skip-tls-verify` |
+| user | `token`, `client-certificate-data` with `client-key-data`, `username` and `password` |
+| context | `cluster`, `user`, `namespace` |
+
+An entry the current context does not use is refused too, so nothing waits in a second user.
+`kubectl config view --minify --flatten` writes such a kubeconfig from a working one: the current
+context only, with the certificate data in the file. A ServiceAccount token or a client
+certificate is the credential. The kubeconfig is read as YAML or JSON (one document) and judged
+by what it resolves to: anchors, aliases and merge keys are expanded first. RunR stores and uses
+the kubeconfig rebuilt from the checked values — not the text it was given — so kubectl and helm
+read exactly what was checked.
+
+**Where the server may be.** `https://` only, and its host is checked like an outbound URL: a
+literal address, or every address the name resolves to, must be public; `localhost`, `*.local`,
+`*.internal` and cluster names (`*.svc`) are refused without a lookup. An organization whose
+clusters sit on the installation's private network gets private addresses with
+`tenancy.allowPrivateRegionServers` (`TENANCY_REGIONS_ALLOW_PRIVATE`, [Helm
+values](helm-values.md#edition)); loopback, link-local (cloud metadata), unspecified and multicast
+addresses stay refused even then.
+
+**RunR connects to the addresses it checked.** The name is resolved and checked each time the
+kubeconfig is read for use (the check is kept for a minute), and every connection is pinned to
+the addresses that answered:
+
+- RunR's own client resolves the server's name through those addresses (curl
+  `CURLOPT_RESOLVE`) and follows no redirect;
+- the native exec client of sandbox commands and terminals connects to the first of them;
+- kubectl and helm get the kubeconfig with a local proxy (`proxy-url: http://127.0.0.1:<port>`,
+  started for the call and stopped with it) that opens tunnels to the server's host and port
+  only, on the checked addresses. kubectl and helm send every request of the kubeconfig through
+  it, so a redirect of the API server to another host or port is refused there, and they resolve
+  no name of the server themselves.
+
+Behind the operator's egress proxy ([above](#outbound-requests-to-user-configured-urls): the
+API's `HTTPS_PROXY`, unless `NO_PROXY` names the server) these connections reach the cluster
+through that proxy, still at the checked address: RunR's client sends a `CONNECT` to the first
+checked address (`CURLOPT_CONNECT_TO`), and the local proxy of kubectl and helm carries each of
+its tunnels as a `CONNECT` to the checked address through it (the next address when the proxy
+refuses one). The native exec client uses no proxy: behind one, sandbox commands and terminals of
+such a region run through kubectl and its local proxy. Without an egress proxy they go straight
+to the addresses.
+
+The server keeps its host name in each case, so TLS verifies the API server's certificate against
+that name (or `tls-server-name`) and the Host header names it. The kubeconfig RunR passes between
+its own parts carries the checked addresses in a marker of its own; kubectl and helm refuse that
+marker, so a copy that reached them without the proxy connects nowhere.
+
+**Checked when saved and when used.** The kubeconfig of a new region, of a replacement
+(`PUT /knative-regions/{id}`), of a move (`POST …/migrate`), of the setup wizard and of its checks
+(`validate-kubeconfig`, `preview-nodes`, `preview-storage-classes`, `check-namespace-preview`,
+`registry-setup/*`) is refused with a validation message before RunR connects anywhere. A stored
+kubeconfig is held to the same rules every time it is read, and again right before it is written
+to disk for kubectl or helm. A region whose stored kubeconfig does not pass (stored by an earlier
+release) is not used at all: nothing connects with it, `region:reconcile` leaves it out, and its
+cluster status says why (Platform → Knative Regions → the region). Replacing the kubeconfig
+brings it back.
+
+**What a failed connection tells.** An organization's users read a short reason when RunR cannot
+reach their cluster — no connection, the credentials refused (with the HTTP status), or an answer
+that is not a Kubernetes API server — not the connection's error, addresses or answer: in the
+checks of the kubeconfig, in every read of the region that reaches its cluster (its nodes, a
+component's install, the Sandbox API's checks, a model service's logs) and in the messages RunR
+stored about the region (its status, a component's install status, the setup of its registry).
+Platform administrators see the details, and the API's log has all of them.
+
+**The organization's other addresses.** A global project's health check asks the region
+Traefik's address, which an organization's region reports from its own cluster: RunR asks it only
+at a public address (a private one with `tenancy.allowPrivateRegionServers`, never loopback or
+link-local) and follows no redirect from it.
+
+Platform regions — those of an installation without tenancy and those a platform administrator
+adds outside an organization — keep their kubeconfig as it is, private servers included: they are
+the operator's own.
 
 ## Region network isolation
 

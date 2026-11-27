@@ -8,6 +8,7 @@ use App\Services\Concerns\KnativeClusterTrait;
 use App\Services\Concerns\KnativeLogTrait;
 use App\Services\Contracts\KnativeConstants;
 use App\Services\Helpers\KnativeVersionHelper;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -20,6 +21,13 @@ class KnativeStatusService implements KnativeConstants
      */
     public function checkStatus(KnativeRegion $region): array
     {
+        // An organization's own region whose kubeconfig RunR refuses (KubeconfigPolicy, its
+        // server's address): nothing connects; the region says why
+        $refusal = app(TenantKubeconfigs::class)->refusal($region);
+        if ($refusal !== null) {
+            return $this->statusResult('error', $refusal, clusterStatus: 'unreachable', clusterMessage: $refusal);
+        }
+
         try {
             $k8s = new KubernetesClient($region->kubeconfig);
 
@@ -31,11 +39,14 @@ class KnativeStatusService implements KnativeConstants
                 'error' => $e->getMessage(),
             ]);
 
+            // the organization's users of its own region read a short reason (the log has the error)
+            $message = TenantKubeconfigs::connectionError($e, ! TenantKubeconfigs::restricts($region));
+
             return $this->statusResult(
                 'error',
-                'Cannot connect to cluster: '.$e->getMessage(),
+                'Cannot connect to cluster: '.$message,
                 clusterStatus: 'unreachable',
-                clusterMessage: $e->getMessage(),
+                clusterMessage: $message,
             );
         }
 

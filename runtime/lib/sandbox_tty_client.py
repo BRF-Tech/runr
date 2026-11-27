@@ -3,7 +3,7 @@
 Runs the runr CLI on a pseudo-terminal against the e2e stack, after the Sandbox API suite (gVisor
 installed, runc allowed on the region):
 
-  cli-sandbox-create   runr sandbox create (python, gvisor) prints the sandbox id
+  cli-sandbox-create   runr sandbox create (python, gvisor; --class another class) prints the sandbox id
   cli-exec-tty         runr sandbox exec -it on a 100x30 terminal: the command runs on a terminal
                        of that size, runr's terminal is raw while it runs, a window change reaches
                        the command (120x40), typed lines are read, runr exits with the command's
@@ -19,7 +19,7 @@ and the exec WebSocket at one address, as behind the chart's gateway: a small pr
 API on :80.
 
 Usage: python sandbox_tty_client.py --base http://localhost --admin-user U --admin-password P
-       [--reverb runr-reverb:8080] [--runr /usr/local/bin/runr]
+       [--reverb runr-reverb:8080] [--runr /usr/local/bin/runr] [--class gvisor]
 """
 
 import argparse
@@ -232,6 +232,7 @@ def main():
     ap.add_argument("--admin-password", default="admin123")
     ap.add_argument("--reverb", default="runr-reverb:8080")
     ap.add_argument("--runr", default="/usr/local/bin/runr")
+    ap.add_argument("--class", dest="sandbox_class", default="gvisor")
     args = ap.parse_args()
 
     host, port = args.reverb.rsplit(":", 1)
@@ -245,7 +246,7 @@ def main():
     version = subprocess.run([runr, "version"], env=env, capture_output=True, text=True).stdout.strip()
     print("  %s; API and exec WebSocket through %s" % ((version.splitlines() or ["runr"])[0], url), flush=True)
 
-    created = subprocess.run([runr, "sandbox", "create", "--runtime", "python", "--class", "gvisor", "--ttl", "15m"],
+    created = subprocess.run([runr, "sandbox", "create", "--runtime", "python", "--class", args.sandbox_class, "--ttl", "15m"],
                              env=env, capture_output=True, text=True, timeout=300)
     sbx = created.stdout.strip()
     if created.returncode != 0 or not sbx:

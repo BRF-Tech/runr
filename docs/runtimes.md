@@ -167,6 +167,14 @@ URLs: `https://host/path`, `ssh://[user@]host[:port]/path` or `user@host:path`. 
 `file://` never. A version's own `git:` source (a runtime image RunR builds) is cloned by the
 region's Kaniko build as before.
 
+An **organization's source** (and an organization's custom runtime) names hosts on public
+addresses: its registry — every request, the token service of a Bearer challenge and each
+redirect to a CDN — and its Git host are checked by RunR's outbound guard right before every read
+and the connection goes to the addresses that check saw ([outbound requests](security.md#outbound-requests-to-user-configured-urls)); `git://` is refused for
+it. A read that fails shows the organization a short reason, the details go to the API's log.
+`RUNR_RUNTIME_SOURCES_ALLOW_PRIVATE=true` lets organizations' sources name private hosts; platform
+sources and RunR's catalog are read as before.
+
 ### Private sources
 
 A source can be private; its credentials are **write-only** — stored encrypted at rest with the
@@ -1581,6 +1589,7 @@ dedicated values for them, so a Helm installation sets them via `extraEnv`.
 | `RUNR_RUNTIME_SOURCE_GIT_TIMEOUT` | `120` | seconds of a `git ls-remote` or clone of a Git source |
 | `RUNR_RUNTIME_ORPHAN_GRACE_DAYS` | `90` | days an [orphaned runtime](#orphaned-runtimes) stays deployable: its sunset |
 | `RUNR_RUNTIME_SOURCES_ALLOW_INSECURE` | `false` | allow `http://` and `git://` Git sources (an internal Git server without TLS) |
+| `RUNR_RUNTIME_SOURCES_ALLOW_PRIVATE` | `false` | let organizations' sources and custom runtimes name private, loopback or cluster-internal registries and Git hosts ([outbound requests](security.md#outbound-requests-to-user-configured-urls)) |
 
 Sources are read by `php artisan runtime-sources:sync` (every five minutes in the scheduler, each
 source at its interval; `--force` reads every enabled source, `--source=<id or name>` one) and at

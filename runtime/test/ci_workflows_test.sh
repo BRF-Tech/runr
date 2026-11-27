@@ -153,7 +153,8 @@ done
 grep -A1 -F 'name: Result' <<<"$ui_tests" | grep -qxF '        if: always()' \
   || fail "ui-tests.yml reads Vitest's report only for some callers (its Result step: if: always())"
 check ui-e2e 'npx playwright install --with-deps chromium' 'npm run test:e2e:mock'
-check go 'gofmt -l .' 'go vet ./...' 'go test -race -count=1' "-not -path './examples/wasm/*'"
+check go 'gofmt -l .' 'go vet ./...' 'go test -race -count=1 -timeout "$timeout"' "-not -path './examples/wasm/*'" \
+  '[ "$dir" = ./terraform-provider-runr ] && timeout=20m'
 check sdk-node 'npm install -g npm@11' 'npm run typecheck' 'npm test'
 check sdk-sandbox-node 'working-directory: sdk/sandbox/node' 'npm ci --no-audit --no-fund' 'npm run typecheck' 'npm test'
 check sdk-python 'for dir in sdk/python sdk/sandbox/python; do' 'python3 -m venv' '"./${dir}[test]"' '"$venv/bin/pytest"'

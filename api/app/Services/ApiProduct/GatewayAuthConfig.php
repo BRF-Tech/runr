@@ -9,6 +9,7 @@ use App\Models\ApiProduct\GatewayAuthScope;
 use App\Models\Gateway;
 use App\Models\GatewayRoute;
 use App\Models\KnativeRegion;
+use App\Services\Helpers\RegionDomains;
 use App\Services\Observability\TenantScope;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -85,7 +86,11 @@ class GatewayAuthConfig
                     'scope' => $scope,
                     'gateway_id' => $gateway->id,
                     'mode' => $route->auth_mode,
-                    'jwt' => $route->auth_mode === GatewayRoute::AUTH_JWT ? self::jwt($route) : null,
+                    // gateway-auth fetches the JWKS from public addresses only unless the platform allows
+                    // private ones or the JWKS is a RunR function on the platform's own domain
+                    'jwt' => $route->auth_mode === GatewayRoute::AUTH_JWT
+                        ? self::jwt($route) + ['allow_private_targets' => self::jwksMayBePrivate(self::jwt($route)['jwks_url'])]
+                        : null,
                 ];
             }
         }
@@ -139,6 +144,23 @@ class GatewayAuthConfig
             'subject_claim' => (string) (($config['subject_claim'] ?? null) ?: 'sub'),
             'require_consumer' => (bool) ($config['require_consumer'] ?? false),
         ];
+    }
+
+    /**
+     * A JWT route's JWKS may be on a private address: the platform allows it
+     * (api_product.jwks_allow_private_targets), or its host is a RunR function on the platform's own
+     * domain (RegionDomains::platformFunctionHost()), which a region with a private ingress answers
+     * on a private address. A name under the organization's own base domain, or any other, stays
+     * held to the outbound guard, when the route is saved and when gateway-auth connects.
+     */
+    public static function jwksMayBePrivate(string $jwksUrl): bool
+    {
+        if ((bool) config('api_product.jwks_allow_private_targets', false)) {
+            return true;
+        }
+        $host = parse_url($jwksUrl, PHP_URL_HOST);
+
+        return is_string($host) && $host !== '' && RegionDomains::platformFunctionHost($host);
     }
 
     /** @return array{id: string, hash: string, consumer_id: string, plan_id: string|null, expires_at: int|null, routes: object|null} */

@@ -248,7 +248,9 @@ services:
     volumes:
       - ./vue:/app
       - vue_modules:/app/node_modules
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    # --no-save: the packages of vue/package-lock.json, which the image's npm (10) would otherwise
+    # rewrite in the checkout (the lockfile is npm 11's: CI and the console's Dockerfile install from it)
+    command: sh -c "npm install --no-save && npm run dev -- --host 0.0.0.0"
     depends_on:
       api:
         condition: service_started

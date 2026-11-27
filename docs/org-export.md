@@ -114,7 +114,7 @@ the export goes on. Cancelling stops the job between two steps and removes what 
 | --- | --- |
 | `download` (default) | kept on the API's volume and downloaded from `GET /api/org-transfers/{id}/download` (`Range: bytes=N-` resumes; `X-Content-SHA256` header) until it expires |
 | `binding` | an object binding of the organization: a transfer pod in the binding's region copies it into the bucket (`<prefix>/<file name>`) with the binding's own key; nothing stays on the API |
-| `s3` | any S3-compatible bucket: endpoint, bucket, region, path style, access key and secret key — given for this export only, kept in the job's encrypted queue payload and nowhere else (Signature Version 4, multipart in 64 MiB parts) |
+| `s3` | any S3-compatible bucket: endpoint, bucket, region, path style, access key and secret key — given for this export only, kept in the job's encrypted queue payload and nowhere else (Signature Version 4, multipart in 64 MiB parts). An organization of the multi-tenant edition names a bucket on a public address: every request is checked and sent to the checked addresses ([outbound requests](security.md#outbound-requests-to-user-configured-urls)) |
 
 ## Import
 
@@ -141,7 +141,7 @@ The same places an export writes to (`POST /api/org-transfers/import` with `sour
 | --- | --- |
 | upload (default) | the chunks above |
 | `binding` (`binding_id`, `key`) | an object binding of the organization: a **transfer pod** in the binding's region copies the object out of the bucket with the binding's own key (`rclone`) and serves it with its size and SHA-256; RunR downloads it in ranges (`transfer_chunk_bytes`) through the Kubernetes API server's service proxy — the region needs no route to RunR. The pod's emptyDir holds the whole package: raise `RUNR_ORG_TRANSFER_POD_DISK_GB` for packages over 20 GiB |
-| `s3` (`endpoint`, `bucket`, `region`, `path_style`, `key`, `access_key_id`, `secret_access_key`) | any S3-compatible bucket: HeadObject for size and ETag, then GetObject in ranges of `fetch_chunk_bytes` (16 MiB) with `If-Match` on the ETag. The credentials are used for this import only: they travel in the fetch job's encrypted queue payload and nowhere else — not in the transfer row, the audit log or a response |
+| `s3` (`endpoint`, `bucket`, `region`, `path_style`, `key`, `access_key_id`, `secret_access_key`) | any S3-compatible bucket: HeadObject for size and ETag, then GetObject in ranges of `fetch_chunk_bytes` (16 MiB) with `If-Match` on the ETag. The credentials are used for this import only: they travel in the fetch job's encrypted queue payload and nowhere else — not in the transfer row, the audit log or a response. An organization of the multi-tenant edition reads from a bucket on a public address, as for an export |
 
 - **Resumable.** The bytes read stay in the import's package file. A failing range is tried again
   a few times; a failure the network or the region caused is retried by the job (3 attempts,

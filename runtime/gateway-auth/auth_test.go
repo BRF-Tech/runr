@@ -45,7 +45,7 @@ func fixture(jwksURL string) *Config {
 			{ID: routeK, Scope: "_", GatewayID: gwA, Mode: "key"},
 			{ID: routeK2, Scope: "_", GatewayID: gwA, Mode: "key"},
 			{ID: routeB, Scope: "_", GatewayID: gwB, Mode: "key"},
-			{ID: routeJ, Scope: "_", GatewayID: gwA, Mode: "jwt", JWT: &JWTConfig{JWKSURL: jwksURL, SubjectClaim: "sub"}},
+			{ID: routeJ, Scope: "_", GatewayID: gwA, Mode: "jwt", JWT: &JWTConfig{JWKSURL: jwksURL, SubjectClaim: "sub", AllowPrivateTargets: true}}, // the test JWKS listens on loopback,
 		},
 		Consumers: []Consumer{
 			{ID: "c-gw", Scope: "_", GatewayID: &gwAID, PlanID: &planID, ExternalID: str("CUST-7"), Subject: str("partner-1")},

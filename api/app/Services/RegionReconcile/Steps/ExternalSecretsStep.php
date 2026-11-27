@@ -10,9 +10,11 @@ use App\Services\Secrets\External\ExternalSecretsInstallService;
 /**
  * External Secrets Operator (docs/secret-stores.md), on clusters where a region has it: the Helm
  * release runs the chart version this release pins (config secrets.external.chart_version), with
- * RunR's mirror of its image. Another version (an earlier release's) is upgraded in place — the
- * operator restarts, the Secrets it filled stay and are refreshed on its next sync. A region
- * without the operator is left alone: it is an optional feature.
+ * the values it sets (ExternalSecretsInstallService::values(), RunR's mirror of the image among
+ * them). Another version or other values (an earlier release's install) are upgraded in place —
+ * the operator restarts, the Secrets it filled stay and are refreshed on its next sync. Values
+ * helm cannot read leave the release as it is. A region without the operator is left alone: it is
+ * an optional feature.
  */
 final class ExternalSecretsStep implements ReconcileStep
 {
@@ -39,10 +41,13 @@ final class ExternalSecretsStep implements ReconcileStep
         $deployed = $service->deployedVersion($target->region);
 
         if ($deployed === $pinned) {
-            return [];
+            if ($service->deployedValuesDiffer($target->region) !== true) {
+                return [];
+            }
+            $what = 'External Secrets Operator with the values of this release (chart '.$pinned.' as before, its values differ); the operator restarts, the Secrets it filled stay';
+        } else {
+            $what = 'External Secrets Operator to chart '.$pinned.' ('.($deployed !== null ? "runs {$deployed}" : 'release not found').'); the operator restarts, the Secrets it filled stay';
         }
-
-        $what = 'External Secrets Operator to chart '.$pinned.' ('.($deployed !== null ? "runs {$deployed}" : 'release not found').'); the operator restarts, the Secrets it filled stay';
         if ($dryRun) {
             return ["would install {$what}"];
         }

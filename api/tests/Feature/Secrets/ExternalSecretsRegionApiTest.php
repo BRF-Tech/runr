@@ -114,7 +114,8 @@ class ExternalSecretsRegionApiTest extends TestCase
                 && $values['certController']['image'] === $values['image']
                 && $values['processClusterStore'] === false
                 && $values['processPushSecret'] === false
-                && $values['processClusterPushSecret'] === false;
+                && $values['processClusterPushSecret'] === false
+                && $values['concurrent'] === ExternalSecretsInstallService::CONCURRENT;
         })->andReturn(new HelmResult(true, 'deployed', '', 0));
         $this->app->instance(HelmService::class, $helm);
 
@@ -123,6 +124,39 @@ class ExternalSecretsRegionApiTest extends TestCase
         $this->assertSame(RegionSecretSetting::ESO_INSTALLING, $settings->eso_status);
         $this->assertSame(config('secrets.external.chart_version'), $settings->eso_chart_version);
         $this->assertNotNull($settings->eso_installed_at);
+    }
+
+    public function test_the_controller_runs_several_reconciles_at_a_time(): void
+    {
+        // a dropped store connection holds one reconcile for 60 s: the others go on
+        $this->assertSame(4, ExternalSecretsInstallService::CONCURRENT);
+        $this->assertSame(4, ExternalSecretsInstallService::values()['concurrent']);
+    }
+
+    public function test_the_installed_values_are_compared_with_this_releases(): void
+    {
+        $values = ExternalSecretsInstallService::values();
+        $reordered = array_reverse($values, true);
+        $reordered['image'] = array_reverse($values['image'], true);
+        $this->assertSame(ExternalSecretsInstallService::fingerprint($values), ExternalSecretsInstallService::fingerprint($reordered));
+
+        $earlier = $values;
+        unset($earlier['concurrent']);
+        $answers = [
+            [json_encode($reordered), false],
+            [json_encode($earlier), true],
+            [json_encode(['concurrent' => 4]), true],
+            ['null', true],
+            [null, null],
+            ['not json', null],
+        ];
+        foreach ($answers as [$json, $differ]) {
+            $helm = Mockery::mock(HelmService::class);
+            $helm->shouldReceive('releaseValuesJson')->once()->with('external-secrets', 'external-secrets', (string) $this->region->kubeconfig)->andReturn($json);
+            $this->app->instance(HelmService::class, $helm);
+
+            $this->assertSame($differ, app(ExternalSecretsInstallService::class)->deployedValuesDiffer($this->region), (string) $json);
+        }
     }
 
     public function test_a_failed_install_says_why(): void

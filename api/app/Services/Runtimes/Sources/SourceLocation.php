@@ -100,6 +100,33 @@ final class SourceLocation
         return null;
     }
 
+    /**
+     * Host and port RunR connects to for a source: an OCI catalog's registry (443 unless named),
+     * a Git URL's host (https 443, http 80, ssh 22, git 9418 unless named).
+     *
+     * @return array{0: string, 1: int}
+     */
+    public static function endpoint(string $kind, string $url): array
+    {
+        $url = trim($url);
+        if ($kind === RuntimeSource::KIND_OCI) {
+            $registry = explode('/', $url, 2)[0];
+            [$host, $port] = str_contains($registry, ':') ? explode(':', $registry, 2) : [$registry, '443'];
+
+            return [strtolower($host), (int) $port];
+        }
+        if (preg_match('~^([a-z]+)://(?:[^@/]+@)?([^/:]+)(?::(\d+))?/~i', $url, $m)) {
+            $default = ['https' => 443, 'http' => 80, 'ssh' => 22, 'git' => 9418][strtolower($m[1])] ?? 443;
+
+            return [strtolower($m[2]), empty($m[3]) ? $default : (int) $m[3]];
+        }
+        if (preg_match('~^[^@]+@([^:]+):~', $url, $m)) {
+            return [strtolower($m[1]), 22];
+        }
+
+        return ['', 0];
+    }
+
     public static function isSsh(string $url): bool
     {
         return str_starts_with($url, 'ssh://') || (bool) preg_match('~^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:~', $url);

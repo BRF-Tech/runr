@@ -75,8 +75,22 @@ class GatewayAuthSyncTest extends TestCase
 
         $this->assertEqualsCanonicalizing(['key', 'jwt'], array_column($data['routes'], 'mode'), 'public routes are not sent');
         $jwt = collect($data['routes'])->firstWhere('mode', 'jwt');
-        $this->assertSame(['jwks_url' => 'https://id.example.com/jwks', 'issuer' => null, 'audience' => 'partners', 'subject_claim' => 'sub', 'require_consumer' => false], $jwt['jwt']);
+        $this->assertSame(['jwks_url' => 'https://id.example.com/jwks', 'issuer' => null, 'audience' => 'partners', 'subject_claim' => 'sub', 'require_consumer' => false, 'allow_private_targets' => false], $jwt['jwt']);
         $this->assertSame('_', $jwt['scope']);
+
+        // gateway-auth fetches the JWKS from public addresses only unless the platform allows private ones
+        config(['api_product.jwks_allow_private_targets' => true]);
+        $this->assertTrue(collect($this->fetch()->json('routes'))->firstWhere('mode', 'jwt')['jwt']['allow_private_targets']);
+        config(['api_product.jwks_allow_private_targets' => false]);
+
+        // ... or the JWKS is a RunR function on the platform's own domain (the region's function
+        // domain), which the region's private ingress may answer
+        $this->reg->update(['knative_settings' => ['knative_domain' => 'eu.runr.example']]);
+        $jwtRoute = GatewayRoute::query()->where('auth_mode', 'jwt')->firstOrFail();
+        $jwtRoute->update(['jwt_config' => ['jwks_url' => 'https://issuer.eu.runr.example/', 'audience' => 'partners']]);
+        $this->assertTrue(collect($this->fetch()->json('routes'))->firstWhere('mode', 'jwt')['jwt']['allow_private_targets']);
+        $jwtRoute->update(['jwt_config' => ['jwks_url' => 'https://issuer.eu.runr.example.evil.example/', 'audience' => 'partners']]);
+        $this->assertFalse(collect($this->fetch()->json('routes'))->firstWhere('mode', 'jwt')['jwt']['allow_private_targets']);
 
         // one usable key: the revoked and the expired one are left out
         $this->assertCount(1, $data['keys']);

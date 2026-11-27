@@ -115,11 +115,11 @@ class OciCatalogReader
         $client = OciRegistryClient::direct($timeout);
         if ($source->hasRegistryCredentials()) {
             $host = $source->registry_host ?: ImageRef::parse($source->reference())->registry;
-
-            return $client->withCredentials($host, (string) $source->credential('registry', 'username'), (string) $source->credential('registry', 'password'));
+            $client = $client->withCredentials($host, (string) $source->credential('registry', 'username'), (string) $source->credential('registry', 'password'));
         }
 
-        return $client;
+        // An organization's source names its registry: public addresses only, every request checked
+        return $source->heldToOutboundGuard() ? $client->guarded() : $client;
     }
 
     /**

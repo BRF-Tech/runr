@@ -31,9 +31,13 @@ trait BuildsRuntimePatches
     /** @var list<string> "METHOD path" of every registry request */
     protected array $registryRequests = [];
 
+    /** @var list<array{url: string, options: array<string, mixed>, headers: array<string, mixed>}> every registry request with the client options it was sent with */
+    protected array $registrySent = [];
+
     /**
-     * Answers before the fake registry (a token service, a 401 challenge): a response, or null to
-     * let the registry answer. A second Http::fake() would never be asked — the first fake answers.
+     * Answers before the fake registry (a token service, a 401 challenge, a redirect): a response,
+     * or null to let the registry answer. A second Http::fake() would never be asked — the first
+     * fake answers.
      */
     protected ?\Closure $registryGate = null;
 
@@ -177,9 +181,10 @@ trait BuildsRuntimePatches
     /** Http::fake of ghcr.io answering from $this->registry (404 for anything else). */
     protected function fakeRegistry(): void
     {
-        Http::fake(function (Request $request) {
+        Http::fake(function (Request $request, array $options = []) {
             $path = (string) parse_url($request->url(), PHP_URL_PATH);
             $this->registryRequests[] = $request->method().' '.$path;
+            $this->registrySent[] = ['url' => $request->url(), 'options' => $options, 'headers' => $request->headers()];
             if ($this->registryGate && ($gated = ($this->registryGate)($request)) !== null) {
                 return $gated;
             }

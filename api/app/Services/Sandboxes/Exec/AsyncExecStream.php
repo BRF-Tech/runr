@@ -72,7 +72,8 @@ final class AsyncExecStream
             'tls' => $this->config->sslOptions(),
             'happy_eyeballs' => false,
         ], $this->loop);
-        $uri = ($this->config->scheme === 'https' ? 'tls://' : 'tcp://').$this->config->host.':'.$this->config->port;
+        // tls://host:port — a pinned server's checked address (ExecKubeconfig::address())
+        $uri = $this->config->address();
 
         $this->upgradeTimer = $this->loop->addTimer(self::UPGRADE_TIMEOUT, function () {
             $this->refuse(new NativeExecUnsupported('the exec upgrade timed out'));

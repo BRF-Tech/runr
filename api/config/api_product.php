@@ -22,11 +22,13 @@ use App\Support\Images\RegistryMove;
 |                      without Redis runs one pod with in-memory counters
 | rotation_overlap_minutes  default overlap of a rotated key (the old key works that long)
 | usage_retention_days hourly usage rows kept (the monthly event has the month's totals)
+| jwks_allow_private_targets  true: a JWT route's JWKS URL may name a private address (checked
+|                      when the route is saved and by gateway-auth when it connects)
 |
 */
 
 return [
-    'gateway_auth_image' => RegistryMove::ref(env('RUNR_GATEWAY_AUTH_IMAGE') ?: 'ghcr.io/brf-tech/runr/gateway-auth:1.1.1'),
+    'gateway_auth_image' => RegistryMove::ref(env('RUNR_GATEWAY_AUTH_IMAGE') ?: 'ghcr.io/brf-tech/runr/gateway-auth:1.1.2'),
     'callback_url' => env('RUNR_GATEWAY_AUTH_CALLBACK_URL'),
     'sync_seconds' => (int) env('RUNR_GATEWAY_AUTH_SYNC_SECONDS', 10),
     'on_demand_sync_seconds' => (int) env('RUNR_GATEWAY_AUTH_ON_DEMAND_SYNC_SECONDS', 2),
@@ -34,4 +36,5 @@ return [
     'replicas' => (int) env('RUNR_GATEWAY_AUTH_REPLICAS', 2),
     'rotation_overlap_minutes' => (int) env('RUNR_API_KEY_ROTATION_OVERLAP_MINUTES', 1440),
     'usage_retention_days' => (int) env('RUNR_API_USAGE_RETENTION_DAYS', 400),
+    'jwks_allow_private_targets' => (bool) env('RUNR_GATEWAY_JWKS_ALLOW_PRIVATE', false),
 ];

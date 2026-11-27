@@ -486,6 +486,10 @@ Redaction happens in the wrapper, before a capture leaves the pod, and again in 
   project's own list are replaced by `REDACTED`
 - headers, bodies and replay results are stored encrypted
 
+A project whose function domain is under its organization's own base domain is replayed to the
+addresses the outbound guard checked right before, never to a private one unless
+`replay.allowPrivateTargets` ([outbound requests](security.md#outbound-requests-to-user-configured-urls)); on RunR's own domain the replay goes out as before.
+
 **Replay** (`POST /api/projects/{p}/replays/{id}/replay`, permission `replay.manage`) re-sends the
 request to the project's endpoint (`https://<slug>.<knative domain>`), which serves the current
 revision. Redacted headers are not sent; headers needed for the replay (for example a test
@@ -510,7 +514,7 @@ path on the project's endpoint or an absolute `url`.
 
 | Field | Default | |
 |-------|---------|-|
-| `path` / `url` | `/` | absolute URLs on private addresses are refused unless `uptime.allowPrivateTargets` |
+| `path` / `url` | `/` | absolute URLs on private addresses are refused unless `uptime.allowPrivateTargets` ([outbound requests](security.md#outbound-requests-to-user-configured-urls)) |
 | `method` | `GET` | `GET`, `HEAD`, `POST`; optional `headers` (stored encrypted) |
 | `interval_seconds` | 60 | 30 – 3600 (`uptime.minIntervalSeconds`) |
 | `timeout_seconds` | 10 | ≤ 60 |
@@ -527,8 +531,12 @@ incident's title and message can be edited (`PATCH /api/projects/{p}/uptime-inci
 appear on the status page.
 
 The control plane probes due checks every 30 seconds (`observability:run uptime`, parallel
-requests). Region agents fetch their checks (`GET /api/internal/observability/agent/{region}/uptime-checks`)
-and post results (`POST …/uptime-results`) with the agent token; the agent finds RunR's API
+requests). An absolute URL is checked before every probe and probed at the addresses that check
+saw, without following redirects; a region agent refuses a private address of an absolute URL
+when it connects, unless `uptime.allowPrivateTargets`
+([outbound requests](security.md#outbound-requests-to-user-configured-urls)). Region agents fetch
+their checks (`GET /api/internal/observability/agent/{region}/uptime-checks`, each with
+`allow_private_targets`) and post results (`POST …/uptime-results`) with the agent token; the agent finds RunR's API
 through `RUNR_API_URL` or its WebSocket URL, whose host RunR accepts on these routes even when it
 is not the console's (the in-cluster gateway in RunR's own cluster,
 [regions.md](regions.md#network-reachability)), and `RUNR_UPTIME_DISABLED=true` switches its
@@ -586,8 +594,10 @@ Observability → **Alerts** (`alerts.manage`).
 
 Webhook URLs, bot tokens and signing secrets are stored encrypted and never returned: the API
 shows the host of a URL and whether a secret is set. URLs on private addresses are refused unless
-`alerts.allowPrivateTargets`. "Send test" delivers a test message at once and records the result
-on the channel.
+`alerts.allowPrivateTargets`, when the channel is saved and again before every delivery, which goes
+to the addresses that check saw and follows no redirect
+([outbound requests](security.md#outbound-requests-to-user-configured-urls)). "Send test" delivers a
+test message at once and records the result on the channel.
 
 Webhook requests carry `X-RunR-Event` (`alert.firing`, `alert.resolved`, `test`),
 `X-RunR-Timestamp`, `X-RunR-Alert-Id` and, with a secret,
@@ -688,7 +698,8 @@ Helm values (`observability.*`, rendered into the API's `OBS_*` variables):
 | `replay.maxBodyBytes`, `replay.retentionDays`, `replay.maxCaptures` | `65536`, `7`, `500` | project defaults / limit |
 | `replay.ingestUrl` | `""` | RunR's base URL as seen from region pods; empty: derived from the region's agent URL |
 | `uptime.minIntervalSeconds`, `uptime.resultsRetentionDays` | `30`, `90` | |
-| `uptime.allowPrivateTargets`, `alerts.allowPrivateTargets` | `false` | allow private addresses for absolute check URLs / alert URLs |
+| `uptime.allowPrivateTargets`, `alerts.allowPrivateTargets` | `false` | allow private addresses for absolute check URLs (and the endpoint of a project on its organization's own domain) / alert URLs |
+| `replay.allowPrivateTargets` | `false` | allow private addresses for replays of a project on its organization's own domain |
 | `loadTest.enabled`, `loadTest.dailyLimit`, `loadTest.maxUsers`, `loadTest.maxDurationSeconds`, `loadTest.maxConcurrentPerRegion`, `loadTest.image` | `true`, `20`, `100`, `300`, `5`, `""` | [load tests](load-test.md#configuration) |
 | `statusPage.enabled` | `true` | |
 | `alerts.deliveryTries` | `4` | |

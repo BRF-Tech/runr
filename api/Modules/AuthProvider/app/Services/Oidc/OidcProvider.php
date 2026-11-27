@@ -26,7 +26,8 @@ use Laravel\Socialite\Two\User;
  * mapping).
  *
  * Calls to the identity provider go through Laravel's HTTP client. In a tenant's context they
- * may only reach public addresses and follow no redirects (OutboundUrlGuard).
+ * may only reach public addresses, go to the addresses that were checked (the name is resolved
+ * once, OutboundUrlGuard::target()) and follow no redirects.
  */
 class OidcProvider extends AbstractProvider
 {
@@ -207,7 +208,8 @@ class OidcProvider extends AbstractProvider
             $fields['code_verifier'] = $this->codeVerifier;
         }
 
-        $request = $this->http();
+        $url = $this->getTokenUrl();
+        $request = $this->http($url);
         if ($this->usesClientSecretPost()) {
             $fields['client_id'] = $this->clientId;
             $fields['client_secret'] = $this->clientSecret;
@@ -217,7 +219,6 @@ class OidcProvider extends AbstractProvider
             ]);
         }
 
-        $url = $this->getTokenUrl();
         $response = $this->send(fn () => $request->asForm()->post($url, $fields), $url);
         if (! $response->successful()) {
             $error = $response->json('error');
@@ -313,8 +314,8 @@ class OidcProvider extends AbstractProvider
             return [];
         }
 
-        $this->guard($url);
-        $response = $this->send(fn () => $this->http()->withToken($token)->get($url), $url);
+        $request = $this->http($url);
+        $response = $this->send(fn () => $request->withToken($token)->get($url), $url);
         if (! $response->successful()) {
             throw new OidcException("the userinfo endpoint answered {$response->status()}");
         }
@@ -411,8 +412,8 @@ class OidcProvider extends AbstractProvider
     /** @return array<string, mixed> */
     private function getJson(string $url): array
     {
-        $this->guard($url);
-        $response = $this->send(fn () => $this->http()->get($url), $url);
+        $request = $this->http($url);
+        $response = $this->send(fn () => $request->get($url), $url);
         if (! $response->successful()) {
             throw new OidcException("{$url} answered {$response->status()}");
         }
@@ -435,23 +436,38 @@ class OidcProvider extends AbstractProvider
         }
     }
 
-    private function http(): PendingRequest
+    /** A client for a request to $url, checked (guard()) right before the request and pinned to the checked addresses. */
+    private function http(string $url): PendingRequest
     {
+        $options = $this->guard($url);
         $request = Http::timeout(max(1, (int) config('authprovider.oidc.timeout', 15)))->acceptJson();
 
-        return $this->publicTargetsOnly ? $request->withOptions(['allow_redirects' => false]) : $request;
+        return $options !== [] ? $request->withOptions($options) : $request;
     }
 
-    private function guard(string $url): void
+    /**
+     * An http(s) URL, and in a tenant's context one of a public address (OutboundUrlGuard::target()).
+     *
+     * @return array<string, mixed> the request options of a request to $url: none, or no
+     *                              redirects and the pin of the checked addresses
+     */
+    private function guard(string $url): array
     {
         $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
         if (! in_array($scheme, ['https', 'http'], true)) {
             throw new OidcException("{$url} is not an http(s) URL");
         }
 
-        if ($this->publicTargetsOnly && ($reason = app(OutboundUrlGuard::class)->check($url)) !== null) {
-            throw new OidcException("{$url}: {$reason}");
+        if (! $this->publicTargetsOnly) {
+            return [];
         }
+
+        $target = app(OutboundUrlGuard::class)->target($url);
+        if (! $target->allowed()) {
+            throw new OidcException("{$url}: {$target->reason}");
+        }
+
+        return $target->options();
     }
 
     /** @param array<string, mixed> $claims */

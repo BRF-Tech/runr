@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Concerns;
 
+use App\Models\Deployment;
 use App\Models\Version;
 use App\Services\Runtimes\RuntimeRegistry;
 
@@ -324,7 +325,10 @@ trait E2eTestRunnerTrait
                     return;
                 }
                 if ($status === 'failed') {
-                    $test['steps']['ready'] = 'K8s rejected';
+                    // why the cluster refused it (the deployment's Knative message: a Revision's
+                    // condition, a pod that does not start), so a failed run says more than that
+                    $why = trim((string) Deployment::query()->where('project_id', $test['projectId'])->latest('created_at')->value('knative_message'));
+                    $test['steps']['ready'] = 'K8s rejected'.($why !== '' ? ': '.mb_substr($why, 0, 255) : '');
 
                     return;
                 }

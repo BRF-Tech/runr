@@ -7,6 +7,9 @@ use App\Services\Concerns\KubernetesNamespacedTrait;
 use App\Services\Contracts\KnativeConstants;
 use App\Services\Helpers\PrivateIngress;
 use App\Services\InternalNetwork\InternalNetwork;
+use App\Services\Kubeconfigs\KubeconfigPin;
+use App\Services\Observability\OutboundProxy;
+use App\Services\Observability\OutboundTarget;
 use GuzzleHttp\Handler\CurlHandler;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -51,8 +54,24 @@ class KubernetesClient
     /** @var array<string, mixed> the kubeconfig's user entry */
     private array $user;
 
-    public function __construct(string $kubeconfigYaml)
+    /**
+     * The checked addresses of an organization's region server (KubeconfigPin), null for a
+     * kubeconfig without a pin.
+     *
+     * @var list<string>|null
+     */
+    private ?array $pinned = null;
+
+    /**
+     * $kubeconfigYaml null or empty: the region has no kubeconfig RunR uses (none, or an
+     * organization's that TenantKubeconfigs refused) — nothing connects.
+     */
+    public function __construct(?string $kubeconfigYaml)
     {
+        if ($kubeconfigYaml === null || $kubeconfigYaml === '') {
+            throw new \RuntimeException((string) __('regions.kubeconfig.none'));
+        }
+
         $config = Yaml::parse($kubeconfigYaml);
 
         $contextName = $config['current-context'];
@@ -63,6 +82,10 @@ class KubernetesClient
         $this->server = rtrim($cluster['server'], '/');
         $this->cluster = (array) $cluster;
         $this->user = (array) $user;
+        $this->pinned = KubeconfigPin::addresses($this->cluster);
+        if ($this->pinned !== null && ($this->pinned === [] || KubeconfigPin::hostPort($this->server) === null)) {
+            throw new \RuntimeException((string) __('regions.kubeconfig.server'));
+        }
         $this->transportKey = hash('sha256', serialize([
             $this->server,
             $cluster['certificate-authority-data'] ?? null,
@@ -70,6 +93,7 @@ class KubernetesClient
             $user['token'] ?? null,
             $user['client-certificate-data'] ?? null,
             $user['client-key-data'] ?? null,
+            $this->pinned,
         ]));
     }
 
@@ -426,7 +450,7 @@ class KubernetesClient
 
     private function buildHttpOptions(array $cluster, array $user): array
     {
-        $options = [];
+        $options = $this->pinOptions();
 
         // TLS — CA certificate
         if (! empty($cluster['certificate-authority-data'])) {
@@ -453,6 +477,29 @@ class KubernetesClient
         }
 
         return $options;
+    }
+
+    /**
+     * An organization's region server (a pinned kubeconfig): every request goes to the checked
+     * addresses (OutboundTarget::options(): straight through curl's resolve list for the server's
+     * name, or through the proxy of the API's environment as a CONNECT to the first checked
+     * address, which the proxy cannot resolve again) and no redirect is followed: it would lead to
+     * an address nobody checked. A literal address goes to itself, through that proxy where one
+     * applies. Nothing for any other kubeconfig.
+     *
+     * @return array<string, mixed>
+     */
+    private function pinOptions(): array
+    {
+        if ($this->pinned === null) {
+            return [];
+        }
+        $server = (array) KubeconfigPin::hostPort($this->server);
+        if (filter_var($server['host'], FILTER_VALIDATE_IP) !== false) {
+            return ['allow_redirects' => false, 'proxy' => OutboundProxy::for('https', $server['host'], $server['port']) ?? ''];
+        }
+
+        return OutboundTarget::pinned($server['host'], $server['port'], $this->pinned, 'https')->options();
     }
 
     // ── URL builders ────────────────────────────────────────────────────────
@@ -545,6 +592,7 @@ class KubernetesClient
             'RuntimeClass' => 'runtimeclasses',
             'ClusterImagePolicy' => 'clusterimagepolicies', // sigstore policy-controller (supply chain)
             'NetworkPolicy' => 'networkpolicies',
+            'CiliumNetworkPolicy' => 'ciliumnetworkpolicies',
             'Prometheus' => 'prometheuses',                 // prometheus-operator (region metrics)
             default => strtolower($kind).'s',
         };

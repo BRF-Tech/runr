@@ -59,6 +59,8 @@ class RegionMigrateTenantProjectsTest extends TestCase
         parent::setUp();
         $this->setUpTenancy();
         config(['tenancy.enabled' => true]);
+        // own regions' API servers at a public address (an organization's region is reached there only)
+        $this->resolveRegionHosts('old.cluster.test', 'new.cluster.test');
 
         // What TenancyServiceProvider wires with TENANCY_ENABLED: the region sync to the copies and
         // the kubeconfig resolver of a copy (read from the central row)

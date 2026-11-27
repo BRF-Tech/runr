@@ -513,6 +513,13 @@ return [
 
     // ── Runtime kaynakları (docs/runtimes.md#runtime-sources) ──
     'runtime_sources' => [
+        // Bir organizasyonun okunamayan kaynağı için gördüğü (ayrıntılar kayıtta)
+        'read_failed' => [
+            'unreachable' => 'Kaynağa ulaşılamadı.',
+            'not_found' => 'Kaynak yok ya da herkese açık değil; özel bir kaynak kimlik bilgisi ister.',
+            'auth_failed' => 'Kaynak kimlik bilgilerini reddetti.',
+            'patch_feed' => 'Yama akışı okunamadı.',
+        ],
         'not_allowed' => 'Runtime kaynağı bağlamak için runtimes.manage ya da (özel runtime\'lar açıkken) runtimes.use_custom yetkisi gerekir.',
         'default_readonly' => 'RunR\'ın kataloğu kurulum tarafından ayarlanır (RUNR_RUNTIME_CATALOG_*): burada yalnızca okunup okunmayacağı ve ne sıklıkla okunacağı değişebilir.',
         'default_delete' => 'RunR\'ın kataloğu kaldırılamaz; API imajının kataloğunu kullanmak için kapatın.',
@@ -549,6 +556,8 @@ return [
         'eso_install_queued' => 'External Secrets Operator kuruluyor.',
         'eso_uninstall_queued' => 'External Secrets Operator kaldırılıyor.',
         'reference_not_applied' => 'Henüz eşitlenmedi: başvuruyu uygulamak için projeyi dağıtın.',
+        'reference_failed' => 'Değer gizli bilgi deposundan okunamadı: başvuruyu ve deponun rol ve güven ayarlarını denetleyin.',
+        'store_address' => '":store" gizli bilgi deposu kullanılamaz: :reason',
         'openbao_needs_eso' => '":region" bölgesindeki OpenBao için orada External Secrets Operator gerekir: önce bölgenin Gizli bilgiler sekmesinden kurun.',
         'openbao_not_installed' => '":region" bölgesinin kendi OpenBao\'su yok.',
         'openbao_in_use' => '":region" bölgesindeki projelerin gizli değerleri ya da dinamik kimlik bilgileri bölgenin OpenBao\'sunda: kaldırmadan önce onları taşıyın.',
@@ -564,6 +573,7 @@ return [
         'in_use' => ':projects projelerinin gizli değişkenleri bu depoya başvuruyor: önce onları değiştirin.',
         'unknown_setting' => '":key" bir :provider deposunun ayarı değil. Depo bölgenin kimliğine güvenir; RunR onun için hiçbir kimlik bilgisi almaz.',
         'ca_bundle_invalid' => 'CA paketi yalnızca PEM sertifikaları (BEGIN CERTIFICATE) içermelidir.',
+        'not_ready' => 'Bölge depoyu kullanamadı: adresini, rolünü ve güven ayarlarını (bölgenin yayımcısı ve servis hesabı) denetleyin.',
     ],
 
     // ── Denetim kaydı ──

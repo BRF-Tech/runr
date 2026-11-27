@@ -2,12 +2,16 @@
 
 namespace App\Console\Commands\Concerns;
 
+use App\Models\Project;
 use App\Models\ProjectSecret;
 use App\Models\SecretStore;
 use App\Models\Setting;
+use App\Services\Secrets\External\ExternalSecretsEgress;
+use App\Services\Secrets\External\ExternalSecretStatusSync;
 use App\Services\Secrets\RollbackCopies;
 use App\Services\Secrets\SecretFingerprint;
 use App\Support\Secrets\SecretCipher;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 
 /**
@@ -32,6 +36,14 @@ use Illuminate\Support\Facades\Artisan;
  *                      its role bound to the store's service account; verify → ready
  *  - sec-reference     EXT_SECRET as a reference (store + path + key): after a deploy the
  *                      function sees the value from OpenBao, `secrets:sync-status` marks it synced
+ *  - sec-eso-egress    the operator controller's egress policy of a platform region in the
+ *                      multi-tenant edition (ExternalSecretsEgress, applied here directly — the
+ *                      suite runs single-tenant), which restarts the controller (rolled out before
+ *                      the check): the OpenBao dev server, on the cluster's private
+ *                      addresses, is no longer reachable (the reference fails on a forced sync,
+ *                      within 300 s: the dropped connection fails when the Vault client gives up);
+ *                      with the cluster's pod and service CIDRs as private egress CIDRs it syncs
+ *                      again; the policy is removed afterwards
  *  - sec-openbao       the region's own OpenBao installed through the API (needs the operator):
  *                      initialized, unsealed, configured, ready
  *  - sec-openbao-value BAO_SECRET set while OpenBao runs: stored in OpenBao (stored_in openbao),
@@ -104,6 +116,7 @@ PY;
         $tests[] = $this->admCheck('sec-eso', fn () => $this->secInstallOperator($regionId));
         $tests[] = $this->admCheck('sec-store', fn () => $this->secStore($regionId));
         $tests[] = $this->admCheck('sec-reference', fn () => $this->secReference($test));
+        $tests[] = $this->admCheck('sec-eso-egress', fn () => $this->secOperatorEgress($test));
         $tests[] = $this->admCheck('sec-openbao', fn () => $this->secInstallOpenBao($regionId));
         $tests[] = $this->admCheck('sec-openbao-value', fn () => $this->secOpenBaoValue($test));
         $tests[] = $this->admCheck('sec-env-openbao', fn () => $this->secEnvironmentOpenBao($test));
@@ -361,6 +374,113 @@ PY;
         $row = ProjectSecret::query()->where('project_id', $test['projectId'])->where('name', 'EXT_SECRET')->first();
 
         return $row?->sync_status === 'synced' ? true : 'sync status '.($row->sync_status ?? 'none').': '.($row->sync_message ?? '');
+    }
+
+    /** Kind's pod and service CIDRs (its defaults), where the OpenBao dev server answers. */
+    private const SEC_KIND_PRIVATE_CIDRS = ['10.244.0.0/16', '10.96.0.0/12'];
+
+    private function secOperatorEgress(array $test): bool|string
+    {
+        if (! $this->secStore) {
+            return 'no store (sec-store failed)';
+        }
+        $project = Project::query()->findOrFail($test['projectId']);
+        $before = config('secrets.external.private_egress_cidrs');
+
+        try {
+            config(['secrets.external.private_egress_cidrs' => []]);
+            $since = now();
+            ExternalSecretsEgress::ensure($this->e2eK8s);
+            // a new policy restarts the controller: its connections of before end with it
+            $rolled = $this->secControllerRolledOut();
+            if ($rolled !== true) {
+                return $rolled;
+            }
+            // The policy drops the connection: the controller reports the failure when its Vault client
+            // gives up (60 s), one reconcile at a time (measured: about a minute, past two with other
+            // references waiting), hence the longer wait
+            $blocked = $this->secReferenceStatus($project, 'failed', 300);
+            if ($blocked !== true) {
+                $refreshed = ProjectSecret::query()->where('project_id', $project->id)->where('name', 'EXT_SECRET')->value('synced_at');
+                $refreshed = $refreshed !== null ? Carbon::parse($refreshed) : null;
+
+                return $refreshed !== null && $refreshed->greaterThanOrEqualTo($since->copy()->startOfSecond())
+                    ? "with the egress policy the private store is still read ({$blocked}, refreshed {$refreshed->toIso8601String()}): does the network plugin enforce NetworkPolicies?"
+                    : "with the egress policy the controller reported no failure in 300 s ({$blocked}; its last refresh ".($refreshed?->toIso8601String() ?? 'none').' was before the policy)';
+            }
+
+            config(['secrets.external.private_egress_cidrs' => self::SEC_KIND_PRIVATE_CIDRS]);
+            ExternalSecretsEgress::ensure($this->e2eK8s);
+            $rolled = $this->secControllerRolledOut();
+            if ($rolled !== true) {
+                return $rolled;
+            }
+            $allowed = $this->secReferenceStatus($project, 'synced');
+            if ($allowed !== true) {
+                return "with the private CIDRs allowed the store is not read again ({$allowed})";
+            }
+
+            return true;
+        } finally {
+            config(['secrets.external.private_egress_cidrs' => $before]);
+            try {
+                ExternalSecretsEgress::remove($this->e2eK8s);
+                $this->secReferenceStatus($project, 'synced');
+            } catch (\Throwable) {
+                // best effort: the Kind cluster goes with the run
+            }
+        }
+    }
+
+    /**
+     * The operator controller's Deployment, restarted by a new egress policy (ExternalSecretsEgress::
+     * restartController()), has rolled out: every replica runs the restarted template and is ready
+     * (180 s); true or what it waits for.
+     */
+    private function secControllerRolledOut(): bool|string
+    {
+        $namespace = (string) config('secrets.external.namespace', 'external-secrets');
+        $name = (string) config('secrets.external.release', 'external-secrets');
+        $last = 'no Deployment';
+        $deadline = time() + 180;
+        do {
+            $deployment = $this->e2eK8s->getResourceStatus('apps/v1', 'Deployment', $name, $namespace);
+            if ($deployment) {
+                $restarted = $deployment['spec']['template']['metadata']['annotations'][ExternalSecretsEgress::RESTARTED_AT] ?? null;
+                $want = (int) ($deployment['spec']['replicas'] ?? 1);
+                $status = (array) ($deployment['status'] ?? []);
+                $generation = (int) ($deployment['metadata']['generation'] ?? 0);
+                $last = sprintf('restartedAt %s, generation %d observed %d, updated %d, ready %d, replicas %d of %d',
+                    $restarted ?? 'none', $generation, $status['observedGeneration'] ?? 0,
+                    $status['updatedReplicas'] ?? 0, $status['readyReplicas'] ?? 0, $status['replicas'] ?? 0, $want);
+                if ($restarted !== null && (int) ($status['observedGeneration'] ?? 0) >= $generation
+                    && (int) ($status['updatedReplicas'] ?? 0) === $want && (int) ($status['readyReplicas'] ?? 0) === $want
+                    && (int) ($status['replicas'] ?? 0) === $want) {
+                    return true;
+                }
+            }
+            sleep(3);
+        } while (time() < $deadline);
+
+        return "the operator controller did not roll out after the egress policy ({$namespace}/{$name}: {$last})";
+    }
+
+    /** Force a sync of the project's references until EXT_SECRET is $want ($seconds); true or the last status. */
+    private function secReferenceStatus(Project $project, string $want, int $seconds = 120): bool|string
+    {
+        $last = 'none';
+        $deadline = time() + $seconds;
+        do {
+            app(ExternalSecretStatusSync::class)->refresh($project->fresh());
+            $row = ProjectSecret::query()->where('project_id', $project->id)->where('name', 'EXT_SECRET')->first();
+            $last = ($row->sync_status ?? 'none').($row?->sync_message ? ': '.$row->sync_message : '');
+            if (($row->sync_status ?? null) === $want) {
+                return true;
+            }
+            sleep(5);
+        } while (time() < $deadline);
+
+        return $last;
     }
 
     private function secInstallOpenBao(string $regionId): bool|string

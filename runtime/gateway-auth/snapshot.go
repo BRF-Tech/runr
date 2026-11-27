@@ -34,6 +34,9 @@ type JWTConfig struct {
 	Audience        *string `json:"audience"`
 	SubjectClaim    string  `json:"subject_claim"`
 	RequireConsumer bool    `json:"require_consumer"`
+	// AllowPrivateTargets: the JWKS may be on a private address (the platform allows it). Absent
+	// — an older RunR — means false: the fetch connects to public addresses only, no redirects.
+	AllowPrivateTargets bool `json:"allow_private_targets"`
 }
 
 // Consumer is a customer of a gateway's API (GatewayID nil: of the organization, every gateway).

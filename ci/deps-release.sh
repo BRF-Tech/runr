@@ -86,6 +86,30 @@ VUE_ALLOWED='^vue/package(-lock)?\.json$'
 
 die() { echo "$*" >&2; exit 1; }
 
+# scratch_repo DIR — a bare repository for what the bot fetches and throws away again (the public
+# release's tree), with no automatic maintenance. A fetch ends with `git maintenance run --auto`,
+# which detaches by default (maintenance.autoDetach) and, since Git 2.54, runs the geometric
+# strategy: in the background it still writes into DIR/objects (its lock, packs, the commit-graph)
+# while the bot's next command runs, and `rm -rf` of the repository then failed with "Directory
+# not empty" (git 2.56 of the runner image; the weekly run of 2026-W47, #91)
+scratch_repo() {
+  git init -q --bare "$1" && git -C "$1" config maintenance.auto false && git -C "$1" config gc.auto 0
+}
+
+# rm_scratch DIR — a scratch directory removed: tried again while something still writes into it,
+# and one that cannot be removed is a warning, never the step's failure (the job's end removes the
+# runner's temporary files anyway)
+RM_PAUSE_S="${DEPS_RM_PAUSE_S:-1}"
+rm_scratch() {
+  local i
+  for i in 1 2 3 4 5; do
+    rm -rf -- "$1" 2>/dev/null && return 0
+    sleep "$RM_PAUSE_S"
+  done
+  echo "warning: ${1} could not be removed" >&2
+  return 0
+}
+
 # trailer_of REPO COMMIT — the bot's trailer value of a commit ("traefik 42.3.1"), empty when none
 trailer_of() {
   git -C "$1" log -1 --format="%(trailers:key=${DEPS_TRAILER},valueonly,separator=%x2C)" "$2" 2>/dev/null | sed '/^$/d' | head -n 1
@@ -180,10 +204,10 @@ cmd_base() {
   [ -z "$(ref_of "$refs" "refs/tags/v${new}")" ] || die "the public repository has v${new} already"
   [ "$pub_main" = "$pub_tag" ] || die "the public main (${pub_main:0:12}) has commits after ${tag} (${pub_tag:0:12}) that are in no release: the bot would leave them out of its release's tree; a person releases them first"
   tmp="$(mktemp -d)"
-  git init -q --bare "$tmp/public.git"
-  git -C "$tmp/public.git" fetch -q --depth=1 "$public" "refs/tags/${tag}:refs/tags/${tag}" || { rm -rf -- "$tmp"; die "cannot fetch the public ${tag}"; }
+  scratch_repo "$tmp/public.git"
+  git -C "$tmp/public.git" fetch -q --depth=1 "$public" "refs/tags/${tag}:refs/tags/${tag}" || { rm_scratch "$tmp"; die "cannot fetch the public ${tag}"; }
   pub_tree="$(git -C "$tmp/public.git" rev-parse "${tag}^{tree}")"
-  rm -rf -- "$tmp"
+  rm_scratch "$tmp"
   [ "$pub_tree" = "$(git -C "$clone" rev-parse "${tag}^{tree}")" ] || die "the public ${tag} is another tree than the origin's ${tag}"
   printf 'BASE_TAG=%s\nBASE_COMMIT=%s\nPUBLIC_BASE=%s\nNEW_VERSION=%s\nNEW_TAG=v%s\n' "$tag" "$commit" "$pub_tag" "$new" "$new"
 }
@@ -742,8 +766,8 @@ cmd_publish() {
 
   # the public repository: one commit of the release's tree on its main, and the tag
   pub="$st/public.git"
-  rm -rf -- "$pub"
-  git init -q --bare "$pub"
+  rm_scratch "$pub"
+  scratch_repo "$pub"
   if [ "$public_done" = 1 ]; then
     git -C "$pub" fetch -q --depth=1 "$PUBLIC_REMOTE" "refs/tags/${NEW_TAG}:refs/tags/${NEW_TAG}" || { failed "publish: cannot fetch the public ${NEW_TAG}"; return 0; }
     [ "$(git -C "$pub" rev-parse "${NEW_TAG}^{tree}")" = "$(git -C "$REPO" rev-parse "${RELEASE}^{tree}")" ] \

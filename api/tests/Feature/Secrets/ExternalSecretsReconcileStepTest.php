@@ -44,6 +44,44 @@ class ExternalSecretsReconcileStepTest extends TestCase
         RegionSecretSetting::forRegion($group->primary()->region)->fill(['eso_status' => RegionSecretSetting::ESO_READY])->save();
         $service = Mockery::mock(ExternalSecretsInstallService::class);
         $service->shouldReceive('deployedVersion')->andReturn(config('secrets.external.chart_version'));
+        $service->shouldReceive('deployedValuesDiffer')->andReturn(false);
+        $service->shouldNotReceive('install');
+        $this->app->instance(ExternalSecretsInstallService::class, $service);
+
+        $this->assertSame([], (new ExternalSecretsStep)->run($group, false));
+    }
+
+    public function test_the_pinned_chart_with_other_values_gets_this_releases_values(): void
+    {
+        $group = $this->group();
+        RegionSecretSetting::forRegion($group->primary()->region)->fill(['eso_status' => RegionSecretSetting::ESO_READY])->save();
+        $service = Mockery::mock(ExternalSecretsInstallService::class);
+        $service->shouldReceive('deployedVersion')->andReturn(config('secrets.external.chart_version'));
+        $service->shouldReceive('deployedValuesDiffer')->andReturn(true);
+        $this->app->instance(ExternalSecretsInstallService::class, $service);
+
+        // Dry run: says so, changes nothing
+        $service->shouldNotReceive('install');
+        $lines = (new ExternalSecretsStep)->run($group, true);
+        $this->assertStringStartsWith('would install External Secrets Operator with the values of this release (chart '.config('secrets.external.chart_version'), $lines[0]);
+
+        $service = Mockery::mock(ExternalSecretsInstallService::class);
+        $service->shouldReceive('deployedVersion')->andReturn(config('secrets.external.chart_version'));
+        $service->shouldReceive('deployedValuesDiffer')->andReturn(true);
+        $service->shouldReceive('install')->once()->andReturn(RegionSecretSetting::forRegion($group->primary()->region));
+        $this->app->instance(ExternalSecretsInstallService::class, $service);
+
+        $lines = (new ExternalSecretsStep)->run($group, false);
+        $this->assertStringStartsWith('installed External Secrets Operator with the values of this release', $lines[0]);
+    }
+
+    public function test_values_helm_cannot_read_leave_the_release_as_it_is(): void
+    {
+        $group = $this->group();
+        RegionSecretSetting::forRegion($group->primary()->region)->fill(['eso_status' => RegionSecretSetting::ESO_READY])->save();
+        $service = Mockery::mock(ExternalSecretsInstallService::class);
+        $service->shouldReceive('deployedVersion')->andReturn(config('secrets.external.chart_version'));
+        $service->shouldReceive('deployedValuesDiffer')->andReturn(null);
         $service->shouldNotReceive('install');
         $this->app->instance(ExternalSecretsInstallService::class, $service);
 

@@ -232,8 +232,13 @@ every timeout is capped at the run timeout.
   working until the redeploy. `GET …/workflows/app/signing-key` reveals it for functions
   served outside RunR.
 - **Endpoint override** (`PATCH …/workflows/app {"endpoint_url"}`): http(s) only, no
-  credentials, no loopback / private / link-local / CGNAT addresses (literal or resolved)
-  unless `WORKFLOWS_ALLOW_PRIVATE_ENDPOINTS=true`. Redirects are not followed.
+  credentials, no loopback / private / link-local / CGNAT addresses (literal or resolved, the
+  [outbound guard's ranges](security.md#outbound-requests-to-user-configured-urls))
+  unless `WORKFLOWS_ALLOW_PRIVATE_ENDPOINTS=true`. The engine checks the override again before
+  every request and sends it to the addresses that check saw; a refused override fails the
+  request like an unreachable function (`FunctionUnavailable`, retried). Redirects are not
+  followed. The project's own function URL is held to the same check when its function domain is
+  under the organization's own base domain.
 
 ### Permissions
 

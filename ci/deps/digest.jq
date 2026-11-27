@@ -396,13 +396,15 @@ def file_main:
 
   # 6. a finding the check of a read group no longer reports (a release outside a constraint: its
   #    group read, npm-vue for npm-vue--vite): landed on next and now in a release → shipped in it;
-  #    one nobody acts on yet → closed
-  | reduce (.lines[] | select((.kind | IN("group", "chart")) and .issue == null and (.group | base_group | IN($checked[])) and ((.id | IN($fids[])) | not))) as $r (.;
+  #    one nobody acts on yet, or one that waits for a run that needs a person (its incident: a
+  #    release a person made has it, or the dependency moved on) → closed, and an incident none of
+  #    whose rows waits any more closes below
+  | reduce (.lines[] | select((.kind | IN("group", "chart")) and (.issue == null or .item_kind == "incident") and (.group | base_group | IN($checked[])) and ((.id | IN($fids[])) | not))) as $r (.;
       if $r.state == "landed" then
-        .lines |= map(if .id == $r.id then .state = "shipped" | .release = "v\($in.release)" | del(.note, .url) else . end)
+        .lines |= map(if .id == $r.id then .state = "shipped" | .release = "v\($in.release)" | del(.note, .url, .issue, .item_kind) else . end)
         | .move = true | touch($r | lkey)
       elif ($r | is_open) then
-        .lines |= map(if .id == $r.id then .state = "closed" | .note = "no longer found by the check of \($date)" else . end)
+        .lines |= map(if .id == $r.id then .state = "closed" | .note = "no longer found by the check of \($date)" | del(.issue, .item_kind) else . end)
       else . end)
 
   # 7. a row whose issue was closed: closed (an incident's: back to new); the earlier bot's red and

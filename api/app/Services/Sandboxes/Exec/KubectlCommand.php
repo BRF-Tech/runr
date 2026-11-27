@@ -2,6 +2,8 @@
 
 namespace App\Services\Sandboxes\Exec;
 
+use App\Services\Kubeconfigs\KubeconfigFile;
+
 /**
  * kubectl exec invocation shared by the HTTP transport and the WebSocket handler: the kubeconfig
  * goes to a 0600 temp file that is deleted after the command, never into the pod.
@@ -11,18 +13,27 @@ final class KubectlCommand
     /** kubectl's own trailer when the remote command exits non-zero */
     private const EXIT_TRAILER = '/(?:^|\n)command terminated with exit code (\d+)\r?\n?$/';
 
+    /** @var array<string, KubeconfigFile> the written kubeconfigs by path, until removeKubeconfig() */
+    private static array $files = [];
+
+    /**
+     * The kubeconfig as a file for kubectl (KubeconfigFile: an organization's region is checked
+     * again and reached through its pin proxy). removeKubeconfig() removes it.
+     */
     public static function writeKubeconfig(string $kubeconfig): string
     {
-        $path = sys_get_temp_dir().'/runr-sbx-'.bin2hex(random_bytes(8));
-        file_put_contents($path, $kubeconfig, LOCK_EX);
-        @chmod($path, 0600);
+        $file = KubeconfigFile::write($kubeconfig, 'runr-sbx-');
+        self::$files[$file->path] = $file;
 
-        return $path;
+        return $file->path;
     }
 
     public static function removeKubeconfig(?string $path): void
     {
-        if ($path && is_file($path)) {
+        if ($path && isset(self::$files[$path])) {
+            self::$files[$path]->close();
+            unset(self::$files[$path]);
+        } elseif ($path && is_file($path)) {
             @unlink($path);
         }
     }

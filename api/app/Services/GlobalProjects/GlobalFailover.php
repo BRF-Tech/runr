@@ -15,6 +15,7 @@ use App\Services\Audit\AuditLogger;
 use App\Services\GlobalDns\GlobalDnsServerService;
 use App\Services\GlobalDns\GlobalDnsZone;
 use App\Services\GlobalProjects\Data\RegionalData;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\KubernetesClient;
 use App\Triggers\ProjectTriggers;
 use Illuminate\Http\Client\Pool;
@@ -353,6 +354,7 @@ class GlobalFailover
     {
         $out = [];
         $targets = [];
+        $guarded = [];
         $host = app(GlobalDnsZone::class)->healthHost();
         foreach ($rows as $row) {
             $region = $row->knativeRegion;
@@ -365,12 +367,17 @@ class GlobalFailover
                 continue;
             }
             $address = GlobalDnsServerService::firstAddress($region);
-            if ($host === null || $address === null) {
+            // An organization's own region: its address comes from the organization's cluster (its
+            // Traefik's LoadBalancer), so it is held to what RunR may reach for that region
+            // (TenantKubeconfigs::mayReach(): a public address) and no redirect is followed
+            $restricted = TenantKubeconfigs::restricts($region);
+            if ($host === null || $address === null || ($restricted && ! TenantKubeconfigs::mayReach($address))) {
                 $out[(string) $row->getKey()] = false;
 
                 continue;
             }
             $targets[(string) $row->getKey()] = 'http://'.(str_contains($address, ':') ? "[{$address}]" : $address).'/global-health/'.$project->slug;
+            $guarded[(string) $row->getKey()] = $restricted;
         }
 
         if ($targets === []) {
@@ -379,9 +386,14 @@ class GlobalFailover
 
         $timeout = max(1, (int) config('global_dns.health.timeout', 2));
         try {
-            $responses = Http::pool(function (Pool $pool) use ($targets, $host, $timeout) {
+            $responses = Http::pool(function (Pool $pool) use ($targets, $guarded, $host, $timeout) {
                 foreach ($targets as $id => $url) {
-                    $pool->as($id)->timeout($timeout)->connectTimeout($timeout)->withHeaders(['Host' => $host])->get($url);
+                    $request = $pool->as($id)->timeout($timeout)->connectTimeout($timeout)->withHeaders(['Host' => $host]);
+                    // a literal address: nothing to resolve, nothing to pin but the redirects
+                    if ($guarded[$id]) {
+                        $request = $request->withOptions(['allow_redirects' => false]);
+                    }
+                    $request->get($url);
                 }
             });
         } catch (Throwable) {

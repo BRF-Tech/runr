@@ -25,8 +25,8 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 # --- the plan ---------------------------------------------------------------------------------------
 vite='{"group": "npm-vue--vite", "updates": [{"name": "vite", "from": "7.3.1", "to": "8.0.1", "outside": true, "constraint": "^7.0.0", "line": "8.x", "files": ["vue/package.json"]}], "urgent": false, "advisories": []}'
-cron='{"group": "npm-vue", "updates": [{"name": "cronstrue", "from": "2.61.0", "to": "3.0.0", "files": ["vue/package-lock.json"]}], "urgent": false, "advisories": []}'
-jq -n --arg vite "<!-- deps-bot ${vite} -->" --arg cron "<!-- deps-bot ${cron} -->" '[
+cli='{"group": "go-terraform-provider", "updates": [{"name": "github.com/brf-tech/runr/cli", "from": "v0.0.0", "to": "v0.7.7", "files": ["terraform-provider-runr/go.mod"]}], "urgent": false, "advisories": []}'
+jq -n --arg vite "<!-- deps-bot ${vite} -->" --arg cli "<!-- deps-bot ${cli} -->" '[
   {"number": 12, "title": "deps: traefik 42.3.1 released", "labels": []},
   {"number": 9, "title": "deps: traefik 42.2.0 released", "labels": [{"name": "needs attention"}]},
   {"number": 8, "title": "deps: kube-prometheus-stack 92.21.2 released", "labels": []},
@@ -40,8 +40,9 @@ jq -n --arg vite "<!-- deps-bot ${vite} -->" --arg cron "<!-- deps-bot ${cron} -
   {"number": 20, "title": "deps: traefik 42.10.0 released", "labels": []},
   {"number": 22, "title": "deps: go-example-wasm github.com/spinframework/spin-go-sdk/v3 v3.x released (outside github.com/spinframework/spin-go-sdk/v2)", "labels": [{"name": "next update required"}]},
   {"number": 23, "title": "deps: npm-vue--vite [1a2b3c4d]: 1 update: vite 8.0.1 (outside ^7.0.0)", "labels": [{"name": "next update required"}], "body": ("A release outside the constraint.\n\n" + $vite)},
-  {"number": 24, "title": "deps: npm-vue [aaaabbbb]: 1 update: cronstrue 3.0.0", "labels": [], "body": ("Updates.\n\n" + $cron)},
-  {"number": 25, "title": "deps: nginx--thing [1a2b3c4d]: 1 update: thing 2.0.0 (outside ^1.0.0)", "labels": [], "body": "<!-- deps-bot {\"group\": \"nginx--thing\", \"updates\": [{\"name\": \"thing\", \"from\": \"1.0.0\", \"to\": \"2.0.0\", \"outside\": true}]} -->"}
+  {"number": 24, "title": "deps: go-terraform-provider [aaaabbbb]: 1 update: github.com/brf-tech/runr/cli v0.7.7", "labels": [], "body": ("Updates.\n\n" + $cli)},
+  {"number": 25, "title": "deps: nginx--thing [1a2b3c4d]: 1 update: thing 2.0.0 (outside ^1.0.0)", "labels": [], "body": "<!-- deps-bot {\"group\": \"nginx--thing\", \"updates\": [{\"name\": \"thing\", \"from\": \"1.0.0\", \"to\": \"2.0.0\", \"outside\": true}]} -->"},
+  {"number": 26, "title": "deps: kata-deploy 4.4.0 released", "labels": [{"name": "next update required"}]}
 ]' > "$tmp/issues.json"
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/issues.json")"
 [ "$(jq -c '[.tests[] | [.issue, .dep, .version, (.retry // false)]]' <<<"$plan")" = '[[16,"knative","1.26",false],[8,"kube-prometheus-stack","92.21.2",false],[21,"loki-stack","2.10.5",true],[23,"npm-vue--vite","1a2b3c4d",true],[20,"traefik","42.10.0",false],[14,"zot","0.1.131",true]]' ] \
@@ -55,8 +56,9 @@ jq -e '.skipped[] | select(.issue == 15) | .reason | test("passed")' <<<"$plan" 
 jq -e '.skipped[] | select(.issue == 18) | .reason | test("does not know nginx")' <<<"$plan" >/dev/null || fail "an unknown chart: $plan"
 jq -e '.skipped[] | select(.issue == 25) | .reason | test("does not know nginx--thing")' <<<"$plan" >/dev/null || fail "an unknown group's release outside a constraint: $plan"
 jq -e '.skipped[] | select(.issue == 22) | .reason | test("old finding outside a constraint")' <<<"$plan" >/dev/null || fail "an old outside issue: $plan"
-jq -e '.skipped[] | select(.issue == 24) | .reason | test("^held \\(ci/deps/holds.txt\\): cronstrue 3.0.0: pinned exactly")' <<<"$plan" >/dev/null || fail "a held update: $plan"
-echo "ok - the plan: the newest version of each dependency, the older ones superseded, a passed one skipped, a Knative minor without a row labelled; next update required (and an old needs attention update, relabelled) tested again with retry, a release outside a constraint tested; an old outside issue and a held update skipped"
+jq -e '.skipped[] | select(.issue == 24) | .reason | test("^held \\(ci/deps/holds.txt\\): github.com/brf-tech/runr/cli v0.7.7: RunR'"'"'s own CLI module")' <<<"$plan" >/dev/null || fail "a held update: $plan"
+jq -e '.skipped[] | select(.issue == 26) | .reason | test("^held \\(ci/deps/holds.txt\\): kata-deploy 4.4.0: QEMU sandboxes")' <<<"$plan" >/dev/null || fail "a held chart release: $plan"
+echo "ok - the plan: the newest version of each dependency, the older ones superseded, a passed one skipped, a Knative minor without a row labelled; next update required (and an old needs attention update, relabelled) tested again with retry, a release outside a constraint tested; an old outside issue, a held update and a held chart release skipped"
 
 plan="$(bash "$root/ci/deps-plan.sh" "$tmp/issues.json" --only=14,8)"
 [ "$(jq -c '[.tests[] | [.issue, (.retry // false)]]' <<<"$plan")" = '[[8,false],[14,true]]' ] || fail "--only: $(jq -c .tests <<<"$plan")"

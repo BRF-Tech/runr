@@ -65,6 +65,9 @@ return [
         'retention_days_max' => (int) env('OBS_REPLAY_RETENTION_DAYS_MAX', 30),
         'max_captures' => (int) env('OBS_REPLAY_MAX_CAPTURES', 500),
         'per_minute' => (int) env('OBS_REPLAY_PER_MINUTE', 60),
+        // true: a replay may reach a private address also when the project's function domain is
+        // under its organization's own base domain (OutboundUrlGuard::project())
+        'allow_private_targets' => (bool) env('OBS_REPLAY_ALLOW_PRIVATE', false),
         // Headers / query parameters never stored, on top of each project's own list
         'redact_headers' => [
             'authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key', 'x-auth-token',

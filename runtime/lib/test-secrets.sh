@@ -17,6 +17,9 @@
 #                       Kubernetes auth bound to the store's service account; the store verified
 #                     - a reference to it reaches the function after a deploy, the status sync
 #                       marks it synced
+#                     - the operator controller's egress policy (multi-tenant platform regions,
+#                       applied directly): the private store is no longer read; with Kind's pod
+#                       and service CIDRs as private egress CIDRs it is read again
 #                     - the region's own OpenBao installed through the API: initialized, unsealed
 #                       (the unseal key in the region only), configured
 #                     - a value set while OpenBao runs lives in OpenBao, not in the Kubernetes

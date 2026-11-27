@@ -2,9 +2,9 @@
 #
 # The Spin shim RunR installs on region nodes (WebAssembly support, App\Services\Wasm\WasmShim):
 # containerd-shim-spin v0.27.2 built with one change in its runwasi library (containerd-shim-wasm
-# 1.0.1), versioned v0.27.2-runr.1.
+# 1.0.1), versioned v0.27.2-runr.2.
 #
-#   docker build -t ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.1 runtime/wasm-shim-spin
+#   docker build -t ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.2 runtime/wasm-shim-spin
 #   runtime/ci.sh wasm-shim [--push]          (--push: linux/amd64 + linux/arm64)
 #   docker build --target test runtime/wasm-shim-spin    the patched executor's unit tests
 #
@@ -34,7 +34,7 @@
 ARG RUST_IMAGE=ghcr.io/brf-tech/runr/reqs/rust:1.97.0-slim-bookworm@sha256:6d220bf85c74e842a79da63997af8d2e74455c0b8847d8bb3a5888572334991d
 ARG CROSS_IMAGE_AMD64=ghcr.io/cross-rs/x86_64-unknown-linux-musl:main@sha256:c32c7d8c69916dbd4e436a27c928121bca683db64920e7fd3b6cd37c8ad39e33
 ARG CROSS_IMAGE_ARM64=ghcr.io/cross-rs/aarch64-unknown-linux-musl:main@sha256:3a01d8e2b3eb780d77843ffc6dc4bae48920dd075d16287984e5bd6ea777d743
-ARG BASE_IMAGE=ghcr.io/brf-tech/runr/reqs/alpine:3.21
+ARG BASE_IMAGE=ghcr.io/brf-tech/runr/reqs/alpine:3.22
 
 FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS rust
 FROM --platform=$BUILDPLATFORM ${CROSS_IMAGE_AMD64} AS cross-amd64
@@ -127,7 +127,7 @@ RUN set -eux; \
 # ── the shim ──
 FROM source AS build
 ARG TARGETARCH
-ARG VERSION=v0.27.2-runr.1
+ARG VERSION=v0.27.2-runr.2
 # the locked dependencies first, retried: crates.io and the git repositories of Cargo.lock
 RUN --mount=type=cache,id=runr-shim-spin-registry-${TARGETARCH},target=/usr/local/cargo/registry \
     --mount=type=cache,id=runr-shim-spin-git-${TARGETARCH},target=/usr/local/cargo/git \
@@ -187,7 +187,7 @@ RUN --mount=type=cache,id=runr-shim-spin-test-registry,target=/usr/local/cargo/r
 
 # ── the image ──
 FROM ${BASE_IMAGE}
-ARG VERSION=v0.27.2-runr.1
+ARG VERSION=v0.27.2-runr.2
 # source: this repository, which builds the image (it links the ghcr package); url: the upstream
 # project, whose commit 1acd7c3a0126 (tag v0.27.2) is built. revision and created: the release
 # build (ci.sh --push)

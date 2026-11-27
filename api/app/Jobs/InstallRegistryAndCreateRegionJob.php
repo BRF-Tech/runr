@@ -9,6 +9,7 @@ use App\Services\Helpers\MonitoringEndpointAccess;
 use App\Services\KnativeNodeService;
 use App\Services\KnativeRedisService;
 use App\Services\KnativeStatusService;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\RegionRegistrySetup;
 use App\Services\ZotRegistryService;
 use Illuminate\Bus\Queueable;
@@ -67,7 +68,7 @@ class InstallRegistryAndCreateRegionJob implements ShouldBeEncrypted, ShouldQueu
         try {
             // 1–3. Test the storage / the external registry, label the workers, install Zot
             $setup = (new RegionRegistrySetup($zot, $nodeService))->run(
-                $this->config['kubeconfig'],
+                $this->connectKubeconfig(),
                 $this->config,
                 $this->config['nodes'] ?? [],
                 fn (string $phase) => $this->updateCache($key, $phase === 'zot_install' ? 'installing' : 'testing', $phase),
@@ -130,6 +131,18 @@ class InstallRegistryAndCreateRegionJob implements ShouldBeEncrypted, ShouldQueu
         $this->broadcastFailure('region.create_failed', [
             'setup_id' => self::setupId($this->token),
         ], $e ?? new \RuntimeException('unknown error'), 'Region creation failed');
+    }
+
+    /**
+     * The kubeconfig the setup connects with: in a tenant's context (an organization's own region)
+     * the pinned copy of the policy's rebuild the request stored (TenantKubeconfigs), checked again
+     * here, when the job runs.
+     */
+    private function connectKubeconfig(): string
+    {
+        $kubeconfig = (string) $this->config['kubeconfig'];
+
+        return TenantKubeconfigs::restrictsNewRegions() ? app(TenantKubeconfigs::class)->forUse($kubeconfig) : $kubeconfig;
     }
 
     private function createRegion(KnativeStatusService $statusService, KnativeNodeService $nodeService, ?string $registryAddress): KnativeRegion

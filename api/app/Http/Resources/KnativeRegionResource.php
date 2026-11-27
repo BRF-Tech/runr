@@ -13,6 +13,7 @@ use App\Services\GlobalProjects\GlobalProjectService;
 use App\Services\Helpers\RegionCapacity;
 use App\Services\Helpers\RegionDomains;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\Kubeconfigs\TenantKubeconfigs;
 use App\Services\RegionReconcile\ReconcileRecord;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -63,12 +64,17 @@ class KnativeRegionResource extends JsonResource
         $usage = $this->regionUsage($this->resource);
         $used = ResourceReservation::total($usage);
         $factors = RegionCapacity::factors($this->resource);
+        // an organization's own region: its users read the short reason of a connection's error
+        // in a stored status message (TenantKubeconfigs::textFor())
+        $restricted = TenantKubeconfigs::restricts($this->resource);
+        $text = fn (?string $message) => TenantKubeconfigs::textFor($message, $restricted);
 
         return [
             'server_url' => $this->resource->server_url,
             'total_cpu_m' => $this->total_cpu_m,
             'total_memory_mb' => $this->total_memory_mb,
-            'has_kubeconfig' => ! empty($this->kubeconfig),
+            // as stored: an organization's region whose kubeconfig RunR refuses still has one to replace
+            'has_kubeconfig' => ! empty($this->resource->storedKubeconfig()),
             // every admitted reservation: always-on + scale-to-zero (may exceed the total: FaaS overcommit)
             'used_cpu_m' => (int) $used['cpu_m'],
             'used_memory_mb' => (int) $used['memory_mb'],
@@ -78,11 +84,11 @@ class KnativeRegionResource extends JsonResource
             /** @var array<string, array{capacity: int, always_on_used: int, always_on_available: int, faas_overcommit: float, faas_budget: int, faas_used: int, faas_available: int}> */
             'capacity' => RegionCapacity::summary($this->resource, $usage),
             'knative_status' => $this->knative_status,
-            'knative_status_message' => $this->knative_status_message,
+            'knative_status_message' => $text($this->knative_status_message),
             /** @var string|null */
             'knative_status_checked_at' => $this->knative_status_checked_at?->toISOString(),
             'cluster_status' => $this->cluster_status ?? 'unknown',
-            'cluster_status_message' => $this->cluster_status_message,
+            'cluster_status_message' => $text($this->cluster_status_message),
             'project_namespace' => $this->project_namespace ?? $this->name,
             /** @var list<string> */
             'selected_workers' => array_values($workers),
@@ -92,7 +98,7 @@ class KnativeRegionResource extends JsonResource
             'redis_mode' => $this->redis_mode,
             'knative_redis_status' => $this->knative_redis_status,
             'redis_address' => $this->redis_address,
-            'knative_redis_status_message' => $this->knative_redis_status_message,
+            'knative_redis_status_message' => $text($this->knative_redis_status_message),
             'has_redis' => (bool) $this->resource->has_redis,
             'external_ip' => $this->external_ip,
             /** @var array{wildcard: string, type: string|null, target: string|null}|null */
@@ -111,10 +117,10 @@ class KnativeRegionResource extends JsonResource
             'function_tls_expires_at' => $this->function_tls_expires_at?->toISOString(),
             // Component statuses
             'knative_operator_status' => $this->knative_operator_status ?? 'not_installed',
-            'knative_operator_status_message' => $this->knative_operator_status_message,
+            'knative_operator_status_message' => $text($this->knative_operator_status_message),
             'knative_operator_namespace' => $this->knative_operator_namespace ?? 'knative-operator',
             'knative_serving_status' => $this->knative_serving_status ?? 'not_installed',
-            'knative_serving_status_message' => $this->knative_serving_status_message,
+            'knative_serving_status_message' => $text($this->knative_serving_status_message),
             'knative_serving_namespace' => $this->knative_serving_namespace ?? 'knative-serving',
             'knative_serving_ingress_class' => 'traefik',
             'has_serving' => (bool) $this->resource->has_serving,
@@ -123,20 +129,20 @@ class KnativeRegionResource extends JsonResource
             'registry_address' => $this->registry_address,
             'registry_storage_type' => $this->registry_storage_type,
             'registry_status' => $this->registry_status,
-            'registry_status_message' => $this->registry_status_message,
+            'registry_status_message' => $text($this->registry_status_message),
             'registry_namespace' => $this->registry_namespace ?? 'runr-registry',
             'has_registry' => (bool) $this->resource->has_registry,
             'dns_resolved' => $this->dns_resolved,
             // Sandbox (Runtime Isolation)
             'sandbox_kata_status' => $this->sandbox_kata_status ?? 'not_installed',
-            'sandbox_kata_status_message' => $this->sandbox_kata_status_message,
+            'sandbox_kata_status_message' => $text($this->sandbox_kata_status_message),
             /** @var list<string>|null */
             'sandbox_kata_hypervisor' => $this->sandbox_kata_hypervisor,
             // Firecracker's devmapper thin-pool size in GiB, as set up on the nodes (null: none)
             /** @var int|null */
             'sandbox_kata_devmapper_pool_gb' => $this->resource->getAttribute('sandbox_kata_devmapper_pool_gb'),
             'sandbox_gvisor_status' => $this->sandbox_gvisor_status ?? 'not_installed',
-            'sandbox_gvisor_status_message' => $this->sandbox_gvisor_status_message,
+            'sandbox_gvisor_status_message' => $text($this->sandbox_gvisor_status_message),
             'sandbox_xaas_runtime' => $this->sandbox_xaas_runtime ?? 'runc',
             'sandbox_faas_runtime' => $this->sandbox_faas_runtime ?? 'runc',
             'sandbox_caas_runtime' => $this->sandbox_caas_runtime ?? 'runc',
@@ -145,7 +151,7 @@ class KnativeRegionResource extends JsonResource
             'has_sandbox_gvisor' => (bool) ($this->resource->has_sandbox_gvisor ?? false),
             // WebAssembly support (runwasi shims; the runtime picker offers Wasm runtimes where it is ready)
             'sandbox_wasm_status' => $this->resource->sandbox_wasm_status ?? 'not_installed',
-            'sandbox_wasm_status_message' => $this->resource->sandbox_wasm_status_message,
+            'sandbox_wasm_status_message' => $text($this->resource->sandbox_wasm_status_message),
             /** @var list<string> */
             'sandbox_wasm_shims' => $this->resource->sandbox_wasm_shims ?? [],
             /** @var list<string>|null */

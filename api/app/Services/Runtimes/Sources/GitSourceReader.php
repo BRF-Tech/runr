@@ -4,6 +4,9 @@ namespace App\Services\Runtimes\Sources;
 
 use App\Models\RuntimeSource;
 use App\Services\GitDeploy\GitRunner;
+use App\Services\Kubeconfigs\PinProxy;
+use App\Services\Observability\OutboundProxy;
+use App\Services\Observability\OutboundUrlGuard;
 use App\Services\Runtimes\InvalidManifestException;
 use App\Services\Runtimes\ManifestValidator;
 
@@ -33,6 +36,9 @@ class GitSourceReader
     private const MAX_FILES = 50;
 
     private const MAX_FILES_BYTES = 900 * 1024;
+
+    /** The pin proxy of the read under way (an https source behind the environment's proxy, pinned()) */
+    private ?PinProxy $pinProxy = null;
 
     public function __construct(
         private readonly GitRunner $git,
@@ -67,6 +73,8 @@ class GitSourceReader
 
             return new SourceSnapshot($head !== '' ? $head : $revision, $this->entries($checkout, SourceLocation::path($source->path)));
         } finally {
+            $this->pinProxy?->stop();
+            $this->pinProxy = null;
             self::removeDirectory($work);
         }
     }
@@ -121,9 +129,73 @@ class GitSourceReader
             array_push($ssh, '-o', 'StrictHostKeyChecking=accept-new');
         }
         array_push($ssh, '-o', 'UserKnownHostsFile='.$knownHosts);
+
+        if ($source->heldToOutboundGuard()) {
+            [$env, $config, $ssh] = $this->pinned($source, $env, $config, $ssh);
+        }
         $env['GIT_SSH_COMMAND'] = implode(' ', array_map('escapeshellarg', $ssh));
 
         return [$env, $config];
+    }
+
+    /**
+     * An organization's repository: its host checked by the outbound guard right before the read
+     * and the connection pinned to the addresses that check saw — https through curl's resolve
+     * list (http.curloptResolve) without redirects, SSH to the checked address under the host's
+     * name (HostName + HostKeyAlias, no ssh config, no proxy command) — and no HTTP(S)_PROXY of
+     * git's own. Where the API's environment has a proxy for an https host (OutboundProxy), git
+     * goes through a PinProxy instead, which carries the tunnel to the checked address through
+     * that proxy (stopped after the read); SSH always connects straight to the address.
+     *
+     * @param  array<string, string>  $env
+     * @param  array<string, string>  $config
+     * @param  list<string>  $ssh
+     * @return array{0: array<string, string>, 1: array<string, string>, 2: list<string>}
+     *
+     * @throws RuntimeSourceException the guard refuses the host
+     */
+    private function pinned(RuntimeSource $source, array $env, array $config, array $ssh): array
+    {
+        // A local repository (file://, runtime_sources.git_extra_protocols — the test suite's,
+        // never set from the environment) is no connection
+        if (str_starts_with(strtolower($source->url), 'file://')) {
+            return [$env, $config, $ssh];
+        }
+        [$host, $port] = SourceLocation::endpoint(RuntimeSource::KIND_GIT, $source->url);
+        if ($host === '' || str_ends_with($host, '.') || str_starts_with(strtolower($source->url), 'git://')) {
+            // git:// has no way to pin its connection; a trailing dot may mean another name to curl
+            throw RuntimeSourceException::refusedHost(__('observability.url.invalid'));
+        }
+        $target = app(OutboundUrlGuard::class)->host($host, $port);
+        if (! $target->allowed()) {
+            throw RuntimeSourceException::refusedHost((string) $target->reason);
+        }
+
+        foreach (['http_proxy', 'https_proxy', 'all_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'] as $name) {
+            $env[$name] = '';
+        }
+        $env['NO_PROXY'] = $env['no_proxy'] = '*';
+
+        if (SourceLocation::isSsh($source->url)) {
+            array_splice($ssh, 1, 0, ['-F', '/dev/null', '-o', 'ProxyCommand=none', '-o', 'ProxyJump=none']);
+            if ($target->addresses !== []) {
+                array_push($ssh, '-o', 'HostName='.$target->addresses[0], '-o', 'HostKeyAlias='.($port === 22 ? $host : "[{$host}]:{$port}"));
+            }
+        } elseif (OutboundProxy::for('https', $host, $port) !== null) {
+            // The operator's egress proxy carries it: git goes through a pin proxy, whose tunnel to
+            // the checked address goes through that proxy as a CONNECT to the address (PinProxy)
+            $config['http.followRedirects'] = 'false';
+            $this->pinProxy = PinProxy::start(trim($host, '[]'), $port, $target->addresses !== [] ? $target->addresses : [trim($host, '[]')]);
+            $config['http.proxy'] = 'http://127.0.0.1:'.$this->pinProxy->port;
+            $env['NO_PROXY'] = $env['no_proxy'] = '';
+        } else {
+            $config['http.followRedirects'] = 'false';
+            if ($target->addresses !== []) {
+                $config['http.curloptResolve'] = "{$host}:{$port}:".implode(',', array_map(fn (string $ip) => str_contains($ip, ':') ? "[{$ip}]" : $ip, $target->addresses));
+            }
+        }
+
+        return [$env, $config, $ssh];
     }
 
     /** The commit the source's ref names now (ls-remote; a tag's peeled commit). */

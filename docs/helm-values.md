@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.7.7 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.7.8 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.7.7` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.7.8` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -46,6 +46,7 @@ Helm checks the values against the chart's `values.schema.json` on `install`, `u
 | `storage.application`, `storage.database` | `<number>Gi` or empty |
 | `quota.cpu`, `quota.memoryGiB` | A number of at least 0, a numeric string or empty |
 | `projectSecrets.*` | `storage` `region` or `database`; `finalize` a boolean |
+| `secretStores.*` | `allowPrivateTargets` a boolean; `privateEgressCidrs` a list of CIDRs |
 | `notifications.retentionDays` | An integer of at least 0 or a string of digits |
 | `knative.*` | `minK8sMinor` a string or an integer; `traefikImage` a string; `traefikAliasHeadersStrategy` `delete` or `keep`; `certManager.install` a boolean, `certManager.acmeEmail`, `acmeServer`, `chartVersion`, `imagePrefix` strings |
 | `clientIp.trustedProxies`, `clientIp.proxyHops` | A string; an integer of at least 0 |
@@ -61,7 +62,7 @@ Helm checks the values against the chart's `values.schema.json` on `install`, `u
 | `images.*` | `uploadImage` a string; `quotaGb`, `maxUploadGb`, `uploadTtlHours` strings or numbers |
 | `runtimePatches.*` | `feed`, `publicKey`, `viaRegion` strings; `autoMigrate` a boolean (or `"true"` / `"false"`) |
 | `runtimeCatalog.*` | `reference`, `publicKey`, `viaRegion`, `builtinRuntimes` strings; `intervalMinutes`, `timeout` strings or numbers; `offline` a boolean (or `"true"` / `"false"`) |
-| `apiProduct.*` | `gatewayAuthImage`, `callbackUrl` strings; `syncSeconds`, `onDemandSyncSeconds`, `usageRetentionDays` strings or numbers |
+| `apiProduct.*` | `gatewayAuthImage`, `callbackUrl` strings; `syncSeconds`, `onDemandSyncSeconds`, `usageRetentionDays` strings or numbers; `jwksAllowPrivateTargets` a boolean |
 | `orgTransfer.*` | `transferImage` a string; `maxPackageGb`, `retentionHours`, `podDiskGb` strings or numbers |
 | `placement.*` | `tolerateDedicatedWorkers` a boolean, `tolerations` a list, `affinity` an object, `nodeSelector` string values |
 | `networkPolicy.*` | `enabled` a boolean; `gatewayFrom`, `egress.to` and `extraEgress` lists of objects; `egress.ports` port numbers |
@@ -387,6 +388,7 @@ deploy/runr-horizon deploy/runr-scheduler deploy/runr-reverb`).
 | --- | --- | --- |
 | `edition` | `single-tenant` | `single-tenant`: one organization. `multi-tenant`: the Tenancy and Auth Provider modules are on (`TENANCY_ENABLED`, `AUTH_PROVIDER_ENABLED`) and the UI runs the multi-tenant console, the tag with `ui.image.multiTenantSuffix` (`<tag>-mt`) |
 | `tenancy.enabled` | `false` | Turns the Tenancy module on in the API with `edition: single-tenant` as well |
+| `tenancy.allowPrivateRegionServers` | `false` | `true`: the kubeconfig of an organization's own region may name a private API server address (`TENANCY_REGIONS_ALLOW_PRIVATE`); loopback and link-local addresses stay refused ([security.md](security.md#tenant-region-kubeconfigs)) |
 | `authProvider.enabled` | `false` | Turns the Auth Provider module on in the API with `edition: single-tenant` as well |
 | `ticket.enabled` | `true` | The Ticket module (support tickets) in the API and the hook Jobs (`TICKET_ENABLED`); values without the key keep it on. The console shows the ticket pages when its UI image is built with `VITE_TICKET_ENABLED=true` |
 
@@ -425,6 +427,8 @@ Details: [security.md](security.md#audit-log).
 | Key | Default | What it does |
 | --- | --- | --- |
 | `projectSecrets.storage` | `region` | Where the values of project secret variables go (`RUNR_SECRET_STORAGE`): `region` straight into the project's Kubernetes Secret in its region, RunR's database keeps metadata only; `database` the behaviour up to 0.5.10, values encrypted in the database (deprecated) |
+| `secretStores.allowPrivateTargets` | `false` | `true`: a secret store of an organization of the multi-tenant edition may name a private, loopback or cluster-internal address, and the External Secrets Operator controller of the platform regions gets no egress policy ([secret-stores.md](secret-stores.md#network)) |
+| `secretStores.privateEgressCidrs` | `[]` | CIDRs the External Secrets Operator controller of a platform region (multi-tenant edition) may reach besides public addresses: the platform's own stores on private addresses. The controller is shared by every organization of the region: list the stores' addresses only |
 | `projectSecrets.finalize` | `false` | `true` once the upgrade from 0.5.10 is confirmed: the region Job of the upgrade (`runr-region-reconcile-<revision>`) runs `secrets:move-to-region --finalize`, which drops the encrypted copies RunR keeps so that 0.5.10 can be installed again, and lets secret store references be set. Do not install 0.5.10 again afterwards ([Rolling back to 0.5.10](upgrade.md#rolling-back-to-0510)). A fresh installation is finalized from the start. No effect with `projectSecrets.storage: database`, where the region Job skips the step |
 
 Values written before the upgrade move with `php artisan secrets:move-to-region`, which the
@@ -586,9 +590,10 @@ Tracing, request replay, uptime checks, load tests, the status page and alert de
 | `observability.replay.retentionDays` | `7` | Project default of the capture retention; projects choose up to 30 |
 | `observability.replay.maxCaptures` | `500` | Captures per project, the oldest dropped first |
 | `observability.replay.ingestUrl` | `""` | RunR as seen from region pods; empty: the region's agent URL |
+| `observability.replay.allowPrivateTargets` | `false` | `true`: replays of a project whose function domain is under its organization's own base domain may target private addresses |
 | `observability.uptime.minIntervalSeconds` | `30` | Shortest interval of an uptime check |
 | `observability.uptime.resultsRetentionDays` | `90` | Retention of check results |
-| `observability.uptime.allowPrivateTargets` | `false` | `true`: checks of an absolute URL may target private addresses |
+| `observability.uptime.allowPrivateTargets` | `false` | `true`: checks of an absolute URL, or of a project whose function domain is under its organization's own base domain, may target private addresses |
 | `observability.loadTest.enabled` | `true` | Load tests of HTTP projects ([load-test.md](load-test.md)) |
 | `observability.loadTest.dailyLimit` | `20` | Load tests an organization may start per day; `0`: none |
 | `observability.loadTest.maxUsers` | `100` | The largest of the 10 / 50 / 100 concurrent-user choices offered |
@@ -646,7 +651,7 @@ chain); these are the platform-wide defaults. Empty values keep the application 
 | Key | Default | What it does |
 | --- | --- | --- |
 | `supplyChain.enabled` | `true` | Every image RunR builds gets its supply-chain run |
-| `supplyChain.toolsImage` | `""` | Tools image; empty: `ghcr.io/brf-tech/runr/supply-chain:1.1.2` |
+| `supplyChain.toolsImage` | `""` | Tools image; empty: `ghcr.io/brf-tech/runr/supply-chain:1.1.3` |
 | `supplyChain.jobNamespace` | `""` | Namespace of the Jobs and the region signing key; empty: `runr-supply-chain` |
 | `supplyChain.rescanHours` | `""` | Re-scan interval of deployed images for new regions; empty: 24 |
 | `supplyChain.trivyDbSource` | `""` | Mirror source of the vulnerability database; empty: `mirror.gcr.io/aquasec/trivy-db:2` |
@@ -745,11 +750,12 @@ Empty values keep the application defaults.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `apiProduct.gatewayAuthImage` | `""` | Image of gateway-auth the regions pull; empty: `ghcr.io/brf-tech/runr/gateway-auth:1.1.1` |
+| `apiProduct.gatewayAuthImage` | `""` | Image of gateway-auth the regions pull; empty: `ghcr.io/brf-tech/runr/gateway-auth:1.1.2` |
 | `apiProduct.callbackUrl` | `""` | RunR's base URL as the regions reach it (config sync, usage reports); empty: the URL the region agent connects to |
 | `apiProduct.syncSeconds` | `""` | How often gateway-auth fetches changed keys and plans — the longest a revoked key keeps working; empty: 10 |
 | `apiProduct.onDemandSyncSeconds` | `""` | Least time between two fetches of a gateway-auth pod for a key or route it does not know, so a new key works at once ([api-product.md](api-product.md)); empty: 2, `0`: none (a new key waits for each pod's next fetch) |
 | `apiProduct.usageRetentionDays` | `""` | Hourly usage rows kept; empty: 400 |
+| `apiProduct.jwksAllowPrivateTargets` | `false` | `true`: the JWKS URL of a JWT route may name a private, loopback or cluster-internal address ([outbound requests](security.md#outbound-requests-to-user-configured-urls)) |
 
 Settings without a value of their own, set through [`extraEnv`](#extraenv):
 `RUNR_GATEWAY_AUTH_REPLICAS` (gateway-auth pods per region with Redis, default 2; a region without

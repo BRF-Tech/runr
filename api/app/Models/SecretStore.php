@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\Observability\OutboundUrlGuard;
+use App\Services\Observability\TenantScope;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -134,8 +136,48 @@ class SecretStore extends Model
         return is_array($status) ? $status : null;
     }
 
+    /** Settings that are an address the region's External Secrets Operator connects to => https only */
+    public const ADDRESS_SETTINGS = ['server' => false, 'vault_url' => true];
+
+    /**
+     * The setting and why its address may not be used, null when it may: a store of an
+     * organization of the multi-tenant edition (a tenant's context) names a public address
+     * (OutboundUrlGuard: no loopback, private, link-local or cluster-internal one), unless
+     * secrets.external.allow_private_targets. A name that does not resolve (yet) may be used. The
+     * platform's own stores are not checked.
+     *
+     * @param  array<string, mixed>|null  $settings  default: the store's
+     * @return array{0: string, 1: string}|null [setting, reason]
+     */
+    public function addressProblem(?array $settings = null): ?array
+    {
+        if (TenantScope::current() === null || config('secrets.external.allow_private_targets', false)) {
+            return null;
+        }
+
+        foreach (self::ADDRESS_SETTINGS as $key => $https) {
+            $url = trim((string) (($settings ?? (array) $this->settings)[$key] ?? ''));
+            if ($url === '') {
+                continue;
+            }
+            $target = app(OutboundUrlGuard::class)->target($url, false, $https);
+            if (! $target->allowed() && $target->code !== 'unresolvable') {
+                return [$key, (string) $target->reason];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Record the store's Ready condition in a region. In a tenant's context a failure is shown
+     * with a generic message: the operator's message can carry what the store's address answered.
+     */
     public function recordStatus(string $regionId, string $status, ?string $message): void
     {
+        if ($status === 'failed' && TenantScope::current() !== null) {
+            $message = __('api.secret_store.not_ready');
+        }
         $all = (array) ($this->region_status ?? []);
         $all[$regionId] = ['status' => $status, 'message' => $message !== null ? mb_substr($message, 0, 1000) : null, 'checked_at' => now()->toISOString()];
         $this->forceFill(['region_status' => $all])->save();

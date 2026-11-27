@@ -21,6 +21,7 @@ since pass-through they live in the region only as well — in the project's Kub
 an [OpenBao that RunR runs in the region](#openbao-in-the-region).
 
 - [External Secrets Operator in a region](#external-secrets-operator-in-a-region)
+- [Network](#network)
 - [Registering a store](#registering-a-store)
 - [The trust a store needs](#the-trust-a-store-needs)
 - [Cluster issuer requirements](#cluster-issuer-requirements)
@@ -55,7 +56,9 @@ The install is queued (`202`) and runs Helm from the control plane: the release
 `external-secrets` in the namespace `external-secrets`, from `https://charts.external-secrets.io`,
 at the chart version RunR pins, with the operator's image from RunR's mirror
 (`ghcr.io/brf-tech/runr/reqs/external-secrets`) for the controller, the webhook and the cert
-controller (requests 10m CPU and 64 MiB, a 256 MiB memory limit). Only namespaced SecretStores and
+controller (requests 10m CPU and 64 MiB, a 256 MiB memory limit), the controller running four
+reconciles at a time (the chart's `concurrent`: a store whose connection is dropped holds one until
+the Vault client gives up, 60 s, while the others go on). Only namespaced SecretStores and
 ExternalSecrets are processed — ClusterSecretStores, ClusterExternalSecrets and PushSecrets are
 off: a store is usable in the namespace RunR renders it in, for the projects RunR renders there.
 The status moves to `ready` once every Deployment of the release has its replicas available and
@@ -69,14 +72,45 @@ the cluster serves `external-secrets.io/v1`; after 15 minutes without, it is `er
 | `RUNR_ESO_REFRESH_INTERVAL` | how often an ExternalSecret reads its store again when the store sets nothing (seconds, default 3600) |
 
 - `php artisan region:reconcile` (run by every Helm upgrade) brings the operator to the chart this
-  release pins wherever a region has it (step `external-secrets`); the Secrets it filled stay and
-  are refreshed on its next sync. A region without the operator is left alone.
+  release pins and to the values it sets (compared with `helm get values` of the release) wherever
+  a region has it (step `external-secrets`); the Secrets it filled stay and are refreshed on its
+  next sync. A region without the operator is left alone.
 - A [region migration](regions.md#moving-a-region-to-another-cluster) installs it on the new
   cluster when the region had it ready; a rollback gives back the status the old cluster had.
 - `DELETE …/external-secrets` removes it — refused (`409`) while projects on the region have
   references: the operator's CRDs go with it, and with them the Secrets it filled — and while the
   region's [OpenBao](#openbao-in-the-region) is installed, whose values reach the workloads through
   it.
+
+## Network
+
+On a platform region of the multi-tenant edition the operator's controller reads the stores of
+every organization that uses the region, and resolves their names itself. RunR checks a store's
+address when it is saved, verified and deployed; the NetworkPolicy `runr-eso-egress` in the
+namespace `external-secrets` keeps a name that answers another address by the time the controller
+connects from reaching the cluster's network. It selects the controller's pods only
+(`app.kubernetes.io/name: external-secrets`; the webhook and the cert controller talk to the API
+server only) and allows their egress to:
+
+| Destination | |
+|---|---|
+| the cluster DNS | pods `k8s-app: kube-dns` in `kube-system` and NodeLocal DNSCache's `169.254.20.10`, UDP and TCP 53 |
+| the Kubernetes API server | the `kubernetes` Service's address and its endpoints, on their ports |
+| the region's [OpenBao](#openbao-in-the-region) | namespace `runr-openbao`, TCP 8200 |
+| public addresses | `0.0.0.0/0` and `2000::/3` without the ranges RunR's outbound guard refuses ([outbound requests](security.md#outbound-requests-to-user-configured-urls)) — private, loopback, link-local with the cloud metadata address `169.254.169.254`, CGNAT, multicast, reserved; Teredo, benchmarking, ORCHID, documentation — and 6to4 (`2002::/16`) and NAT64 (`64:ff9b::/96`) only where the IPv4 address they carry is public |
+| `secretStores.privateEgressCidrs` | the CIDRs of the platform's own stores on private addresses ([Helm values](helm-values.md)) |
+
+On a cluster that runs Cilium the same rules are the CiliumNetworkPolicy `runr-eso-egress`, with
+the API server as Cilium's `kube-apiserver` entity: Cilium's CIDR rules do not select the cluster's
+nodes. The operator's install applies the policy, and `region:reconcile` (step
+`external-secrets-egress`) applies it where it is missing or differs — the API server's address
+moved, the CIDRs changed, the cluster moved to Cilium — and restarts the controller's Deployment when
+it creates or changes the policy (a network plugin lets connections it admitted before go on, and
+the controller keeps its connections to the stores open); it removes the policy where it is not wanted: a
+single-tenant installation, a tenant's own region (its own cluster), or
+`secretStores.allowPrivateTargets: true`. The policy is enforced by the cluster's network plugin;
+the controller is shared by every organization of the region, so `privateEgressCidrs` names the
+platform stores' addresses only.
 
 ## Registering a store
 
@@ -106,7 +140,7 @@ curl -sS -X POST "$API/secret-stores" -H "Authorization: Bearer $TOKEN" -H 'Cont
 
 | Setting | |
 |---|---|
-| `server` | required: the address, e.g. `https://vault.example.com:8200` |
+| `server` | required: the address, e.g. `https://vault.example.com:8200`; a store of an organization of the multi-tenant edition names a public one ([outbound requests](security.md#outbound-requests-to-user-configured-urls), Helm value `secretStores.allowPrivateTargets` lifts it) |
 | `mount` | the KV mount (default `secret`) |
 | `kv_version` | `v1` or `v2` (default `v2`) |
 | `vault_namespace` | the namespace (Vault Enterprise, OpenBao namespaces) |
@@ -135,7 +169,7 @@ curl -sS -X POST "$API/secret-stores" -H "Authorization: Bearer $TOKEN" -H 'Cont
 
 | Setting | |
 |---|---|
-| `vault_url` | required: `https://<name>.vault.azure.net` |
+| `vault_url` | required: `https://<name>.vault.azure.net` (public, like a Vault `server`) |
 | `tenant_id` | required: the Microsoft Entra tenant |
 | `client_id` | required: the app registration or managed identity that holds the federated credential |
 
@@ -431,6 +465,11 @@ it lists the project namespace's ExternalSecrets (`runr/secret-source=external`)
   so all references of a project share it. A reference its project has not been deployed with
   since is `pending` ("Not synced yet: deploy the project to apply the reference.");
 - onto the store, per region (`regions` of the store): `ready`, `failed` or `pending`.
+
+In an organization of the multi-tenant edition a failure shows a short reason instead of the
+operator's message, which can carry what the store's address answered. An organization's store
+is checked again when it is verified and before every deploy that applies it: a store on an
+address that is not public fails the deploy (`422`).
 
 **Sync now** in the console, `POST /api/projects/{project}/secrets/refresh` or `runr env sync` asks
 the operator to read the project's references again right away (its `force-sync` annotation) and

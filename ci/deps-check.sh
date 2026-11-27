@@ -112,7 +112,11 @@ case "$check" in
     [ -f "$dir/go.mod" ] || { echo "- no ${dir}/go.mod" >> "$res/failures.md"; failed=1; }
     step "gofmt" bash -c 'cd "$0" && test -z "$(gofmt -l .)"' "$dir"
     step "go vet" bash -c 'cd "$0" && go vet ./...' "$dir"
-    (cd "$dir" && CGO_ENABLED=1 go test -race -count=1 -json ./... > "$res/go-test.json" 2>> "$log")
+    # the Terraform provider's real plans take longer than go test's default 10 minutes on a busy
+    # runner (ci.yml's go job gives it 20 as well)
+    timeout=10m
+    [ "$(basename "$dir")" = terraform-provider-runr ] && timeout=20m
+    (cd "$dir" && CGO_ENABLED=1 go test -race -count=1 -timeout "$timeout" -json ./... > "$res/go-test.json" 2>> "$log")
     n="$(jq -s '[.[] | select(.Action == "fail" and .Test != null)] | length' "$res/go-test.json" 2>/dev/null || echo 1)"
     builds="$(jq -s '[.[] | select(.Action == "fail" and .Test == null)] | length' "$res/go-test.json" 2>/dev/null || echo 1)"
     failed=$((failed + n + builds))

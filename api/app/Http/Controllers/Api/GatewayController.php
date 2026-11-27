@@ -8,9 +8,11 @@ use App\Models\Gateway;
 use App\Models\GatewayRoute;
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Services\ApiProduct\GatewayAuthConfig;
 use App\Services\Environments\EnvironmentResolver;
 use App\Services\GatewayService;
 use App\Services\GlobalProjects\GlobalProjectService;
+use App\Services\Observability\OutboundUrlGuard;
 use App\Services\Residency\RegionPolicy;
 use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -273,11 +275,23 @@ class GatewayController extends Controller
         return $settings;
     }
 
-    /** A JWT route verifies tokens with its issuer's JWKS: it needs the URL. */
+    /**
+     * A JWT route verifies tokens with its issuer's JWKS: it needs the URL, on a public address
+     * unless the platform allows private ones or it is a RunR function on the platform's own domain
+     * (OutboundUrlGuard, GatewayAuthConfig::jwksMayBePrivate(); gateway-auth checks every address
+     * again when it connects). A name that does not resolve yet may be saved.
+     */
     private function assertJwt(?string $mode, ?array $jwt): void
     {
         if ($mode === GatewayRoute::AUTH_JWT && empty($jwt['jwks_url'] ?? null)) {
             throw ValidationException::withMessages(['jwt.jwks_url' => __('api_product.route.jwks_required')]);
+        }
+        if ($mode === GatewayRoute::AUTH_JWT) {
+            $url = (string) $jwt['jwks_url'];
+            $target = app(OutboundUrlGuard::class)->target($url, GatewayAuthConfig::jwksMayBePrivate($url));
+            if (! $target->allowed() && $target->code !== 'unresolvable') {
+                throw ValidationException::withMessages(['jwt.jwks_url' => (string) $target->reason]);
+            }
         }
     }
 

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -40,6 +41,10 @@ type Check struct {
 	TimeoutSec     int               `json:"timeout_seconds"`
 	ExpectedStatus string            `json:"expected_status"`
 	BodyRegex      string            `json:"body_regex"`
+	// AllowPrivateTargets: the probe may connect to private, loopback and link-local addresses
+	// (the project's own endpoint, or observability.uptime.allow_private_targets). Absent — an
+	// older RunR — means false: every address the probe connects to must be public.
+	AllowPrivateTargets bool `json:"allow_private_targets"`
 }
 
 // Result of one probe.
@@ -284,13 +289,20 @@ func Probe(ctx context.Context, c Check, re *regexp.Regexp) Result {
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	// Redirects are not followed: a redirect would lead to a URL nobody checked
+	client := &http.Client{
+		Transport:     transportFor(c),
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	resp, err := client.Do(req)
 	res.ResponseMs = time.Since(start).Milliseconds()
 	if err != nil {
-		if ctx.Err() != nil {
+		switch {
+		case errors.Is(err, errPrivateTarget):
+			res.Error = errPrivateTarget.Error()
+		case ctx.Err() != nil:
 			res.Error = fmt.Sprintf("timed out after %s", timeout)
-		} else {
+		default:
 			res.Error = err.Error()
 		}
 		return res

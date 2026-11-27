@@ -1,6 +1,8 @@
 # The lines of `git grep -n` output (PATH:LINE:TEXT) of the console or the landing page that name
 # the version old as a whole version and the dependency (names, on the line or in the path):
-# "outside PATH:LINE: TEXT". A bump never edits them (deps_replace_version, ci/deps/lib.sh).
+# "outside PATH:LINE: TEXT". A bump never edits them (deps_replace_version, ci/deps/lib.sh). A line
+# that records the past (history: DEPS_HISTORY_RE, a measurement with its RunR release or date) is
+# none: the bump would keep it in any other file too, so it sends nothing to a person.
 
 function whole(s,   pos, i, n, before, after, after2) {
   n = length(old)
@@ -23,6 +25,7 @@ function whole(s,   pos, i, n, before, after, after2) {
   path = substr($0, 1, first - 1)
   num = substr(rest, 1, second - 1)
   text = substr(rest, second + 1)
+  if (history != "" && tolower(text) ~ history) next
   if (whole(text) && (tolower(path) ~ names || tolower(text) ~ names)) {
     sub(/^[ \t]+/, "", text)
     printf "outside %s:%s: %s\n", path, num, (length(text) > 160 ? substr(text, 1, 157) "..." : text)
