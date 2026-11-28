@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.7.9 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.7.10 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.7.9` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.7.10` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -651,7 +651,7 @@ chain); these are the platform-wide defaults. Empty values keep the application 
 | Key | Default | What it does |
 | --- | --- | --- |
 | `supplyChain.enabled` | `true` | Every image RunR builds gets its supply-chain run |
-| `supplyChain.toolsImage` | `""` | Tools image; empty: `ghcr.io/brf-tech/runr/supply-chain:1.1.3` |
+| `supplyChain.toolsImage` | `""` | Tools image; empty: `ghcr.io/brf-tech/runr/supply-chain:1.1.4` |
 | `supplyChain.jobNamespace` | `""` | Namespace of the Jobs and the region signing key; empty: `runr-supply-chain` |
 | `supplyChain.rescanHours` | `""` | Re-scan interval of deployed images for new regions; empty: 24 |
 | `supplyChain.trivyDbSource` | `""` | Mirror source of the vulnerability database; empty: `mirror.gcr.io/aquasec/trivy-db:2` |

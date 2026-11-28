@@ -5,7 +5,7 @@ WORKDIR /app
 COPY main.go .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /echo-server main.go
 
-FROM ghcr.io/brf-tech/runr/reqs/alpine:3.22
+FROM ghcr.io/brf-tech/runr/reqs/alpine:3.24
 LABEL org.opencontainers.image.title="nginx-test" \
       org.opencontainers.image.description="RunR CaaS test image: an HTTP echo server for the end-to-end tests" \
       org.opencontainers.image.licenses="MIT" \

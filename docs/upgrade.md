@@ -87,6 +87,28 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.7.9 → 0.7.10
+
+0.7.10 is a dependency release of 0.7.9, made by the dependency test bot: it moves one dependency of
+a region and nothing else. There is no database migration, the images keep their names, and nothing
+has to be set ([Procedure](#procedure)). The CLI, the Terraform provider and runr.sh stay those of
+0.7.9.
+
+- **Dockerfile base images moved** (minor and patch updates): ghcr.io/brf-tech/runr/reqs/alpine 3.22
+  → 3.24, containerd-shim-spin image v0.27.2-runr.2 → v0.27.2-runr.3 (its own version:
+  release-images.yml builds it), supply-chain image 1.1.3 → 1.1.4 (its own version:
+  release-images.yml builds it). The images build on the new bases.
+
+The bot ran these suites on this release before it was tagged: PHPUnit, Pint, Larastan and the API
+reference, `runtime/test`, `runtime/ci.sh test-runtimes`, `runtime/ci.sh test`, `runtime/ci.sh
+test-helm-upgrade --from=v0.7.9`, `runtime/ci.sh test-supply-chain`, `runtime/ci.sh test-wasm`,
+`ci/deps-check.sh image:examples/runtimes/q/interpreter/Dockerfile`, `ci/deps-check.sh
+image:proxy/Dockerfile`, `ci/deps-check.sh image:runtime/agent/Dockerfile`, `ci/deps-check.sh
+image:runtime/nginx-test/Dockerfile`, `ci/deps-check.sh image:runtime/queue-consumer/Dockerfile`,
+`ci/deps-check.sh image:runtime/supply-chain/Dockerfile`, `ci/deps-check.sh
+image:runtime/wasm-shim-spin/Dockerfile`
+([run](https://github.com/BRF-Tech/runr/actions/runs/46161928211)).
+
 ## 0.7.8 → 0.7.9
 
 0.7.9 carries fixes of RunR's dependency test bot and of one of RunR's tests, and changes nothing

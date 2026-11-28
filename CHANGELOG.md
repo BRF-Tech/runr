@@ -8,6 +8,22 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-11-28
+
+### Upgrade notes
+
+- **A dependency release of 0.7.9: upgrading needs no step.** There is no database migration, the
+  images keep their names and nothing has to be set; only the dependency below changes. The CLI, the
+  Terraform provider and runr.sh stay those of 0.7.9. See
+  [docs/upgrade.md](docs/upgrade.md#079--0710).
+
+### Changed
+
+- **Dockerfile base images moved** (minor and patch updates): ghcr.io/brf-tech/runr/reqs/alpine 3.22
+  → 3.24, containerd-shim-spin image v0.27.2-runr.2 → v0.27.2-runr.3 (its own version:
+  release-images.yml builds it), supply-chain image 1.1.3 → 1.1.4 (its own version:
+  release-images.yml builds it). The images build on the new bases.
+
 ## [0.7.9] - 2026-11-27
 
 ### Upgrade notes
@@ -5251,7 +5267,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.9...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.7.10...main
+[0.7.10]: https://github.com/brf-tech/runr/releases/tag/v0.7.10
 [0.7.9]: https://github.com/brf-tech/runr/releases/tag/v0.7.9
 [0.7.8]: https://github.com/brf-tech/runr/releases/tag/v0.7.8
 [0.7.7]: https://github.com/brf-tech/runr/releases/tag/v0.7.7

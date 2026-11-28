@@ -20,7 +20,7 @@ index c34a0f9..35c1530 100644
      "conformance-tests"
  ]
 +
-+# RunR (containerd-shim-spin v0.27.2-runr.2): containerd-shim-wasm 1.0.1 with containerd/runwasi
++# RunR (containerd-shim-spin v0.27.2-runr.3): containerd-shim-wasm 1.0.1 with containerd/runwasi
 +# PR #1183 applied (Linux containers of a Wasm pod get the env of their OCI spec, runwasi #1061).
 +[patch.crates-io]
 +containerd-shim-wasm = { path = "../containerd-shim-wasm" }

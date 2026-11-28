@@ -434,7 +434,7 @@ gate blocks then is deployed with an override once it is built.
 | Variable (Helm `supplyChain.*`) | Default |
 |---|---|
 | `RUNR_SUPPLY_CHAIN_ENABLED` (`enabled`) | `true` — supply-chain runs after builds |
-| `RUNR_SUPPLY_CHAIN_IMAGE` (`toolsImage`) | `ghcr.io/brf-tech/runr/supply-chain:1.1.3` |
+| `RUNR_SUPPLY_CHAIN_IMAGE` (`toolsImage`) | `ghcr.io/brf-tech/runr/supply-chain:1.1.4` |
 | `RUNR_SUPPLY_CHAIN_NAMESPACE` (`jobNamespace`) | `runr-supply-chain` |
 | `RUNR_SUPPLY_CHAIN_RESCAN_HOURS` (`rescanHours`) | `24` |
 | `RUNR_TRIVY_DB_SOURCE` / `RUNR_TRIVY_JAVA_DB_SOURCE` (`trivyDbSource` / `trivyJavaDbSource`) | `mirror.gcr.io/aquasec/trivy-db:2` / `…/trivy-java-db:1` |

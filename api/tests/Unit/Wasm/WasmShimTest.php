@@ -19,7 +19,7 @@ class WasmShimTest extends TestCase
         $spin = WasmShim::get('spin');
         $this->assertSame(['containerd-shim-spin-v2', 'io.containerd.spin.v2', 'spin-runr', 'wasmtime-spin-v2'],
             [$spin->binary, $spin->runtimeType, $spin->handler, $spin->runtimeClass]);
-        $this->assertSame('v0.27.2-runr.2', $spin->version);
+        $this->assertSame('v0.27.2-runr.3', $spin->version);
         $this->assertSame('runr.dev/wasm-spin', $spin->nodeLabel());
 
         $wasmtime = WasmShim::get('wasmtime');
@@ -45,7 +45,7 @@ class WasmShimTest extends TestCase
         $spin = WasmShim::get('spin');
 
         // runtime/wasm-shim-spin: containerd-shim-spin v0.27.2 with the env of Linux containers fixed
-        $this->assertSame('ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.2', $spin->image);
+        $this->assertSame('ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.3', $spin->image);
         $this->assertStringEndsWith(':'.$spin->version, $spin->image, 'the image tag is the shim version');
         $this->assertSame([], $spin->artifacts);
         $this->assertSame(['x86_64', 'aarch64'], $spin->arches);
@@ -95,7 +95,7 @@ class WasmShimTest extends TestCase
         $spin = WasmShim::get('spin');
         $this->assertSame([
             'spin', 'containerd-shim-spin-v2', 'spin-runr', 'io.containerd.spin.v2',
-            'image', 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.2', 'image', 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.2',
+            'image', 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.3', 'image', 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.27.2-runr.3',
         ], explode(' ', $spin->scriptLine()));
         $this->assertSame(['id', 'name', 'version', 'runtime_class', 'handler', 'description'], array_keys($spin->toArray()));
     }
